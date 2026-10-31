@@ -1,0 +1,4 @@
+Symbol,Name,Quantity,Avg. Price,Cost Basis,Unrealized Gain ($),Unrealized Gain (%),Value
+VOO,Vanguard S&P 500 ETF,10,400.00,"4,000.00","1,500.00",37.5,"5,500.00"
+VXUS,Vanguard Total International Stock ETF,50,60.00,"3,000.00",-200.00,-6.67,"2,800.00"
+NFLX,Netflix,5,100.00,500.00,250.00,50,750.00
