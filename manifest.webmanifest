@@ -1,0 +1,19 @@
+{
+  "name": "MyFinZen",
+  "short_name": "MyFinZen",
+  "description": "Finanzas personales cifradas en tu dispositivo: cuentas, hipotecas, inversiones, alquiler e impuestos.",
+  "id": "./",
+  "start_url": "./#resumen",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f4f1",
+  "theme_color": "#2a78d6",
+  "lang": "es",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
