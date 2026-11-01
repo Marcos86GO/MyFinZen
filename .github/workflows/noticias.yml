@@ -1,0 +1,47 @@
+# Recoge titulares públicos cada hora y los publica en la rama `news` (archivo news.json).
+# La app los lee de https://raw.githubusercontent.com/Marcos86GO/MyFinZen/news/news.json.
+# La rama `news` se reescribe en cada ejecución (un solo commit) para no engordar el repositorio.
+name: Noticias
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['news/**', '.github/workflows/noticias.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: noticias
+  cancel-in-progress: false
+
+jobs:
+  noticias:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Noticias anteriores
+        run: |
+          if git fetch -q --depth 1 origin news 2>/dev/null; then git show FETCH_HEAD:news.json > prev.json; else echo '{}' > prev.json; fi
+
+      - name: Recoger titulares
+        run: node news/build.mjs out/news.json prev.json
+
+      - name: Publicar en la rama news
+        run: |
+          cd out
+          git init -q -b news
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add news.json
+          git commit -qm "Noticias $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -fq "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" news

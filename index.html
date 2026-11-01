@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MyFinZen</title>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.anthropic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://api.anthropic.com https://raw.githubusercontent.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#2a78d6">
 <meta name="description" content="Finanzas personales cifradas en tu dispositivo">
@@ -125,6 +125,60 @@ body.locked header,body.locked main{visibility:hidden}
 header{padding-top:env(safe-area-inset-top)}
 .range{display:flex;align-items:center;gap:10px}
 .range input[type=range]{flex:1;padding:0;border:none;background:none}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+a.btn{text-decoration:none;display:inline-block}
+/* ---------- Terminal de noticias ---------- */
+.term{--t-bg:#0b0e0d;--t-bg2:#121816;--t-line:#1e2925;--t-row:#151d1a;--t-text:#e6eee9;--t-dim:#8a9c94;--t-amber:#f5a524;--t-green:#4fd48a;--t-blue:#8cb8ff;--t-red:#ff7b72;
+  background:var(--t-bg);color:var(--t-text);border:1px solid var(--t-line);border-radius:12px;overflow:hidden;font:13px/1.45 ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace}
+.term a{color:inherit}
+.term-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:var(--t-bg2);border-bottom:1px solid var(--t-line);font-size:12px;letter-spacing:.04em}
+.term-bar b{color:var(--t-amber);font-weight:700;letter-spacing:.08em}
+.term-bar .st{color:var(--t-dim)}
+.term-bar .sp{margin-left:auto}
+.term-live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--t-green);margin-right:5px;vertical-align:1px;box-shadow:0 0 6px var(--t-green);animation:tpulse 2s infinite}
+.term-live.old{background:var(--t-amber);box-shadow:none;animation:none}.term-live.off{background:var(--t-red);box-shadow:none;animation:none}
+@keyframes tpulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.term-live{animation:none}}
+.term button{font:inherit;font-size:12px;background:transparent;color:var(--t-dim);border:1px solid var(--t-line);border-radius:6px;padding:3px 9px}
+.term button:hover{color:var(--t-text);border-color:var(--t-dim)}
+.term-tabs{display:flex;overflow-x:auto;border-bottom:1px solid var(--t-line);scrollbar-width:none}
+.term-tabs::-webkit-scrollbar{display:none}
+.term-tabs button{flex:none;border:0;border-right:1px solid var(--t-line);border-radius:0;padding:9px 14px;text-transform:uppercase;letter-spacing:.07em;color:var(--t-dim)}
+.term-tabs button .fk{color:var(--t-amber);margin-right:7px;font-weight:700}
+.term-tabs button.on{background:var(--t-amber);color:#111}
+.term-tabs button.on .fk{color:#111}
+.term-cmd{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--t-line)}
+.term-cmd .pr{color:var(--t-amber);font-weight:700}
+.term-cmd input{flex:1;background:transparent;border:0;color:var(--t-text);font:inherit;padding:4px 0;outline:none;min-width:0}
+.term-cmd input::placeholder{color:#5d6d66}
+.term-chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--t-line)}
+.term .chip{padding:3px 9px;border-radius:999px;font-size:12px}
+.term .chip.on{background:var(--t-blue);border-color:var(--t-blue);color:#0b0e0d}
+.term .chip i{font-style:normal;opacity:.7;margin-left:4px}
+.term-note{padding:8px 12px;border-bottom:1px solid var(--t-line);color:var(--t-dim);font-size:12px}
+.term-note.warn{color:var(--t-amber)}
+.term-row{display:grid;grid-template-columns:50px 1fr auto;gap:2px 10px;padding:8px 12px;border-bottom:1px solid var(--t-row);align-items:start}
+.term-row:hover{background:var(--t-bg2)}
+.term-row .tm{color:var(--t-green);font-variant-numeric:tabular-nums;padding-top:1px}
+.term-row .tm.old{color:var(--t-dim)}
+.term-row .hl{color:var(--t-text);text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14.5px;line-height:1.35;overflow-wrap:anywhere}
+.term-row .hl:hover{color:var(--t-amber);text-decoration:underline}
+.term-row .hl:visited{color:#b7c4be}
+.term-row .mt{grid-column:2;font-size:11.5px;color:var(--t-dim);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px}
+.term-row .src{color:var(--t-amber);text-transform:uppercase;letter-spacing:.05em}
+.term-row .tk{color:var(--t-blue);border:1px solid #2b3f5f;border-radius:4px;padding:0 5px}
+.term-row .rg{color:var(--t-dim);border:1px solid var(--t-line);border-radius:4px;padding:0 5px}
+.term-row .x{grid-row:1/3;grid-column:3;border:0;padding:0 4px;color:#4f5f58;font-size:15px;line-height:1}
+.term-row .x:hover{color:var(--t-red)}
+.term-empty{padding:28px 14px;text-align:center;color:var(--t-dim)}
+.term-foot{padding:9px 12px;color:var(--t-dim);font-size:11.5px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:var(--t-bg2)}
+.term-foot details{width:100%}
+.term-foot summary{color:var(--t-dim);font-size:11.5px}
+.term-foot table{font-size:11.5px;margin-top:6px}
+.term-foot td,.term-foot th{border-color:var(--t-line);color:var(--t-dim);padding:3px 6px}
+.term-foot .ok{color:var(--t-green)} .term-foot .ko{color:var(--t-red)}
+.term-row .src2{display:none;color:var(--t-amber);text-transform:uppercase;letter-spacing:.04em;font-size:11.5px;padding-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(min-width:760px){.term-row{grid-template-columns:50px 150px 1fr auto}.term-row .hl{grid-column:3}.term-row .mt{grid-column:3}.term-row .src2{display:block}.term-row .src1{display:none}.term-row .x{grid-column:4}}
 </style>
 </head>
 <body>
@@ -507,9 +561,9 @@ function alertsHTML(A){ const ic={good:'✓',warn:'!',crit:'!',info:'i'}; return
    Views
    ============================================================ */
 const VIEWS={};
-function route(){ if(!S) return; const R=reconcile(); if(R&&R.changed) save(); const h=(location.hash||'#resumen').slice(1); const v=VIEWS[h]?h:'resumen'; document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+v)); hideTip(); VIEWS[v]($('#app')); window.scrollTo(0,0); }
+function route(){ if(!S) return; const R=reconcile(); if(R&&R.changed) save(); const h=(location.hash||'#resumen').slice(1); const v=VIEWS[h]?h:'resumen'; document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+(v==='noticias'?'inversiones':v))); hideTip(); VIEWS[v]($('#app')); window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
-let resizeT; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
+let resizeT; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
 
 /* ---------- Resumen ---------- */
 VIEWS.resumen=(el)=>{
@@ -645,13 +699,13 @@ function wireMortPick(el){ el.querySelectorAll('.mPick').forEach(i=>i.onchange=e
 /* ---------- Inversiones ---------- */
 VIEWS.inversiones=(el)=>{
   const inv=S.accounts.filter(a=>['brokerage','retirement','kids'].includes(a.kind));
-  if(!inv.length){ el.innerHTML=`<div class="card empty">Añade tus cuentas de M1, 401(k), IRA o la de los niños en "Cuentas", y actualiza sus saldos cada mes.<br><br><button class="pri" id="addI">Añadir cuenta de inversión</button></div>`; $('#addI').onclick=()=>editAccount(null,'brokerage'); return; }
+  if(!inv.length){ el.innerHTML=invTabs('cartera')+`<div class="card empty">Añade tus cuentas de M1, 401(k), IRA o la de los niños en "Cuentas", y actualiza sus saldos cada mes.<br><br><button class="pri" id="addI">Añadir cuenta de inversión</button></div>`; $('#addI').onclick=()=>editAccount(null,'brokerage'); return; }
   const months=monthsRange(13); const pal=['var(--s1)','var(--s3)','var(--s7)','var(--s5)','var(--s4)','var(--s6)','var(--s2)','var(--s8)'];
   const total=inv.reduce((s,a)=>s+(balanceOf(a)||0),0);
   const contrib=inv.reduce((s,a)=>s+(a.contributed||0),0);
   const tot12=months.map(m=>{let any=false,s=0; inv.forEach(a=>{const b=balanceOf(a,monthEnd(m)); if(b!=null){any=true;s+=b;}}); return any?s:null;});
   const first=tot12.find(v=>v!=null);
-  el.innerHTML=`
+  el.innerHTML=invTabs('cartera')+`
    <div class="grid g4">
      <div class="card stat"><div class="lbl">Total invertido</div><div class="val">${fmt(total)}</div><div class="note">${inv.length} cuentas</div></div>
      ${['brokerage','retirement','kids'].map(k=>{const v=inv.filter(a=>a.kind===k).reduce((s,a)=>s+(balanceOf(a)||0),0); return v?`<div class="card stat"><div class="lbl">${KINDS[k].label}</div><div class="val">${fmt(v)}</div><div class="note">${total?Math.round(v/total*100):0}% del total</div></div>`:'';}).join('')}
@@ -667,6 +721,113 @@ VIEWS.inversiones=(el)=>{
   lineChart($('#cInv'),{labels:months.map(ymLabel),series:inv.map((a,i)=>({name:a.name,color:pal[i%8],values:months.map(m=>balanceOf(a,monthEnd(m)))}))});
   el.querySelectorAll('[data-snap]').forEach(b=>b.onclick=()=>addSnapshot(b.dataset.snap));
 };
+
+/* ---------- Noticias (terminal) ----------
+   Titulares públicos que recoge cada hora .github/workflows/noticias.yml (rama `news`).
+   La descarga es la misma para todo el mundo: tus posiciones nunca salen del dispositivo;
+   el filtro "Mi cartera" se hace aquí, en el navegador. */
+function newsURL(){ const h=location.hostname; let owner='Marcos86GO', repo='MyFinZen';
+  if(/\.github\.io$/i.test(h)){ owner=h.split('.')[0]; const seg=location.pathname.split('/').filter(Boolean)[0]; repo=seg&&!/\.html$/.test(seg)?seg:owner+'.github.io'; }
+  return `https://raw.githubusercontent.com/${owner}/${repo}/news/news.json`; }
+const NEWS={data:null,at:0,err:'',loading:null,q:'',tk:'all',limit:120};
+const NEWS_TABS=[['cartera','Mi cartera'],['global','Global'],['us','EE. UU.'],['eu','Europa'],['es','España'],['paises','Países']];
+const NEWS_AMBIG=new Set(['Target','Block','Strategy','Square','Booking','Arm','Shell','Visa','Southern Company','Meta']);
+const NEWS_WORDS=new Set(['NOW','MAIN','NET','LOW','COST','ARM','CAT','ALL','ARE','FOR','BIG','CAN','HAS','KEY','PLAY','HOOD','TAN','DIA','ONE','NEW','BIL','FAST','LIFE','REAL','SAFE','SEE','WELL','TEAM','TRUE','CASH','GOOD','BEST','OPEN','EAT','FUN','GO']);
+async function loadNews(force){
+  if(NEWS.loading) return NEWS.loading;
+  if(!force&&NEWS.data&&Date.now()-NEWS.at<10*60000) return NEWS.data;
+  NEWS.loading=(async()=>{ try{ const r=await fetch(newsURL()+(force?'?t='+Date.now():''),{cache:force?'reload':'default',credentials:'omit',referrerPolicy:'no-referrer'});
+      if(!r.ok) throw new Error(r.status===404?'todavía no hay noticias publicadas':'HTTP '+r.status);
+      const d=await r.json(); if(!d||!Array.isArray(d.items)) throw new Error('formato desconocido');
+      d.items=d.items.filter(x=>x&&typeof x.t==='string'&&/^https?:\/\//i.test(x.u||'')); NEWS.data=d; NEWS.at=Date.now(); NEWS.err=''; }
+    catch(e){ NEWS.err=navigator.onLine===false?'sin conexión':String(e.message||e); }
+    finally{ NEWS.loading=null; } return NEWS.data; })();
+  return NEWS.loading;
+}
+function newsSettings(){ const st=S.settings; st.newsTab=st.newsTab||'cartera'; st.newsCountries=Array.isArray(st.newsCountries)?st.newsCountries:['gb','de','mx','jp']; st.newsHide=Array.isArray(st.newsHide)?st.newsHide:[]; return st; }
+function myPositions(){ const m=new Map();
+  S.accounts.filter(a=>a.holdings&&a.holdings.rows).forEach(a=>a.holdings.rows.forEach(x=>{ const s=String(x.sym||'').toUpperCase().trim(); if(!s) return; const o=m.get(s)||{s,name:x.name||'',value:0}; o.value+=x.value||0; if(!o.name&&x.name) o.name=x.name; m.set(s,o); }));
+  return [...m.values()].sort((a,b)=>b.value-a.value); }
+function newsMatcher(pos,uni){ const U=new Map((uni||[]).map(u=>[u.s,u]));
+  return pos.map(p=>{ const u=U.get(p.s)||U.get(p.s.replace('-','.')); const rx=[]; const escR=t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    if(p.s.length>=3&&!NEWS_WORDS.has(p.s)) rx.push(new RegExp('(^|[^A-Za-z0-9$])\\$?'+escR(p.s)+'(?![A-Za-z0-9])'));
+    else if(p.s.length>=1) rx.push(new RegExp('\\$'+escR(p.s)+'(?![A-Za-z0-9])|\\('+escR(p.s)+'\\)'));
+    const fundy=n=>/\b(ETF|Fund|Trust|Shares|SPDR|iShares|Vanguard|Invesco|Schwab|Index|Portfolio)\b/i.test(n);
+    const base=n=>String(n||'').replace(/,?\s+(Inc|Incorporated|Corp|Corporation|Co|Company|Ltd|Limited|plc|PLC|SA|S\.A\.|AG|NV|N\.V\.|Holdings?|Group|Class [A-C]|Cl [A-C]|ADR|Common Stock|Ordinary Shares)\.?\b.*$/,'').trim();
+    const names=u&&u.a?u.a:u?(fundy(u.n)?[]:[u.n]):(p.name&&!fundy(p.name)?[base(p.name)]:[]);
+    names.filter(n=>(n.length>=4||/^[A-Z&]{2,}$/.test(n))&&!NEWS_AMBIG.has(n)).forEach(n=>rx.push(new RegExp('(^|[^\\p{L}])'+escR(n)+'(?![\\p{L}])','u')));
+    return {s:p.s,covered:!!u,rx}; }); }
+function newsAgo(iso){ const m=Math.max(0,Math.round((Date.now()-Date.parse(iso))/60000)); if(m<1) return 'ahora'; if(m<60) return 'hace '+m+' min'; const h=Math.round(m/60); if(h<48) return 'hace '+h+' h'; return 'hace '+Math.round(h/24)+' días'; }
+function newsTime(iso){ const d=new Date(iso), n=new Date(); const same=d.toDateString()===n.toDateString();
+  return same?d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); }
+function newsRows(st){ const D=NEWS.data; if(!D) return {rows:[],extra:''};
+  const hide=new Set(st.newsHide), q=NEWS.q.trim().toLowerCase(); const tab=st.newsTab; const R=new Map((D.regions||[]).map(r=>[r.id,r]));
+  let rows=[], extra='';
+  if(tab==='cartera'){
+    const pos=myPositions(); if(!pos.length) return {rows:[],extra:'',empty:'Sube el CSV de Holdings de M1 en <a href="#importar" style="color:var(--t-amber)">Importar</a> y aquí verás las noticias de cada una de tus posiciones.'};
+    const M=newsMatcher(pos,D.universe); const cnt={};
+    D.items.forEach(it=>{ const hits=M.filter(m=>(it.k||[]).includes(m.s)||m.rx.some(r=>r.test(it.t))).map(m=>m.s); if(hits.length){ hits.forEach(h=>cnt[h]=(cnt[h]||0)+1); rows.push(Object.assign({},it,{mine:hits})); } });
+    if(NEWS.tk!=='all'&&!pos.some(p=>p.s===NEWS.tk)) NEWS.tk='all';
+    if(NEWS.tk!=='all') rows=rows.filter(it=>it.mine.includes(NEWS.tk));
+    const unc=M.filter(m=>!m.covered).map(m=>m.s);
+    extra=`<div class="term-chips"><button class="chip ${NEWS.tk==='all'?'on':''}" data-tk="all">TODAS<i>${pos.length}</i></button>${pos.map(p=>`<button class="chip ${NEWS.tk===p.s?'on':''}" data-tk="${esc(p.s)}" title="${esc(p.name)}">${esc(p.s)}<i>${cnt[p.s]||0}</i></button>`).join('')}</div>`
+      +(unc.length?`<div class="term-note">Sin búsqueda propia: ${unc.map(esc).join(', ')}. Solo aparecen si salen en los titulares generales. Para cubrirlos, añádelos a <code>news/universe.json</code> en GitHub (es un archivo público: no incluyas nada que no quieras que se vea).</div>`:'');
+  } else if(tab==='paises'){
+    const C=(D.regions||[]).filter(r=>r.country); const sel=new Set(st.newsCountries.filter(c=>R.has(c)));
+    extra=`<div class="term-chips">${C.map(c=>`<button class="chip ${sel.has(c.id)?'on':''}" data-cty="${c.id}">${esc(c.name)}</button>`).join('')}</div>`;
+    rows=D.items.filter(it=>(it.r||[]).some(r=>sel.has(r))).map(it=>Object.assign({},it,{rg:(it.r||[]).filter(r=>sel.has(r))}));
+    if(!sel.size) return {rows:[],extra,empty:'Elige uno o varios países.'};
+  } else rows=D.items.filter(it=>(it.r||[]).includes(tab));
+  rows=rows.filter(it=>!hide.has(it.d)&&(!q||(it.t+' '+it.s+' '+(it.mine||[]).join(' ')).toLowerCase().includes(q)));
+  rows.sort((a,b)=>b.p.localeCompare(a.p)); return {rows,extra};
+}
+function newsRowHTML(it){ const old=Date.now()-Date.parse(it.p)>12*3600e3; const src=esc(it.s||it.d);
+  const tags=(it.mine||[]).map(s=>`<span class="tk">${esc(s)}</span>`).join('')+(it.rg||[]).map(r=>`<span class="rg">${esc(r.toUpperCase())}</span>`).join('');
+  return `<div class="term-row"><span class="tm ${old?'old':''}" title="${esc(new Date(it.p).toLocaleString('es-ES'))}">${newsTime(it.p)}</span><span class="src2" title="${src}">${src}</span>
+    <a class="hl" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">${esc(it.t)}</a>
+    <span class="mt"><span class="src src1">${src}</span><span>${esc(it.d)}</span><span>${newsAgo(it.p)}</span>${tags}</span>
+    <button class="x" data-hide="${esc(it.d)}" title="Ocultar ${src}" aria-label="Ocultar las noticias de ${src}">×</button></div>`; }
+function invTabs(cur){ return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cartera'?'pri':''}" href="#inversiones">Cartera</a><a class="btn ${cur==='noticias'?'pri':''}" href="#noticias">Noticias</a></div>`; }
+VIEWS.noticias=(el)=>{
+  const st=newsSettings(); if(!NEWS_TABS.some(t=>t[0]===st.newsTab)) st.newsTab='cartera';
+  el.innerHTML=invTabs('noticias')+`<div class="term" id="term"><div class="term-bar"><b>MYFINZEN&nbsp;NEWS</b><span class="st" id="tClock"></span><span class="st sp" id="tState"></span><button id="tRef" title="Actualizar (R)">↻ Actualizar</button></div>
+    <div class="term-tabs" role="tablist">${NEWS_TABS.map(([k,l],i)=>`<button role="tab" data-ntab="${k}" class="${st.newsTab===k?'on':''}"><span class="fk">${i+1}</span>${l}</button>`).join('')}</div>
+    <div class="term-cmd"><span class="pr">&gt;</span><input id="tQ" placeholder="Filtrar titulares o símbolos…" value="${esc(NEWS.q)}" autocomplete="off" spellcheck="false"></div>
+    <div id="tBody"></div><div class="term-foot" id="tFoot"></div></div>
+    <p class="muted" style="margin-top:10px">Titulares de medios de acceso libre; los enlaces llevan a la web que publica cada noticia. Se actualizan cada hora. Para ver tus posiciones, la app descarga la misma lista que cualquiera y la filtra en este dispositivo: nadie sabe qué tienes.</p>`;
+  const body=$('#tBody'), foot=$('#tFoot');
+  const clock=()=>{ const c=$('#tClock'); if(!c){ clearInterval(NEWS.clk); return; } c.textContent=new Date().toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}).toUpperCase(); };
+  clearInterval(NEWS.clk); clock(); NEWS.clk=setInterval(clock,30000);
+  const draw=()=>{ const D=NEWS.data; const stt=$('#tState');
+    if(!D){ stt.innerHTML=`<span class="term-live ${NEWS.loading?'old':'off'}"></span>${NEWS.loading?'CARGANDO…':'SIN DATOS'}`; body.innerHTML=`<div class="term-empty">${NEWS.loading?'Cargando titulares…':'No se pudieron cargar las noticias ('+esc(NEWS.err)+').'+(NEWS.err.includes('todavía')?'<br>La tarea de GitHub "Noticias" aún no se ha ejecutado.':'')}</div>`; foot.innerHTML=''; return; }
+    const age=Date.now()-Date.parse(D.updated); const stale=age>6*3600e3;
+    stt.innerHTML=`<span class="term-live ${NEWS.err?'off':stale?'old':''}"></span>${NEWS.err?'SIN CONEXIÓN · ':''}ACT. ${newsAgo(D.updated).toUpperCase()}`;
+    const {rows,extra,empty}=newsRows(st);
+    body.innerHTML=(stale?`<div class="term-note warn">Las noticias tienen ${newsAgo(D.updated)}. Puede que GitHub haya pausado la tarea: en el repositorio, Actions → Noticias → Enable workflow / Run workflow.</div>`:'')+extra
+      +(empty?`<div class="term-empty">${empty}</div>`:rows.length?rows.slice(0,NEWS.limit).map(newsRowHTML).join('')+(rows.length>NEWS.limit?`<div class="term-empty" style="padding:12px"><button id="tMore">Ver ${Math.min(120,rows.length-NEWS.limit)} más (${rows.length-NEWS.limit} restantes)</button></div>`:''):`<div class="term-empty">${NEWS.q?'Ningún titular coincide con el filtro.':st.newsTab==='cartera'&&NEWS.tk!=='all'?'Sin noticias recientes de '+esc(NEWS.tk)+'.':'Sin titulares en esta sección ahora mismo.'}</div>`);
+    const F=D.feeds||[]; const okN=F.filter(f=>f.ok).length;
+    foot.innerHTML=`<span>${rows.length} titulares</span><span>${okN}/${F.length} fuentes activas</span><span class="hide-sm">Atajos: 1–6 pestañas · / filtrar · R actualizar</span>
+      <details><summary>Estado de las fuentes${st.newsHide.length?` · ${st.newsHide.length} ocultas`:''}</summary>
+      ${st.newsHide.length?`<p style="margin:6px 0">Ocultas: ${st.newsHide.map(d=>`<button class="sm" data-unhide="${esc(d)}">${esc(d)} ✕</button>`).join(' ')}</p>`:''}
+      <div class="tbl"><table><tbody>${F.map(f=>`<tr><td class="${f.ok?'ok':'ko'}">${f.ok?'●':'○'}</td><td>${esc(f.id)}</td><td>${esc((D.regions.find(r=>r.id===f.region)||{}).name||f.region)}</td><td class="n">${f.n}</td><td>${esc(f.err||'')}</td></tr>`).join('')}</tbody></table></div>
+      ${D.tickers?`<p style="margin:6px 0 0">Búsquedas por símbolo en la última hora: ${D.tickers.ok}/${D.tickers.queried}${D.tickers.stopped?' · '+esc(D.tickers.stopped):''}. Cada símbolo se renueva cada ~4 horas.</p>`:''}</details>`;
+    body.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{ NEWS.tk=b.dataset.tk; NEWS.limit=120; draw(); });
+    body.querySelectorAll('[data-cty]').forEach(b=>b.onclick=()=>{ const c=b.dataset.cty; st.newsCountries=st.newsCountries.includes(c)?st.newsCountries.filter(x=>x!==c):st.newsCountries.concat(c); save(); draw(); });
+    body.querySelectorAll('[data-hide]').forEach(b=>b.onclick=()=>{ const d=b.dataset.hide; if(!d) return; if(!st.newsHide.includes(d)) st.newsHide.push(d); save(); draw(); toast('Ocultado '+d+'. Lo recuperas en "Estado de las fuentes".'); });
+    foot.querySelectorAll('[data-unhide]').forEach(b=>b.onclick=()=>{ st.newsHide=st.newsHide.filter(x=>x!==b.dataset.unhide); save(); draw(); });
+    const more=$('#tMore'); if(more) more.onclick=()=>{ NEWS.limit+=120; draw(); };
+  };
+  el.querySelectorAll('[data-ntab]').forEach(b=>b.onclick=()=>{ st.newsTab=b.dataset.ntab; NEWS.limit=120; save(); el.querySelectorAll('[data-ntab]').forEach(x=>x.classList.toggle('on',x===b)); draw(); });
+  const qi=$('#tQ'); let qt; qi.oninput=()=>{ clearTimeout(qt); qt=setTimeout(()=>{ NEWS.q=qi.value; NEWS.limit=120; draw(); },120); };
+  const refresh=async(force)=>{ const b=$('#tRef'); if(b) b.disabled=true; const pr=loadNews(force); draw(); await pr; if($('#tBody')===body){ draw(); if(b) b.disabled=false; } };
+  $('#tRef').onclick=()=>refresh(true);
+  refresh(false);
+};
+document.addEventListener('keydown',e=>{ if(!S||location.hash!=='#noticias'||e.metaKey||e.ctrlKey||e.altKey) return; const t=e.target; const typing=t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable);
+  if(e.key==='Escape'&&t&&t.id==='tQ'){ t.blur(); return; } if(typing) return;
+  if(/^[1-6]$/.test(e.key)){ const b=document.querySelectorAll('[data-ntab]')[+e.key-1]; if(b){ b.click(); e.preventDefault(); } }
+  else if(e.key==='/'){ const q=$('#tQ'); if(q){ q.focus(); e.preventDefault(); } }
+  else if(e.key==='r'||e.key==='R'){ const b=$('#tRef'); if(b&&!b.disabled){ b.click(); e.preventDefault(); } } });
 
 /* ---------- Alquiler ---------- */
 function rentalPL(p){

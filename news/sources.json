@@ -1,0 +1,531 @@
+{
+  "_nota": "Fuentes públicas y gratuitas de la terminal de noticias. Las búsquedas 'gn' son de Google News (agrega a muchos medios; se filtran los de pago con 'paywall'). Si una fuente falla, el resto sigue funcionando y se ve en 'Estado de las fuentes' dentro de la app.",
+  "editions": {
+    "US": {
+      "hl": "en-US",
+      "gl": "US",
+      "ceid": "US:en"
+    },
+    "GB": {
+      "hl": "en-GB",
+      "gl": "GB",
+      "ceid": "GB:en"
+    },
+    "ES": {
+      "hl": "es",
+      "gl": "ES",
+      "ceid": "ES:es"
+    },
+    "MX": {
+      "hl": "es-419",
+      "gl": "MX",
+      "ceid": "MX:es-419"
+    },
+    "AR": {
+      "hl": "es-419",
+      "gl": "AR",
+      "ceid": "AR:es-419"
+    },
+    "CO": {
+      "hl": "es-419",
+      "gl": "CO",
+      "ceid": "CO:es-419"
+    },
+    "CL": {
+      "hl": "es-419",
+      "gl": "CL",
+      "ceid": "CL:es-419"
+    },
+    "BR": {
+      "hl": "pt-BR",
+      "gl": "BR",
+      "ceid": "BR:pt-419"
+    },
+    "PT": {
+      "hl": "pt-PT",
+      "gl": "PT",
+      "ceid": "PT:pt-150"
+    },
+    "CA": {
+      "hl": "en-CA",
+      "gl": "CA",
+      "ceid": "CA:en"
+    },
+    "IN": {
+      "hl": "en-IN",
+      "gl": "IN",
+      "ceid": "IN:en"
+    },
+    "AU": {
+      "hl": "en-AU",
+      "gl": "AU",
+      "ceid": "AU:en"
+    }
+  },
+  "regions": [
+    {
+      "id": "global",
+      "name": "Global"
+    },
+    {
+      "id": "us",
+      "name": "EE. UU."
+    },
+    {
+      "id": "eu",
+      "name": "Europa"
+    },
+    {
+      "id": "es",
+      "name": "España"
+    },
+    {
+      "id": "gb",
+      "name": "Reino Unido",
+      "country": true
+    },
+    {
+      "id": "de",
+      "name": "Alemania",
+      "country": true
+    },
+    {
+      "id": "fr",
+      "name": "Francia",
+      "country": true
+    },
+    {
+      "id": "it",
+      "name": "Italia",
+      "country": true
+    },
+    {
+      "id": "pt",
+      "name": "Portugal",
+      "country": true
+    },
+    {
+      "id": "ca",
+      "name": "Canadá",
+      "country": true
+    },
+    {
+      "id": "mx",
+      "name": "México",
+      "country": true
+    },
+    {
+      "id": "br",
+      "name": "Brasil",
+      "country": true
+    },
+    {
+      "id": "ar",
+      "name": "Argentina",
+      "country": true
+    },
+    {
+      "id": "co",
+      "name": "Colombia",
+      "country": true
+    },
+    {
+      "id": "cl",
+      "name": "Chile",
+      "country": true
+    },
+    {
+      "id": "jp",
+      "name": "Japón",
+      "country": true
+    },
+    {
+      "id": "cn",
+      "name": "China y Hong Kong",
+      "country": true
+    },
+    {
+      "id": "in",
+      "name": "India",
+      "country": true
+    },
+    {
+      "id": "kr",
+      "name": "Corea del Sur",
+      "country": true
+    },
+    {
+      "id": "au",
+      "name": "Australia",
+      "country": true
+    }
+  ],
+  "feeds": [
+    {
+      "id": "bbc-business",
+      "region": "global",
+      "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+      "source": "BBC"
+    },
+    {
+      "id": "guardian-business",
+      "region": "global",
+      "url": "https://www.theguardian.com/business/rss",
+      "source": "The Guardian"
+    },
+    {
+      "id": "cnbc-world",
+      "region": "global",
+      "url": "https://www.cnbc.com/id/100727362/device/rss/rss.html",
+      "source": "CNBC"
+    },
+    {
+      "id": "gn-global",
+      "region": "global",
+      "gn": {
+        "ed": "US",
+        "q": "\"global markets\" OR \"world stocks\" OR \"global stocks\" OR \"emerging markets\""
+      }
+    },
+    {
+      "id": "gn-global-macro",
+      "region": "global",
+      "gn": {
+        "ed": "GB",
+        "q": "IMF OR \"central banks\" OR \"oil prices\" OR \"bond yields\""
+      }
+    },
+    {
+      "id": "cnbc-top",
+      "region": "us",
+      "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "source": "CNBC"
+    },
+    {
+      "id": "cnbc-investing",
+      "region": "us",
+      "url": "https://www.cnbc.com/id/15839069/device/rss/rss.html",
+      "source": "CNBC"
+    },
+    {
+      "id": "yahoo-finance",
+      "region": "us",
+      "url": "https://finance.yahoo.com/news/rssindex",
+      "source": "Yahoo Finance"
+    },
+    {
+      "id": "nasdaq-markets",
+      "region": "us",
+      "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",
+      "source": "Nasdaq"
+    },
+    {
+      "id": "investing-us",
+      "region": "us",
+      "url": "https://www.investing.com/rss/news_25.rss",
+      "source": "Investing.com"
+    },
+    {
+      "id": "gn-us",
+      "region": "us",
+      "gn": {
+        "ed": "US",
+        "q": "\"stock market\" OR \"Wall Street\" OR \"S&P 500\" OR Nasdaq OR \"Dow Jones\""
+      }
+    },
+    {
+      "id": "gn-us-fed",
+      "region": "us",
+      "gn": {
+        "ed": "US",
+        "q": "\"Federal Reserve\" OR Treasury yields OR inflation OR jobs report"
+      }
+    },
+    {
+      "id": "cnbc-europe",
+      "region": "eu",
+      "url": "https://www.cnbc.com/id/19794221/device/rss/rss.html",
+      "source": "CNBC"
+    },
+    {
+      "id": "euronews-business",
+      "region": "eu",
+      "url": "https://www.euronews.com/rss?level=vertical&name=business",
+      "source": "Euronews"
+    },
+    {
+      "id": "dw-business",
+      "region": "eu",
+      "url": "https://rss.dw.com/rdf/rss-en-bus",
+      "source": "DW"
+    },
+    {
+      "id": "gn-eu",
+      "region": "eu",
+      "gn": {
+        "ed": "GB",
+        "q": "\"European stocks\" OR \"STOXX 600\" OR \"European markets\" OR \"euro zone\""
+      }
+    },
+    {
+      "id": "gn-eu-ecb",
+      "region": "eu",
+      "gn": {
+        "ed": "GB",
+        "q": "ECB OR \"European Central Bank\" OR Lagarde"
+      }
+    },
+    {
+      "id": "eleconomista-mercados",
+      "region": "es",
+      "url": "https://www.eleconomista.es/rss/rss-mercados.php",
+      "source": "elEconomista.es"
+    },
+    {
+      "id": "europapress-economia",
+      "region": "es",
+      "url": "https://www.europapress.es/rss/rss.aspx?ch=00136",
+      "source": "Europa Press"
+    },
+    {
+      "id": "investing-es",
+      "region": "es",
+      "url": "https://es.investing.com/rss/news_25.rss",
+      "source": "Investing.com España"
+    },
+    {
+      "id": "20minutos-economia",
+      "region": "es",
+      "url": "https://www.20minutos.es/rss/economia/",
+      "source": "20minutos"
+    },
+    {
+      "id": "gn-es",
+      "region": "es",
+      "gn": {
+        "ed": "ES",
+        "q": "Ibex OR \"Bolsa española\" OR \"Bolsa de Madrid\" OR mercados"
+      }
+    },
+    {
+      "id": "gn-es-eco",
+      "region": "es",
+      "gn": {
+        "ed": "ES",
+        "q": "Banco de España OR prima de riesgo OR Euríbor OR CNMV"
+      }
+    },
+    {
+      "id": "gn-gb",
+      "region": "gb",
+      "gn": {
+        "ed": "GB",
+        "q": "FTSE OR \"London stocks\" OR \"Bank of England\" OR gilts"
+      }
+    },
+    {
+      "id": "gn-de",
+      "region": "de",
+      "gn": {
+        "ed": "GB",
+        "q": "DAX OR \"German stocks\" OR Bundesbank OR \"German economy\""
+      }
+    },
+    {
+      "id": "gn-fr",
+      "region": "fr",
+      "gn": {
+        "ed": "GB",
+        "q": "\"CAC 40\" OR \"French stocks\" OR \"French economy\""
+      }
+    },
+    {
+      "id": "gn-it",
+      "region": "it",
+      "gn": {
+        "ed": "GB",
+        "q": "\"FTSE MIB\" OR \"Italian stocks\" OR \"Italian bonds\" OR \"Italian economy\""
+      }
+    },
+    {
+      "id": "gn-pt",
+      "region": "pt",
+      "gn": {
+        "ed": "PT",
+        "q": "PSI OR \"Bolsa de Lisboa\" OR Euronext Lisboa OR economia portuguesa"
+      }
+    },
+    {
+      "id": "gn-ca",
+      "region": "ca",
+      "gn": {
+        "ed": "CA",
+        "q": "TSX OR \"Bank of Canada\" OR \"Canadian stocks\" OR loonie"
+      }
+    },
+    {
+      "id": "gn-mx",
+      "region": "mx",
+      "gn": {
+        "ed": "MX",
+        "q": "BMV OR \"Bolsa Mexicana\" OR \"peso mexicano\" OR Banxico"
+      }
+    },
+    {
+      "id": "gn-br",
+      "region": "br",
+      "gn": {
+        "ed": "BR",
+        "q": "Ibovespa OR B3 OR \"Banco Central\" OR Selic"
+      }
+    },
+    {
+      "id": "gn-ar",
+      "region": "ar",
+      "gn": {
+        "ed": "AR",
+        "q": "Merval OR \"riesgo país\" OR \"bonos argentinos\" OR BCRA"
+      }
+    },
+    {
+      "id": "gn-co",
+      "region": "co",
+      "gn": {
+        "ed": "CO",
+        "q": "Colcap OR \"Bolsa de Valores de Colombia\" OR \"Banco de la República\" OR \"dólar en Colombia\""
+      }
+    },
+    {
+      "id": "gn-cl",
+      "region": "cl",
+      "gn": {
+        "ed": "CL",
+        "q": "IPSA OR \"Bolsa de Santiago\" OR \"Banco Central de Chile\" OR cobre"
+      }
+    },
+    {
+      "id": "gn-jp",
+      "region": "jp",
+      "gn": {
+        "ed": "US",
+        "q": "Nikkei OR \"Japanese stocks\" OR \"Bank of Japan\" OR yen"
+      }
+    },
+    {
+      "id": "gn-cn",
+      "region": "cn",
+      "gn": {
+        "ed": "US",
+        "q": "\"Hang Seng\" OR \"Chinese stocks\" OR \"Shanghai Composite\" OR yuan OR PBOC"
+      }
+    },
+    {
+      "id": "gn-in",
+      "region": "in",
+      "gn": {
+        "ed": "IN",
+        "q": "Sensex OR Nifty OR RBI OR \"Indian stocks\""
+      }
+    },
+    {
+      "id": "gn-kr",
+      "region": "kr",
+      "gn": {
+        "ed": "US",
+        "q": "KOSPI OR \"South Korean stocks\" OR \"Bank of Korea\" OR won"
+      }
+    },
+    {
+      "id": "gn-au",
+      "region": "au",
+      "gn": {
+        "ed": "AU",
+        "q": "ASX OR \"Reserve Bank of Australia\" OR \"Australian shares\""
+      }
+    }
+  ],
+  "paywall": [
+    "wsj.com",
+    "ft.com",
+    "bloomberg.com",
+    "barrons.com",
+    "marketwatch.com",
+    "economist.com",
+    "reuters.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "seekingalpha.com",
+    "investors.com",
+    "fortune.com",
+    "businessinsider.com",
+    "forbes.com",
+    "theinformation.com",
+    "nikkei.com",
+    "asia.nikkei.com",
+    "theatlantic.com",
+    "newyorker.com",
+    "telegraph.co.uk",
+    "thetimes.co.uk",
+    "thetimes.com",
+    "spectator.co.uk",
+    "independent.co.uk/premium",
+    "handelsblatt.com",
+    "faz.net",
+    "sueddeutsche.de",
+    "zeit.de",
+    "spiegel.de",
+    "welt.de",
+    "wiwo.de",
+    "boersen-zeitung.de",
+    "lesechos.fr",
+    "lefigaro.fr",
+    "lemonde.fr",
+    "liberation.fr",
+    "challenges.fr",
+    "latribune.fr",
+    "ilsole24ore.com",
+    "corriere.it",
+    "repubblica.it",
+    "milanofinanza.it",
+    "expansion.com",
+    "elpais.com",
+    "cincodias.elpais.com",
+    "elmundo.es",
+    "elconfidencial.com",
+    "abc.es",
+    "lavanguardia.com",
+    "elperiodico.com",
+    "globeandmail.com",
+    "nationalpost.com",
+    "financialpost.com",
+    "theaustralian.com.au",
+    "afr.com",
+    "smh.com.au",
+    "scmp.com",
+    "caixinglobal.com",
+    "economictimes.indiatimes.com/prime",
+    "livemint.com",
+    "business-standard.com",
+    "folha.uol.com.br",
+    "estadao.com.br",
+    "valor.globo.com",
+    "oglobo.globo.com",
+    "clarin.com",
+    "lanacion.com.ar",
+    "elfinanciero.com.mx",
+    "eltiempo.com",
+    "elmercurio.com",
+    "df.cl",
+    "publico.pt",
+    "expresso.pt",
+    "observador.pt",
+    "japantimes.co.jp",
+    "koreaherald.com/premium",
+    "morningstar.com/premium",
+    "thestreet.com/pro",
+    "cnbc.com/pro",
+    "investing.com/pro",
+    "fool.com/premium",
+    "zacks.com/premium"
+  ]
+}

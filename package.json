@@ -4,7 +4,7 @@
   "description": "MyFinZen — pruebas end-to-end (la app no necesita build)",
   "scripts": {
     "fixtures": "python3 tests/make-fixtures.py",
-    "test": "node tests/e2e.js"
+    "test": "node tests/news.mjs && node tests/e2e.js"
   },
   "devDependencies": {
     "playwright": "^1.47.0"

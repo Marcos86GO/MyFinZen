@@ -22,7 +22,8 @@ Todo vive en `index.html` (≈1.700 líneas: HTML, CSS y un único `<script>`). 
 | Conciliación | `reconcile()` (se ejecuta en cada `route()`): empareja pagos de tarjeta y transferencias entre cuentas propias (mismo importe, ±días) y cuotas de hipoteca pagadas desde el banco (importe exacto de cuota+escrow+extra o nombre de la entidad); marca `t.rec` y ajusta la categoría salvo `t.manual`. Comprueba pagos a tarjetas no importadas, cuotas que faltan o no coinciden, saldo de la hipoteca entre extractos, saldo vs. movimientos en bancos y tarjetas, y duplicados CSV/PDF. Resultado en `REC` (`recHTML`, `wireRec`); lo ignorado va a `settings.recIgnore`. Las hipotecas cuentan en `cashflowByMonth` como cuota fija mensual (`fixedMortgages`, `mortMonthly`) |
 | Gráficos | SVG hechos a mano: `lineChart`, `barChart`, `hbars`, `legend`, con tooltips. Paleta en variables CSS `--s1..--s8` (modo claro/oscuro) |
 | Avisos | `computeAlerts()` |
-| Vistas | `VIEWS.<nombre>(el)` + `route()` por hash: `resumen`, `flujo`, `hipotecas`, `inversiones`, `alquiler`, `cuentas`, `importar`, `impuestos`, `claude`, `ajustes` |
+| Vistas | `VIEWS.<nombre>(el)` + `route()` por hash: `resumen`, `flujo`, `hipotecas`, `inversiones`, `noticias` (pestaña de Inversiones; el menú resalta Inversiones), `alquiler`, `cuentas`, `importar`, `impuestos`, `claude`, `ajustes` |
+| Noticias | `loadNews()` descarga `news.json` de la rama `news` (`newsURL()`, raw.githubusercontent.com) y lo guarda solo en memoria (`NEWS`). `newsRows()` filtra por pestaña; "Mi cartera" cruza en el navegador las posiciones (`myPositions()`) con `it.k` (símbolos buscados por el servidor) y con `newsMatcher()` (símbolo o nombre en el titular). Ajustes: `settings.newsTab`, `newsCountries`, `newsHide` (dominios ocultos). Atajos 1–6, `/`, `R` |
 | Importar | CSV de banco/tarjeta (`handleCSV`, detección de columnas y signo), CSV de Holdings (`isHoldingsCSV`, `parseHoldings`), PDF (`pdfText` con pdf.js → `parseStatement` → hipoteca / genérico con `parseTxLines` / fiscal con `detectTaxForm` + `localTaxFields`). Cola de PDFs: `queuePDF`/`pdfDone` |
 | Claude en PDFs | `redact()` (oculta cuentas, SSN, EIN, teléfonos, emails, direcciones y nombres de `settings.hideNames`) → `claudeExtract()` (JSON estructurado). Siempre pide confirmación salvo que `settings.autoClaude` esté activo |
 | Impuestos | `TAXC` (tramos, deducción estándar, SALT, LTCG, CTC por año y estado civil), `CA_STD`, `computeTaxes(year, adj)`, `rentalSchedule` (Schedule E), `expectedDocs` |
@@ -43,15 +44,23 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 - En IndexedDB solo se guarda `vault` (cifrado). Nada en claro, nunca. `persist()` vuelve a cifrar `S` completo.
 - Bloqueo: `lockNow()` borra `S` y la DK de la memoria. Hay bloqueo automático por inactividad (`settings.lockMin`) y al volver de segundo plano.
 - La clave de API vive en `S.secret` y se excluye de las copias (`encryptState`).
-- CSP en `<meta>`: solo `'self'` y `https://api.anthropic.com`. Si añades un servicio (por ejemplo Dropbox), amplía `connect-src` solo con sus dominios exactos.
+- CSP en `<meta>`: solo `'self'`, `https://api.anthropic.com` y `https://raw.githubusercontent.com` (titulares públicos de la rama `news`). Si añades un servicio (por ejemplo Dropbox), amplía `connect-src` solo con sus dominios exactos.
 - No añadas analítica, CDNs ni dependencias remotas. pdf.js está copiado en `vendor/`.
+
+## Noticias (servidor)
+
+- `.github/workflows/noticias.yml` corre cada hora (y al cambiar `news/**`): `node news/build.mjs out/news.json prev.json` y reescribe la rama `news` con un solo commit.
+- `news/sources.json`: regiones, feeds RSS directos y búsquedas de Google News por edición (`gn`), y la lista `paywall` (dominio o dominio/ruta). Solo medios de acceso libre.
+- `news/universe.json`: lista **pública** de símbolos `{s,t,n,a}`; cada ejecución busca una cuarta parte (todo en la primera). Nunca añadas aquí las posiciones del usuario por iniciativa propia: es un repo público.
+- `news.json`: `{v,updated,regions[],universe[],feeds[{id,region,ok,n,err}],tickers{},items[{t,u,s,d,p,r?,k?}]}`. Si ninguna fuente responde, la tarea falla y se conserva la versión anterior.
+- Pruebas sin red: `node tests/news.mjs`.
 
 ## Probar
 
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 28 pruebas end-to-end (passkey con autenticador virtual PRF, API de Claude simulada)
+npm test           # 8 pruebas del recolector + 36 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900) y revísalas.
