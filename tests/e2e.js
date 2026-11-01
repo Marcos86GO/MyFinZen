@@ -119,12 +119,28 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.setInputFiles('#fAll',[mem('Checking6789_activity_2026-11-15.csv','Posting Date,Description,Amount\n11/03/2026,TRADER JOES #12,-45.10\n11/05/2026,ACME CORP PAYROLL,8000.00\n'),fx('bank.pdf'),fx('mortgage.pdf'),fx('w2.pdf'),mem('MyBankDownload.csv','Date,Description,Amount\n11/02/2026,SOMETHING,-5\n'),fx('Holdings-Oct-30-2026.csv')]);
   await pg.waitForFunction(()=>BATCH&&!BATCH.running,null,{timeout:30000}); await pg.waitForTimeout(200);
   const bt=await pg.evaluate(()=>Object.fromEntries(BATCH.res.map(r=>[r.name,r.status+(r.acc?':'+acc(r.acc).name:'')+(r.added!=null?':'+r.added:'')])));
-  ok(bt['Checking6789_activity_2026-11-15.csv']==='ok:checking:2'&&/^ok:checking/.test(bt['bank.pdf'])&&bt['mortgage.pdf']==='ok:Hipoteca'&&bt['w2.pdf']==='skip'&&bt['MyBankDownload.csv']==='review'&&/^ok:CuentaSecretaXYZ/.test(bt['Holdings-Oct-30-2026.csv']),'importación por lotes: cada archivo a su cuenta ('+JSON.stringify(bt)+')');
+  ok(bt['Checking6789_activity_2026-11-15.csv']==='ok:checking:2'&&/^ok:checking/.test(bt['bank.pdf'])&&/^ok:.*Hipoteca/.test(bt['mortgage.pdf'])&&bt['w2.pdf']==='skip'&&bt['MyBankDownload.csv']==='review'&&/^ok:CuentaSecretaXYZ/.test(bt['Holdings-Oct-30-2026.csv']),'importación por lotes: cada archivo a su cuenta ('+JSON.stringify(bt)+')');
   if(process.env.SHOTS){ await pg.$eval('#batchOut',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/lote-movil.png'}); }
   await pg.click('#batchOut [data-brev]'); await pg.waitForTimeout(400); ok(/MyBankDownload/.test(await pg.$eval('#impOut h2',e=>e.innerText)),'revisar un archivo del lote');
   await pg.selectOption('#mAcc',{label:'savings'}); await pg.click('#mGo'); await pg.waitForTimeout(200);
   await pg.setInputFiles('#fAll',[mem('MyBankDownload (2).csv','Date,Description,Amount\n11/09/2026,OTHER THING,-7\n')]); await pg.waitForFunction(()=>BATCH&&!BATCH.running,null,{timeout:10000});
   ok(await pg.evaluate(()=>BATCH.res[0].status==='ok'&&acc(BATCH.res[0].acc).name==='savings'),'aprende a qué cuenta va cada archivo');
+  // Extractos con la estructura de bancos reales (datos inventados): crea las cuentas y lo concilia todo
+  const nAcc=await pg.evaluate(()=>S.accounts.length);
+  await pg.setInputFiles('#fAll',['bofa_card_aug.pdf','bofa_card_sep.pdf','bofa_checking.pdf','bofa_savings.pdf','m1_cash.pdf','empower_q3.pdf','wf_mortgage.pdf'].map(fx).concat([{name:'copia.pdf',mimeType:'application/pdf',buffer:fs.readFileSync(path.join(FX,'wf_mortgage.pdf'))}]));
+  await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res.length===8,null,{timeout:60000}); await pg.waitForTimeout(200);
+  const rb=await pg.evaluate(()=>{ const by=n=>BATCH.res.find(r=>r.name===n); const A=n=>{const r=by(n);return r&&r.acc?acc(r.acc):null;}; const R=reconcile();
+    return {st:BATCH.res.map(r=>r.status).join(','),created:BATCH.res.filter(r=>r.created).length,card:A('bofa_card_sep.pdf'),same:A('bofa_card_aug.pdf')&&A('bofa_card_aug.pdf').id===A('bofa_card_sep.pdf').id,
+      chk:A('bofa_checking.pdf'),sav:A('bofa_savings.pdf'),m1:A('m1_cash.pdf'),emp:A('empower_q3.pdf'),wf:A('wf_mortgage.pdf'),dupSkip:by('copia.pdf').status==='skip',
+      cardTx:S.tx.filter(t=>t.acc===A('bofa_card_sep.pdf').id).map(t=>t.date+' '+t.amount).sort().join(','),cardBal:lastSnap(A('bofa_card_sep.pdf').id).value,
+      payRec:S.tx.some(t=>t.acc===A('bofa_checking.pdf').id&&t.amount===-2000&&t.rec&&t.rec.type==='card'),xfer:S.tx.some(t=>t.acc===A('bofa_checking.pdf').id&&t.amount===-1500&&t.rec&&t.rec.type==='xfer'),
+      mort:S.tx.some(t=>t.acc===A('bofa_checking.pdf').id&&t.amount===-3000&&t.rec&&t.rec.type==='mortgage'),
+      bal:R.issues.filter(i=>/^bal:/.test(i.key)&&[A('bofa_card_sep.pdf').id,A('bofa_checking.pdf').id].some(id=>i.t.includes(acc(id).name))).length,n:S.accounts.length}; });
+  ok(rb.st==='ok,ok,ok,ok,ok,ok,ok,skip'&&rb.created===6&&rb.n===nAcc+6&&rb.same&&rb.dupSkip,'extractos reales: crea cada cuenta una vez y salta el archivo repetido ('+rb.st+')');
+  ok(rb.card.kind==='credit'&&rb.card.last4==='4321'&&/BofA Visa Signature ···4321/.test(rb.card.name)&&rb.chk.kind==='cash'&&rb.chk.last4==='9876'&&rb.sav.kind==='cash'&&rb.m1.kind==='cash'&&rb.m1.last4==='7777'&&rb.emp.kind==='retirement'&&rb.wf.kind==='mortgage'&&rb.wf.payment===2500&&rb.wf.escrow===500,
+    'tipo, nombre y últimos 4 dígitos de cada cuenta ('+[rb.card.name,rb.chk.name,rb.sav.name,rb.m1.name,rb.emp.name,rb.wf.name].join(' | ')+')');
+  ok(rb.cardTx==='2026-07-21 -2000,2026-08-06 -250,2026-08-11 -1000,2026-08-20 2000'&&rb.cardBal===1250&&rb.bal===0,'tarjeta: fecha de anotación, importe en la línea siguiente y saldo que cuadra ('+rb.cardTx+')');
+  ok(rb.payRec&&rb.xfer&&rb.mort,'concilia pago de tarjeta, transferencia y cuota de Wells Fargo');
   // Botón "Importar" de una cuenta: el archivo va a esa cuenta aunque el nombre no diga nada
   await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
   const svId=await pg.evaluate(()=>S.accounts.find(a=>a.name==='savings').id);

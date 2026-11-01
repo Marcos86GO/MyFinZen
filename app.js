@@ -113,7 +113,7 @@ function sanitizeState(st){
     return x; });
   o.snapshots=arr(o.snapshots).map(s=>{ s=obj(s); const x={id:cleanId(s.id)||uid(),acc:cleanId(s.acc),date:isoDate(s.date),value:numStrict(s.value)}; ['rate','pi','extra','escrow'].forEach(k=>{ if(s[k]!=null) x[k]=numStrict(s[k]); }); return x; }).filter(s=>s.acc&&s.date&&s.value!=null);
   o.tx=arr(o.tx).map(t=>{ t=obj(t); const x={id:cleanId(t.id)||uid(),date:isoDate(t.date),desc:str(t.desc,300),amount:numStrict(t.amount),cat:str(t.cat,60)||'Otros gastos',acc:t.acc?cleanId(t.acc):null,src:['csv','pdf','manual'].includes(t.src)?t.src:''};
-    if(t.manual) x.manual=true;
+    if(t.manual) x.manual=true; if(t.st){ const st=cleanId(t.st); if(st) x.st=st; }
     if(t.rec&&typeof t.rec==='object'&&['card','xfer','mortgage'].includes(t.rec.type)){ const r={type:t.rec.type,acc:cleanId(t.rec.acc)}; if(t.rec.with) r.with=cleanId(t.rec.with); if(t.rec.prev) r.prev=str(t.rec.prev,60); if(t.rec.cat) r.cat=str(t.rec.cat,60); x.rec=r; }
     return x; }).filter(t=>t.date&&t.amount!=null);
   o.rules=arr(o.rules).map(r=>({pattern:str(obj(r).pattern,200),cat:str(obj(r).cat,60)})).filter(r=>{ if(!r.pattern||!r.cat) return false; try{ new RegExp(r.pattern,'i'); return true; }catch(e){ return false; } });
@@ -333,7 +333,7 @@ function reconcile(){
   const groups={}; S.tx.forEach(t=>{ if(!t.acc) return; const k=t.acc+'|'+Math.round(t.amount*100); (groups[k]=groups[k]||[]).push(t); });
   const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z]/g,'').slice(0,12);
   for(const g of Object.values(groups)){ if(g.length<2) continue; g.sort((a,b)=>a.date.localeCompare(b.date));
-    for(let i=0;i<g.length;i++) for(let j=i+1;j<g.length;j++){ const x=g[i], y=g[j]; if(daysBetween(x.date,y.date)>3) break;
+    for(let i=0;i<g.length;i++) for(let j=i+1;j<g.length;j++){ const x=g[i], y=g[j]; if(daysBetween(x.date,y.date)>3) break; if(x.st&&x.st===y.st) continue;
       if(!((x.src&&y.src&&x.src!==y.src&&x.src!=='manual'&&y.src!=='manual')||(x.date===y.date&&norm(x.desc)===norm(y.desc)))) continue;
       const dupe=(y.src==='pdf'||x.src!=='pdf')?y:x;
       add('dup:'+[x.id,y.id].sort().join(':'),'warn',L(`<b>Posible movimiento duplicado</b> en ${esc(accName(x.acc))}: ${fmt(x.amount,2)} el ${dLabel(x.date)}${x.date!==y.date?' y el '+dLabel(y.date):''} (${esc(x.desc)} / ${esc(y.desc)}).`,`<b>Possible duplicate transaction</b> in ${esc(accName(x.acc))}: ${fmt(x.amount,2)} on ${dLabel(x.date)}${x.date!==y.date?' and '+dLabel(y.date):''} (${esc(x.desc)} / ${esc(y.desc)}).`),null,[{id:'del:'+dupe.id,l:L('Borrar el duplicado','Delete the duplicate'),cls:'dan'}]); } }
@@ -1023,25 +1023,59 @@ async function pdfText(file){
 }
 const money=s=>{ const m=String(s).match(/-?\$?\s?\(?[\d,]+\.\d{2}\)?/); return m?num(m[0]):NaN; };
 function grab(text, re){ const m=text.match(re); return m?m[1]:null; }
+/* ---- Lectores por entidad: saben dónde está cada dato en los extractos de cada banco.
+   Devuelven {type:'generic', known:true, institution, product, kind, last4, date, dateFound, balance, cands, tx}.
+   Si el formato no encaja, devuelven null y se usa el lector genérico. ---- */
+const MON_RE='(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}';
+function l4of(s){ const d=String(s||'').replace(/\D/g,''); return d.length>=4?d.slice(-4):''; }
+function knownStmt(o){ o.type='generic'; o.known=true; o.balance=finOrNull(o.balance); o.cands=o.balance==null?[]:[{v:o.balance,line:o.balLabel||''}]; o.dateFound=!!o.date; o.date=o.date||today(); o.tx=o.tx||[]; return o; }
+function readBofA(T){
+  if(!/bankofamerica\.com/i.test(T)) return null; const H=T.slice(0,2500);
+  if(/New Balance Total/i.test(H)&&/Statement Closing Date/i.test(T)){ // tarjeta de crédito
+    const cd=grab(T,/Statement Closing Date\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i), date=cd&&parseDate(cd);
+    const tx=parseTxLines(T,date,true).map(t=>Object.assign(t,{desc:t.desc.replace(/(\s+\d{4}){2}$/,'').trim()}));
+    return knownStmt({institution:'Bank of America',kind:'credit',product:((H.match(/^\s*((?:Visa|Mastercard|World Mastercard|BankAmericard|Customized Cash|Unlimited Cash|Travel Rewards|Premium Rewards|Alaska|Free Spirit)[^\n]{0,30})$/im)||[])[1]||'').replace(/[®™]/g,'').trim()||L('Tarjeta','Card'),
+      last4:l4of(grab(H,/Account\s*(?:#|Number:?)\s*([\d ]{8,24}\d)/i)),date,balance:num(grab(H,/New Balance Total\s*\$?\s*([\d,]+\.\d{2})/i)),balLabel:'New Balance Total',tx}); }
+  const an=grab(H,/Account number:\s*([\d ]{8,24}\d)/i), eb=T.match(new RegExp('Ending balance on\\s+('+MON_RE+')\\s*\\$?\\s*(-?[\\d,]+\\.\\d{2})','i'));
+  if(!an||!eb) return null; const date=parseDate(eb[1].replace('.',''));
+  return knownStmt({institution:'Bank of America',kind:'cash',product:((H.match(/^\s*Your\s+(?:Bank of America\s+)?([A-Za-z][^\n]{2,45})$/m)||[])[1]||'').replace(/[®™]/g,'').trim(),
+    last4:l4of(an),date,balance:num(eb[2]),balLabel:'Ending balance',tx:parseTxLines(T,date)}); }
+function readM1(T){
+  if(!/M1 Finance|M1: The Finance Super App|M1 Cash Account|M1 Invest/i.test(T)) return null;
+  const sp=T.match(/Statement period:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*to\s*(\d{1,2}\/\d{1,2}\/\d{4})/i), an=grab(T,/Account number:\s*[X*•x]*\s*(\d{4,})/i);
+  const bal=num(grab(T,/Closing balance\s*\$?\s*([\d,]+\.\d{2})/i)); if(!sp||!an||isNaN(bal)) return null;
+  const prod=(grab(T,/Account:\s*(M1 [^\n]{2,40})/i)||'').trim(); const date=parseDate(sp[2]); const tx=[];
+  for(const line of T.split('\n')) for(const m of line.matchAll(/(\d{4}-\d{2}-\d{2})\s+(.+?)\s+(\$?\(\$?[\d,]+\.\d{2}\)|\$?-?[\d,]+\.\d{2})(?=\s+\d{4}-\d{2}-\d{2}|\s*$)/g)){
+    const v=num(m[3].replace(/\$/g,'')); if(isNaN(v)||!v) continue; tx.push({date:m[1],desc:m[2].trim(),amount:/\(/.test(m[3])?-Math.abs(v):v}); }
+  return knownStmt({institution:'M1 Finance',kind:/cash/i.test(prod)?'cash':'brokerage',product:prod.replace(/^M1\s*/,'')||'',last4:l4of(an),date,balance:bal,balLabel:'Closing balance',tx}); }
+function readEmpower(T){
+  if(!/Empower/i.test(T.slice(0,600))||!/Balance as of/i.test(T)) return null;
+  const all=[...T.matchAll(new RegExp('Balance as of\\s+('+MON_RE+')((?:\\s+\\$?[\\d,]+\\.\\d{2})+)','gi'))]; if(!all.length) return null;
+  const last=all[all.length-1], v=last[2].match(/[\d,]+\.\d{2}/g);
+  return knownStmt({institution:'Empower',kind:'retirement',product:/403\(?b/i.test(T.slice(0,800))?'403(b)':/457/.test(T.slice(0,800))?'457':'401(k)',
+    last4:l4of(grab(T,/Plan:\s*([\d-]{4,})/i)),date:parseDate(last[1].replace('.','')),balance:num(v[v.length-1]),balLabel:'Balance as of'}); }
 function parseStatement(text){
   const T=text;
   // Pennymac / generic mortgage
   if(/Unpaid Principal Balance|Outstanding Principal Balance|Principal Balance:/i.test(T) || (/(pennymac|mortgage)/i.test(T) && /Loan Number/i.test(T) && /Payment Due Date/i.test(T))){
-    const r={type:'mortgage', institution:/pennymac/i.test(T)?'Pennymac':(grab(T,/^(.*(?:Mortgage|Loan Servic)[^\n]*)/im)||'')};
+    const r={type:'mortgage', institution:/pennymac/i.test(T)?'Pennymac':/wellsfargo\.com|Wells Fargo/i.test(T)?'Wells Fargo':(INST_RE.exec(T)||[])[1]||(grab(T,/^([^\n]{0,40}(?:Mortgage|Loan Servic)[^\n]{0,25})$/im)||'').trim()};
+    const EX=T.slice(Math.max(0,T.search(/Explanation of amount due/i)));
     r.balance=num(grab(T,/Unpaid Principal Balance:?\s*\$?([\d,]+\.\d{2})/i));
     r.rate=num(grab(T,/Interest Rate:?\s*([\d.]+)\s*%/i));
-    r.principal=num(grab(T,/Contractual Amount Due[\s\S]{0,80}?Principal:?\s*\$?([\d,]+\.\d{2})/i) || grab(T,/\bPrincipal:\s*\$?([\d,]+\.\d{2})/i));
-    r.interest=num(grab(T,/Contractual Amount Due[\s\S]{0,140}?Interest:?\s*\$?([\d,]+\.\d{2})/i) || grab(T,/\bInterest:\s*\$?([\d,]+\.\d{2})/i));
-    r.escrow=num(grab(T,/Escrow \(Taxes and Insurance\):?\s*\$?([\d,]+\.\d{2})/i))||0;
-    r.payment=num(grab(T,/Regular Monthly Payment:?\s*\$?([\d,]+\.\d{2})/i));
+    const exp=/Explanation of amount due/i.test(T);
+    r.principal=num(grab(T,/Contractual Amount Due[\s\S]{0,80}?Principal:?\s*\$?([\d,]+\.\d{2})/i) || grab(T,/\bPrincipal:\s*\$?([\d,]+\.\d{2})/i) || (exp&&grab(EX,/^[\s\S]{0,140}?\bPrincipal\s*\$?([\d,]+\.\d{2})/i)));
+    r.interest=num(grab(T,/Contractual Amount Due[\s\S]{0,140}?Interest:?\s*\$?([\d,]+\.\d{2})/i) || grab(T,/\bInterest:\s*\$?([\d,]+\.\d{2})/i) || (exp&&grab(EX,/^[\s\S]{0,220}?\bInterest\s*\$?([\d,]+\.\d{2})/i)));
+    r.escrow=num(grab(T,/Escrow \(Taxes and Insurance\):?\s*\$?([\d,]+\.\d{2})/i) || (exp&&grab(EX,/^[\s\S]{0,300}?\bEscrow\s*\$?([\d,]+\.\d{2})/i)))||0;
+    r.payment=num(grab(T,/Regular Monthly Payment:?\s*\$?([\d,]+\.\d{2})/i) || grab(T,/Current payment\s*\$?([\d,]+\.\d{2})/i));
     r.extra=num(grab(T,/Principal Reduction\s*\$?([\d,]+\.\d{2})/i))||0;
-    const sd=grab(T,/Statement Date:?\s*([A-Za-z]+ \d{1,2}, \d{4})/i); r.date=sd?parseDate(sd):today();
-    const nd=grab(T,/Payment Due Date:?\s*([A-Za-z]+ \d{1,2}, \d{4})/i); r.nextDue=nd?parseDate(nd):null;
+    const sd=grab(T,/Statement Date:?\s*([A-Za-z]+ \d{1,2}, \d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i); r.date=(sd&&parseDate(sd))||today(); r.dateFound=!!(sd&&parseDate(sd));
+    const nd=grab(T,/Payment Due Date:?\s*([A-Za-z]+ \d{1,2}, \d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i); r.nextDue=nd?parseDate(nd):null;
     const ln=grab(T,/Loan Number:?\s*(\d{4,})/i); r.last4=ln?ln.slice(-4):'';
     const pa=grab(T,/Property Address:?\s*([^\n]+?)(?:\s{2,}|Credits|$)/im); r.property=pa?pa.trim():'';
     const pi=(r.principal||0)+(r.interest||0); r.pi=pi>0?Math.round(pi*100)/100:(r.payment||0)-(r.escrow||0);
     return r;
   }
+  const known=readBofA(T)||readM1(T)||readEmpower(T); if(known) return known;
   // Generic: look for balances
   const r={type:'generic'};
   const cands=[];
@@ -1050,7 +1084,9 @@ function parseStatement(text){
   r.cands=cands.filter((c,i,a)=>a.findIndex(x=>x.v===c.v)===i);
   const D='([A-Za-z]+\\.? \\d{1,2},? \\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})'; const dm=T.match(new RegExp('(?:through|thru|to|ending|closing date|period ending|as of)[:\\s]+'+D,'i'))||T.match(new RegExp('(?:statement (?:period|date))[^\\n]*?'+D,'i')); r.date=(dm&&parseDate(dm[1].replace('.','')))||today(); r.dateFound=!!(dm&&parseDate(dm[1].replace('.','')));
   r.institution=(T.match(/\b(M1 Finance|M1|Fidelity|Vanguard|Charles Schwab|Schwab|Empower|Principal|Chase|Bank of America|Wells Fargo|Citi|American Express|Capital One|Discover|Ally|Marcus|SoFi|Guideline|Betterment|Wealthfront|Robinhood|E\*TRADE|Merrill)\b/i)||[])[1]||'';
-  r.kind=/401\(?k\)?|IRA|retirement|Roth/i.test(T)?'retirement':/brokerage|portfolio|M1|invest/i.test(T)?'brokerage':/credit card|minimum payment|new balance/i.test(T)?'credit':'cash';
+  const H=T.slice(0,2500);
+  r.kind=/credit card|minimum payment due|new balance total|credit line/i.test(H)?'credit':/401\(?k\)?|403\(?b\)?|\bIRA\b|retirement|Roth/i.test(H)?'retirement':/brokerage|portfolio|invest/i.test(H)?'brokerage':'cash';
+  r.last4=(pdfLast4s(H)[0])||'';
   return r;
 }
 let lastPDF=null; const pdfQueue=[]; let pdfBusy=false;
@@ -1108,18 +1144,20 @@ const FORM_FIELDS_={
 };
 const FORM_FIELDS={}; for(const k of Object.keys(FORM_FIELDS_)) Object.defineProperty(FORM_FIELDS,k,{enumerable:true,get(){ return FORM_FIELDS_[k].map(([key,es,en])=>[key,L(es,en)]); }});
 /* ---- Transactions from bank / card PDFs (local) ---- */
-function parseTxLines(T, periodEnd){
+// post: usar la fecha de anotación (2.ª columna) en vez de la de la operación; así cada movimiento cae en el ciclo de su extracto.
+function parseTxLines(T, periodEnd, post=false){
   const pe=periodEnd?new Date(periodEnd+'T12:00:00'):new Date(); const out=[]; let sign=-1;
-  const lines=T.split('\n');
+  const lines=[]; for(const l of T.split('\n')){ const t=l.trim(); if(/^-?\s?\$?\s?[\d,]*\d\.\d{2}$/.test(t)&&lines.length&&/^\d{1,2}\/\d{1,2}/.test(lines[lines.length-1])&&!/\d\.\d{2}\s*$/.test(lines[lines.length-1])) lines[lines.length-1]+=' '+t; else lines.push(t); }
   for(const raw of lines){ const L=raw.trim();
     if(!/\d\.\d{2}/.test(L) || L.length<60 && /^(deposits|credits|payments|additions|other credits)/i.test(L)){
       if(/(deposits|additions|credits|payments and (other )?credits|refunds)/i.test(L) && !/\d{1,3}(,\d{3})*\.\d{2}.*\d\.\d{2}/.test(L)) sign=1;
       if(/(withdrawals|subtractions|debits|purchases|fees charged|checks paid|electronic (payments|withdrawals)|card (transactions|purchases)|atm)/i.test(L)) sign=-1;
       if(!/\d\.\d{2}/.test(L)) continue; }
-    const m=L.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s+(?:\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\s+)?(.+?)\s+(-?\(?\$?-?[\d,]*\d\.\d{2}\)?)(?:\s+-?\$?[\d,]*\d\.\d{2})?$/);
-    if(!m) continue; const mo=+m[1], dd=+m[2]; if(mo<1||mo>12||dd<1||dd>31) continue;
+    const m0=L.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s+(?:(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?\s+)?(.+?)\s+(-?\(?\$?-?[\d,]*\d\.\d{2}\)?)(?:\s+-?\$?[\d,]*\d\.\d{2})?$/);
+    if(!m0) continue; const m=[m0[0],post&&m0[4]?m0[4]:m0[1],post&&m0[5]?m0[5]:m0[2],m0[3],m0[6],m0[7]];
+    const mo=+m[1], dd=+m[2]; if(mo<1||mo>12||dd<1||dd>31) continue;
     let y=m[3]?(m[3].length===2?2000+ +m[3]:+m[3]):(mo>pe.getMonth()+1?pe.getFullYear()-1:pe.getFullYear());
-    const desc=m[4].replace(/\s+/g,' ').trim(); if(/^(total|balance|beginning|ending|previous|new balance|minimum)/i.test(desc)) continue;
+    const desc=m[4].replace(/\s+/g,' ').replace(/\s+-\s*\$?$/,'').trim(); if(/^(total|balance|beginning|ending|previous|new balance|minimum)/i.test(desc)) continue;
     let a=num(m[5]); if(isNaN(a)||a===0) continue; const explicit=/^-|\(|-$/.test(m[5].trim());
     let amt=explicit?a:Math.abs(a)*sign;
     out.push({date:`${y}-${String(mo).padStart(2,'0')}-${String(dd).padStart(2,'0')}`,desc,amount:Math.round(amt*100)/100});
@@ -1175,7 +1213,7 @@ async function handlePDF(file){
   if(r.type==='mortgage'&&!/Form\s*1098\b|Mortgage Interest Statement/i.test(text)){ renderMortgagePDF(r,file.name,text); return; }
   const tf=detectTaxForm(text);
   if(tf){ renderTaxImport(file.name,text,tf); return; }
-  r.tx=parseTxLines(text,r.date);
+  if(!r.known) r.tx=parseTxLines(text,r.date);
   renderGenericPDF(r,file.name,text);
   if(S.settings.autoClaude && (!r.cands.length || !r.tx.length)) $('#gAI')&&$('#gAI').click();
 }
@@ -1186,7 +1224,7 @@ function renderMortgagePDF(r,name,text){
    <div class="row"><label class="f">${L('Saldo pendiente','Outstanding balance')}<input id="pB" value="${isNaN(r.balance)?'':r.balance}"></label><label class="f">${L('Tipo %','Rate %')}<input id="pR" value="${isNaN(r.rate)?'':r.rate}"></label></div>
    <div class="row"><label class="f">${L('Cuota capital+intereses','Principal + interest payment')}<input id="pP" value="${r.pi||''}"></label><label class="f">${L('Principal extra mensual','Monthly extra principal')}<input id="pE" value="${r.extra||0}"></label></div>
    <div class="row"><label class="f">${L('Escrow mensual','Monthly escrow')}<input id="pS" value="${r.escrow||0}"></label><label class="f">${L('Fecha del saldo','Balance date')}<input type="date" id="pD" value="${r.date||today()}"></label></div>
-   <div class="row"><label class="f">${L('Guardar en','Save to')}<select id="pAcc">${ms.map(a=>`<option value="${a.id}" ${match&&match.id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${match?'':'selected'}>${L('+ Hipoteca nueva','+ New mortgage')}</option></select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="pN" value="${L('Hipoteca','Mortgage')}"></label></div>
+   <div class="row"><label class="f">${L('Guardar en','Save to')}<select id="pAcc">${ms.map(a=>`<option value="${a.id}" ${match&&match.id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${match?'':'selected'}>${L('+ Hipoteca nueva','+ New mortgage')}</option></select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="pN" value="${esc(stmtAccName({institution:r.institution,product:L('Hipoteca','Mortgage'),last4:r.last4}))}"></label></div>
    <label class="f">${L('Inmueble asociado','Linked property')}<select id="pPr"><option value="">${L('— (casa familiar)','— (family home)')}</option>${props.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
    <div class="row" style="margin-top:6px"><button id="pCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="pOk">${L('Guardar','Save')}</button></div>
    <details style="margin-top:10px"><summary>${L('Ver el texto leído del PDF','See the text read from the PDF')}</summary><pre>${esc(text.slice(0,4000))}</pre></details></div>`;
@@ -1202,7 +1240,7 @@ function renderGenericPDF(r,name,text){
   const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage'); const {m:gm,key:gkey}=matchPDF(r,text); const gid=gm?gm.acc.id:null;
   const tx=r.tx||[];
   out.innerHTML=`<div class="card"><h2>${esc(r.institution||'Statement')}</h2><p class="sub">${esc(name)} · ${KINDS[r.kind]?KINDS[r.kind].label:''}. ${L('Revisa antes de guardar.','Check before saving.')}</p>
-   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}" ${gid===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!gid&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(r.institution||'')}"></label></div>
+   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}" ${gid===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!gid&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(stmtAccName(r))}"></label></div>
    <h3 class="sec" style="margin-top:8px">${L('Saldo','Balance')}</h3>
    ${r.cands.length?`<div style="margin-bottom:6px">${r.cands.slice(0,5).map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0"><input type="radio" name="cand" value="${c.v}" style="width:auto;margin-top:3px" ${i===0?'checked':''}><span><b>${fmt(c.v,2)}</b> <span class="muted">${esc(c.line)}</span></span></label>`).join('')}</div>`:`<p class="muted">${L('No encontré el saldo automáticamente.','I couldn\'t find the balance automatically.')}</p>`}
    <div class="row"><label class="f">${L('Saldo','Balance')}${r.kind==='credit'?L(' (lo que debes)',' (what you owe)'):''}<input id="gV" value="${r.cands[0]?r.cands[0].v:''}"></label><label class="f">${L('Fecha','Date')}<input type="date" id="gD" value="${r.date||today()}"></label><label class="f">${L('Aportado este periodo (inversión)','Contributed this period (investments)')}<input id="gC" inputmode="decimal" value="${r.contrib??''}"></label></div>
@@ -1214,7 +1252,7 @@ function renderGenericPDF(r,name,text){
   out.querySelectorAll('input[name=cand]').forEach(i=>i.onchange=()=>$('#gV').value=i.value);
   $('#gCancel').onclick=()=>pdfDone('');
   $('#gOk').onclick=()=>{
-    let id=$('#gAcc').value; if(id==='__new'){ const a={id:uid(),kind:$('#gK').value,name:$('#gN').value.trim()||L('Cuenta','Account'),institution:r.institution}; S.accounts.push(a); id=a.id; }
+    let id=$('#gAcc').value; if(id==='__new'){ const a={id:uid(),kind:$('#gK').value,name:$('#gN').value.trim()||L('Cuenta','Account'),institution:r.institution,last4:r.last4||''}; S.accounts.push(a); id=a.id; }
     const v=num($('#gV').value); if(!isNaN(v)) upsertSnap(id,isoDate($('#gD').value)||today(),v);
     const c=num($('#gC').value); if(!isNaN(c)&&c) { const a=acc(id); a.contributed=(a.contributed||0)+c; }
     let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; ({added,dup}=importTxInto(id,tx.map(t=>flip?Object.assign({},t,{amount:-t.amount}):t),'pdf')); }
@@ -1259,9 +1297,11 @@ function renderTaxImport(name,text,type,claudeForms){
    ============================================================ */
 const isPdfFile=f=>/\.pdf$/i.test(f.name)||f.type==='application/pdf';
 // Guardado común (importación individual y por lotes)
-function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0;
-  for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;} keys.add(k);
-    S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos'),acc:accId,src}); added++; }
+// st: identifica el extracto; dos movimientos iguales del mismo extracto no se marcan como duplicados.
+function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0; const st=uid();
+  // Solo cuenta como repetido lo que ya estaba guardado: dos cargos iguales el mismo día en un extracto son dos cargos.
+  for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;}
+    S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos'),acc:accId,src,st}); added++; }
   return {added,dup}; }
 function saveMortgageStatement(m,r,bal,date){ m.rate=r.rate; m.payment=r.pi; m.extra=r.extra||0; m.escrow=r.escrow||0; if(r.nextDue) m.nextDue=r.nextDue; if(r.last4) m.last4=r.last4; if(!m.institution) m.institution=r.institution;
   const sn=upsertSnap(m.id,date,bal); Object.assign(sn,{rate:m.rate,pi:m.payment,extra:m.extra,escrow:m.escrow}); delete extraSim[m.id]; }
@@ -1282,16 +1322,18 @@ function learnKey(a,k){ if(!a||!k) return; S.accounts.forEach(x=>{ if(x!==a&&x.k
 const INST_RE=/\b(chase|amex|american express|bank of america|bofa|wells fargo|wellsfargo|citi|capital one|capitalone|discover|ally|marcus|sofi|schwab|fidelity|vanguard|m1|usaa|us bank|pnc|navy federal|apple card)\b/i;
 // Busca la cuenta: 1) últimos 4 dígitos, 2) firma aprendida, 3) entidad (si solo hay una cuenta que encaje)
 function matchAccount(filter,{last4s=[],keys=[],institution='',kind=null}){
-  const pool=S.accounts.filter(filter); const one=l=>l.length===1?l[0]:null;
+  // Una cuenta con otros últimos 4 dígitos nunca es candidata (dos cuentas del mismo banco no se mezclan)
+  const pool=S.accounts.filter(x=>filter(x)&&!(last4s.length&&x.last4&&!last4s.includes(x.last4))); const one=l=>l.length===1?l[0]:null;
   let a=one(pool.filter(x=>x.last4&&last4s.includes(x.last4))); if(a) return {acc:a,how:'last4'};
   const fa=forAcc(filter); if(fa) return {acc:fa,how:'forced'};
   const ks=keys.filter(Boolean); a=one(pool.filter(x=>(x.keys||[]).some(k=>ks.includes(k)))); if(a) return {acc:a,how:'key'};
-  const w=String(institution||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim().split(/\s+/)[0];
-  if(w&&w.length>=2){ const byInst=pool.filter(x=>(' '+(x.institution||'')+' '+x.name+' ').toLowerCase().includes(w)); a=one(kind?byInst.filter(x=>x.kind===kind):byInst)||one(byInst); if(a) return {acc:a,how:'inst'}; }
+  // Por entidad (nombre completo o abreviatura, p. ej. "Bank of America" o "BofA"), nunca solo "bank"
+  const nm=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]/g,''); const ali=[nm(institution),nm(INST_SHORT[institution])].filter(x=>x.length>=2);
+  if(ali.length){ const byInst=pool.filter(x=>ali.some(k=>nm((x.institution||'')+' '+x.name).includes(k))); a=one(kind?byInst.filter(x=>x.kind===kind):byInst)||(last4s.length?null:one(byInst)); if(a) return {acc:a,how:'inst'}; }
   return null; }
 function matchCSV(name){ const last4s=(String(name).match(/\d{4}/g)||[]).filter(x=>!/^(19|20)\d\d$/.test(x)); const inst=(String(name).match(INST_RE)||[])[1]||'';
   return matchAccount(a=>a.kind==='cash'||a.kind==='credit',{last4s,keys:[fileKey(name)],institution:inst,kind:/card|credit|amex|visa|discover/i.test(name)?'credit':null}); }
-function matchPDF(r,text){ const last4s=pdfLast4s(text); return {m:matchAccount(a=>a.kind!=='mortgage'&&a.kind!=='property',{last4s,keys:[pdfKey(r,last4s)],institution:r.institution,kind:r.kind}),key:pdfKey(r,last4s)}; }
+function matchPDF(r,text){ const last4s=r.last4?[r.last4]:pdfLast4s(text); return {m:matchAccount(a=>a.kind!=='mortgage'&&a.kind!=='property',{last4s,keys:[pdfKey(r,last4s)],institution:r.institution,kind:r.kind}),key:pdfKey(r,last4s)}; }
 function taxYearOf(text){ return +(text.match(/\b(20[2-3]\d)\b(?=[^\n]{0,30}(Form|W-2|1098|1099|Tax Year))/i)||text.match(/Tax Year\s*(20\d\d)/i)||[0,new Date().getFullYear()-(new Date().getMonth()<6?1:0)])[1]; }
 function payerOf(text){ return (text.match(/\b(M1 Finance|M1|Fidelity|Vanguard|Charles Schwab|Schwab|Empower|Chase|Bank of America|Wells Fargo|Citi|American Express|Capital One|Discover|Ally|Marcus|SoFi|Pennymac|Robinhood|Betterment|Wealthfront|Apex Clearing|Orange County|Los Angeles County)\b/i)||[])[1]||''; }
 function payerAccount(pay){ pay=String(pay||'').toLowerCase(); return pay?S.accounts.find(a=>(a.institution||'').toLowerCase().includes(pay)||pay.includes((a.institution||'~').toLowerCase()))||null:null; }
@@ -1300,7 +1342,7 @@ async function autoCSV(file){
   const text=await file.text(); const rows=parseCSV(text); if(!rows.length) return {status:'error',msg:L('El archivo está vacío','The file is empty')};
   if(isHoldingsCSV(rows)){ const H=parseHoldings(rows); const pool=S.accounts.filter(a=>['brokerage','kids','retirement'].includes(a.kind)); const fk=fileKey(file.name);
     const a=forAcc(x=>pool.includes(x))||(pool.find(x=>fk&&(x.keys||[]).includes(fk)))||(pool.filter(x=>/m1/i.test(x.name+' '+(x.institution||''))).length===1?pool.find(x=>/m1/i.test(x.name+' '+(x.institution||''))):null);
-    if(!a) return {status:'review',kind:'holdings',msg:L('No sé a qué cuenta de inversión pertenecen estas posiciones','I don\'t know which investment account these positions belong to')};
+    if(!a) return {status:'review',kind:'holdings',msg:pool.length?L('El CSV de posiciones no dice de qué cuenta es. Usa el botón "Importar" de esa cuenta en Mis cuentas y la próxima vez irá solo.','The positions CSV doesn\'t say which account it is from. Use that account\'s "Import" button in My accounts and next time it will go there on its own.'):L('Aún no tienes la cuenta de inversión: pulsa "Revisar" para crearla con estas posiciones.','You don\'t have the investment account yet: tap "Review" to create it with these positions.')};
     saveHoldings(a.id,H,dateFromFilename(file.name),true,true); learnKey(a,fk); return {status:'ok',kind:'holdings',acc:a.id,msg:L(`${H.length} posiciones`,`${H.length} positions`)}; }
   const p=csvPrepare(file.name,rows);
   if(p.cDate<0||(p.cAmt<0&&p.cDeb<0&&p.cCred<0)) return {status:'review',kind:'csv',msg:L('No reconozco las columnas de fecha e importe','I can\'t recognize the date and amount columns')};
@@ -1314,30 +1356,46 @@ async function autoCSV(file){
 async function autoPDF(file){
   const text=await pdfText(file); if(text.replace(/\s/g,'').length<40) return {status:'review',kind:'pdf',msg:L('Parece una imagen escaneada, sin texto','It looks like a scanned image, with no text')};
   const r=parseStatement(text); const is1098=/Form\s*1098\b|Mortgage Interest Statement/i.test(text);
-  if(r.type==='mortgage'&&!is1098){ const m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage'&&!(r.last4&&a.last4&&a.last4!==r.last4));
-    if(!m) return {status:'review',kind:'mortgage',msg:L('Hipoteca que aún no está en la app: revísala y elige la cuenta','A mortgage not yet in the app: review it and choose the account')};
+  if(r.type==='mortgage'&&!is1098){ let m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage'&&!(r.last4&&a.last4&&a.last4!==r.last4));
+    let created=false;
+    if(!m&&r.last4&&!isNaN(r.balance)&&r.pi>0){ m=newAccFrom({institution:r.institution,last4:r.last4,product:L('Hipoteca','Mortgage')},'mortgage'); created=true; }
+    if(!m) return {status:'review',kind:'mortgage',msg:L('Hipoteca sin número de préstamo: revísala y elige la cuenta','A mortgage without a loan number: review it and choose the account')+' ('+esc(r.institution||'?')+')'};
     if(isNaN(r.balance)||!r.pi) return {status:'review',kind:'mortgage',msg:L('No encontré el saldo o la cuota','I couldn\'t find the balance or the payment')};
     saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull(r.rate)}),r.balance,r.date||today());
-    return {status:'ok',kind:'mortgage',acc:m.id,bal:r.balance,date:r.date}; }
+    return {status:'ok',kind:'mortgage',acc:m.id,bal:r.balance,date:r.date,created}; }
   const tf=detectTaxForm(text);
   if(tf){ const yr=taxYearOf(text), ty=taxYear(yr); if(ty.docs.some(d=>d.src===file.name&&d.type===tf)) return {status:'skip',kind:'tax',msg:L('Ya estaba guardado','Already saved')};
     const fields=localTaxFields(tf,text); if(!Object.keys(fields).length) return {status:'review',kind:'tax',msg:L('No encontré las cifras del formulario','I couldn\'t find the form\'s figures')};
     const payer=payerOf(text), pa=payerAccount(payer); ty.docs.push({id:uid(),type:tf,payer,acc:pa?pa.id:null,fields,src:file.name,added:today()});
     return {status:'ok',kind:'tax',msg:`${FORM_LABEL[tf]} · ${yr} · ${L('revisa las cifras en Impuestos','check the figures in Taxes')}`}; }
-  r.tx=parseTxLines(text,r.date); const {m:mm,key}=matchPDF(r,text);
-  if(!mm) return {status:'review',kind:'pdf',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')};
-  const a=mm.acc; const bal=r.cands.length?r.cands[0].v:NaN; const useBal=!isNaN(bal)&&r.dateFound; const txOk=r.tx.length&&['cash','credit'].includes(a.kind);
+  if(!r.known) r.tx=parseTxLines(text,r.date); const {m:mm,key}=matchPDF(r,text);
+  let a=mm&&mm.acc, created=false;
+  if(!a){ const enough=(r.known||(r.institution&&r.last4))&&((r.dateFound&&r.cands.length)||r.tx.length);
+    if(!enough) return {status:'review',kind:'pdf',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')+' — '+L('detectado','detected')+': '+esc(seenAs(r))};
+    // Varias cuentas de la entidad y sin dígitos para distinguirlas: mejor preguntar
+    if(!r.last4&&S.accounts.some(x=>x.kind===r.kind&&(x.institution||'').toLowerCase()===String(r.institution).toLowerCase())) return {status:'review',kind:'pdf',msg:L('Tienes varias cuentas así y el extracto no trae número de cuenta','You have several such accounts and the statement has no account number')+' — '+esc(seenAs(r))};
+    a=newAccFrom(r,r.kind); created=true; } const bal=r.cands.length?r.cands[0].v:NaN; const useBal=!isNaN(bal)&&r.dateFound; const txOk=r.tx.length&&['cash','credit'].includes(a.kind);
   if(!useBal&&!txOk) return {status:'review',kind:'pdf',acc:a.id,msg:L('No encontré el saldo con su fecha ni movimientos','I couldn\'t find a dated balance or transactions')};
+  if(r.last4&&!a.last4) a.last4=r.last4;
   if(useBal) upsertSnap(a.id,r.date,bal); const res=txOk?importTxInto(a.id,r.tx,'pdf'):{added:0,dup:0}; learnKey(a,key);
-  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup}; }
+  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,created}; }
 
+// Cuenta nueva a partir de un extracto reconocido (lote). El nombre lleva entidad, producto y últimos 4 dígitos.
+const INST_SHORT={'Bank of America':'BofA','M1 Finance':'M1','American Express':'Amex'};
+function stmtAccName(r){ return ([INST_SHORT[r.institution]||r.institution,r.product].filter(Boolean).join(' ')+(r.last4?' ···'+r.last4:'')).trim().slice(0,60); }
+function newAccFrom(r,kind){
+  const a={id:uid(),kind,name:stmtAccName(r)||L('Cuenta','Account'),institution:r.institution||'',last4:r.last4||''}; S.accounts.push(a); return a; }
+function seenAs(r){ return [r.institution||L('entidad desconocida','unknown institution'),KINDS[r.kind]?KINDS[r.kind].label:'',r.last4?'···'+r.last4:L('sin número de cuenta','no account number')].filter(Boolean).join(' · '); }
 let BATCH=null;
 async function importBatch(files){
   const list=[...files].filter(f=>isPdfFile(f)||/\.(csv|txt)$/i.test(f.name)||/csv|text\/plain|vnd\.ms-excel/.test(f.type));
   const box=$('#batchOut'); if(!box) return; if(!list.length){ toast(L('Elige archivos PDF o CSV','Choose PDF or CSV files')); return; }
   BATCH={running:true,res:[]}; box.innerHTML=`<div class="alert info" style="margin-top:10px"><span class="ic">i</span><div class="bprog"></div></div>`;
+  const seen=new Set();
   for(let i=0;i<list.length;i++){ const f=list[i]; const pr=box.querySelector('.bprog'); if(pr) pr.textContent=L(`Procesando ${i+1} de ${list.length}: ${f.name}`,`Processing ${i+1} of ${list.length}: ${f.name}`);
-    let r; try{ r=isPdfFile(f)?await autoPDF(f):await autoCSV(f); }catch(e){ r={status:'error',msg:String(e&&e.message||e)}; }
+    let r; try{ const h=b64(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()));
+      if(seen.has(h)) r={status:'skip',msg:L('Es el mismo archivo que otro de este lote','It is the same file as another one in this batch')};
+      else { seen.add(h); r=isPdfFile(f)?await autoPDF(f):await autoCSV(f); } }catch(e){ r={status:'error',msg:String(e&&e.message||e)}; }
     r.file=f; r.name=f.name; BATCH.res.push(r); }
   BATCH.running=false; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch();
 }
@@ -1345,7 +1403,7 @@ function renderBatch(){
   const box=$('#batchOut'); if(!box||!BATCH) return; const res=BATCH.res; const n=s=>res.filter(r=>r.status===s).length;
   const KL={csv:'CSV',pdf:L('Extracto','Statement'),mortgage:L('Hipoteca','Mortgage'),tax:L('Fiscal','Tax form'),holdings:L('Posiciones','Positions')};
   const ic={ok:['good','✓'],skip:['info','i'],review:['warn','!'],error:['crit','✗']};
-  const detail=r=>{ const parts=[]; if(r.kind) parts.push(KL[r.kind]||r.kind); if(r.acc&&acc(r.acc)) parts.push(esc(acc(r.acc).name));
+  const detail=r=>{ const parts=[]; if(r.created) parts.push(`<b>${L('cuenta nueva','new account')}</b>`); if(r.kind) parts.push(KL[r.kind]||r.kind); if(r.acc&&acc(r.acc)) parts.push(esc(acc(r.acc).name));
     if(r.added!=null) parts.push(L(`${r.added} movimientos nuevos${r.dup?` (${r.dup} ya estaban)`:''}`,`${r.added} new transactions${r.dup?` (${r.dup} already there)`:''}`));
     if(r.bal!=null) parts.push(`${L('saldo','balance')} ${fmt(r.bal,2)}${r.date?' · '+dLabel(r.date):''}`); if(r.flip) parts.push(L('signo invertido (tarjeta)','sign flipped (card)'));
     if(r.msg) parts.push(esc(r.msg)); return parts.join(' · '); };
