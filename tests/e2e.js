@@ -7,12 +7,17 @@ const ROOT=path.resolve(__dirname,'..'), FX=path.join(__dirname,'fixtures'), POR
 const types={'.html':'text/html','.js':'application/javascript','.png':'image/png','.webmanifest':'application/manifest+json'};
 const srv=http.createServer((q,r)=>{let f=decodeURIComponent(q.url.split('?')[0]);if(f.endsWith('/'))f+='index.html';const fp=path.join(ROOT,f);if(!fp.startsWith(ROOT)||!fs.existsSync(fp)){r.writeHead(404);return r.end();}r.writeHead(200,{'content-type':types[path.extname(fp)]||'text/plain'});fs.createReadStream(fp).pipe(r);}).listen(PORT);
 let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed++; };
+// Respuesta "envenenada" de Claude, como si el texto de un PDF hubiera intentado manipularla
+const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__pwn=1">',account_kind:'cash',period_end:'2026-10-12"><img src=x onerror="window.__pwn=2">',ending_balance:'1"><img src=x onerror="window.__pwn=3">',
+  transactions:[{date:'<img src=x onerror="window.__pwn=4">',description:'x',amount:5},{date:'2026-10-01',description:'<img src=x onerror="window.__pwn=5">',amount:-10},{date:'2026-10-02',description:'y',amount:'9"><img src=x>'}],tax_forms:[]};
 (async()=>{
   const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const pg=await ctx.newPage();
   const errs=[]; pg.on('pageerror',e=>errs.push(e.message)); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
   const cdp=await ctx.newCDPSession(pg); await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
   await pg.route('https://api.anthropic.com/**',r=>{ const body=JSON.parse(r.request().postData());
+    const prompt=String(body.messages&&body.messages[0]&&body.messages[0].content||'');
+    if(!body.stream&&prompt.startsWith('You extract data')) return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:JSON.stringify(EVIL)}],stop_reason:'end_turn'})});
     if(!body.stream) return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:'OK'}],stop_reason:'end_turn'})});
     const ev=[{type:'content_block_delta',delta:{type:'text_delta',text:'#### Plan\n- Paso 1'}},{type:'message_delta',delta:{stop_reason:'end_turn'}}];
     r.fulfill({status:200,contentType:'text/event-stream',body:ev.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')}); });
@@ -97,7 +102,7 @@ let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed+
   await pg.click('#app .ib'); await pg.waitForTimeout(200); ok(await pg.$eval('#modal',e=>/Cómo usarlo/.test(e.innerText)),'ayuda de una sección');
   await pg.click('#hMan'); await pg.waitForTimeout(400); ok(await pg.evaluate(()=>location.hash==='#ayuda'&&!!document.getElementById('man-rec')&&/Primeros pasos/.test(document.body.innerText)),'manual de usuario');
   await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.click('#catMgr'); await pg.click('#ucAdd'); await pg.fill('#ncN','Mascotas'); await pg.click('#ncOk'); await pg.waitForTimeout(200); await pg.click('#ucClose'); await pg.waitForTimeout(300);
-  await pg.selectOption('#app .tcat >> nth=0','Mascotas'); await pg.waitForTimeout(200); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
+  await pg.click('#app .tcat >> nth=1'); await pg.keyboard.press('Escape'); ok(await pg.$eval('#app .tcat >> nth=1',e=>e.options.length>20)&&await pg.$eval('#app .tcat >> nth=2',e=>e.options.length===1),'desplegables de categoría ligeros que se cargan al tocarlos'); await pg.focus('#app .tcat >> nth=0'); await pg.selectOption('#app .tcat >> nth=0','Mascotas'); await pg.waitForTimeout(200); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
   ok(await pg.evaluate(()=>catType('Mascotas')==='expense'&&S.tx.some(t=>t.cat==='Mascotas'&&t.manual)&&[...document.querySelectorAll('#fCat option')].some(o=>o.value==='Mascotas')),'categoría propia creada y usada');
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
@@ -114,6 +119,23 @@ let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed+
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(500); await pg.$eval('#recBox',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/flujo-escritorio.png'}); await pg.goto(U+'#hipotecas'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/hipotecas-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300); await pg.fill('#sKey','sk-ant-test'); await pg.click('#sKeySave'); await pg.waitForTimeout(300);
   await pg.click('#sKeyTest'); await pg.waitForTimeout(600); ok(/Funciona/.test(await pg.$eval('#sKeyMsg',e=>e.innerText)),'clave de API (mock)');
+  // Seguridad: CSP sin scripts incrustados, respuesta de Claude manipulada, copia manipulada, datos de noticias, utilidades
+  ok(await pg.evaluate(()=>{ const c=document.querySelector('meta[http-equiv="Content-Security-Policy"]').content; return /script-src 'self';/.test(c)&&!/unsafe-inline[^;]*;\s*style/.test(c.split('script-src')[1].split(';')[0]+';style')&&![...document.scripts].some(x=>!x.src); }),'CSP sin scripts incrustados');
+  await pg.goto(U+'#importar'); await pg.waitForTimeout(200); await pg.setInputFiles('#fPDF',path.join(FX,'bank.pdf')); await pg.waitForTimeout(1500); await pg.click('#gAI'); await pg.waitForTimeout(200); await pg.click('#cY'); await pg.waitForTimeout(800);
+  const xs=await pg.evaluate(()=>({pwn:window.__pwn,img:document.querySelectorAll('#impOut img').length,gV:document.querySelector('#gV').value,rows:document.querySelectorAll('#impOut tbody tr').length,txt:document.querySelector('#impOut').innerText.includes('<img')}));
+  ok(xs.pwn===undefined&&xs.img===0&&xs.gV==='12000'&&xs.rows===1&&xs.txt,'respuesta de Claude manipulada no inyecta nada ('+JSON.stringify(xs)+')'); await pg.click('#gCancel');
+  await pg.evaluate(()=>{ window.__keep={S,dk:VAULT.dk}; VAULT.dk=null; S=sanitizeState({accounts:[{id:'a"><img src=x onerror="window.__pwn=6">',kind:'<b>',name:'<img src=x onerror="window.__pwn=7">',rate:'1"><img src=x>'}],
+    tx:[{id:'t1',date:'2026-01-01',desc:'<img src=x onerror="window.__pwn=8">',amount:'-5',acc:'a"><img src=x onerror="window.__pwn=6">'},{date:'mal',amount:1},{date:'2026-01-02',amount:'abc'}],snapshots:[{acc:'x',date:'2026-01-01',value:'NaN'}],
+    rules:[{pattern:'(',cat:'x'},{pattern:'ok',cat:'Compras'}],tax:{2026:{docs:[{type:'<img src=x onerror="window.__pwn=9">',fields:{wages:'abc',x:5}}],profile:{children:[{by:'<img>'}]}},'<b>':{}},settings:{lockMin:'<img>',userCats:[{name:'<img src=x>',type:'raro'}]}}); });
+  const bad2=[]; for(const v of ['cuentas','flujo','impuestos','inversiones','hipotecas','resumen']){ await pg.goto(U+'#'+v); await pg.waitForTimeout(200); const r=await pg.evaluate(()=>({img:document.querySelectorAll('#app img').length,pwn:window.__pwn})); if(r.img||r.pwn) bad2.push(v); }
+  const st=await pg.evaluate(()=>({id:S.accounts[0].id,kind:S.accounts[0].kind,rate:S.accounts[0].rate,tx:S.tx.length,acc:S.tx[0].acc===S.accounts[0].id,snaps:S.snapshots.length,rules:S.rules.length,type:S.tax[2026].docs[0].type,years:Object.keys(S.tax),lock:S.settings.lockMin,uc:S.settings.userCats[0].type}));
+  await pg.evaluate(()=>{ S=window.__keep.S; VAULT.dk=window.__keep.dk; REC=null; delete window.__keep; route(); });
+  ok(!bad2.length&&/^[\w-]+$/.test(st.id)&&st.kind==='other'&&st.rate===null&&st.tx===1&&st.acc&&st.snaps===0&&st.rules===1&&st.type==='OTHER'&&st.years.join()==='2026'&&st.lock===5&&st.uc==='expense','copia manipulada: datos validados y nada inyectado ('+bad2.join(',')+' '+JSON.stringify(st)+')');
+  const u=await pg.evaluate(()=>({d:[parseDate('13/02/2026'),parseDate('02/30/2026'),parseDate('Oct 6, 2026'),parseDate('2026-10-06'),parseDate('10/1/26')],
+    c:parseCSV('\uFEFFFecha;Concepto;Importe\n01/10/2026;"Compra, tienda";-12,50\n'),n:sanitizeNews({items:[{t:'Titular bueno de prueba',u:'https://a.com/x',p:'2026-10-01T00:00:00Z'},{t:'Malo',u:'javascript:alert(1)',p:'2026-10-01T00:00:00Z'},{t:'Sin fecha',u:'https://a.com',p:'x'}],regions:[{id:'"><img>',name:'x'},{id:'us',name:'EE. UU.'}]}),
+    rec:Array.from({length:50},()=>makeRecovery()).every(r=>/^[A-Z0-9]{4}(-[A-Z0-9]{4}){5}$/.test(r)), f:[fmt(NaN),fmtK(Infinity),dLabel(undefined)]}));
+  ok(u.d.join()==='2026-02-13,,2026-10-06,2026-10-06,2026-10-01'&&u.c.length===2&&u.c[0][0]==='Fecha'&&u.c[1][1]==='Compra, tienda'&&u.c[1][2]==='-12,50'&&u.n.items.length===1&&u.n.regions.length===1&&u.rec&&u.f.join()==='—,—,—','fechas, CSV con punto y coma, noticias validadas y formatos ('+JSON.stringify(u.d)+')');
+  await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300);
   await pg.fill('#bP','corta'); await pg.click('#bExp'); await pg.waitForTimeout(200); ok(await pg.evaluate(()=>!S.settings.lastBackup),'copia rechaza contraseñas cortas'); await pg.fill('#bP','copia segura 123'); const [dl]=await Promise.all([pg.waitForEvent('download'),pg.click('#bExp')]); const bk=fs.readFileSync(await dl.path(),'utf8');
   ok(!/sk-ant/.test(bk)&&!/CuentaSecretaXYZ/.test(bk),'copia cifrada sin clave de API');
   const bkc=await pg.evaluate(async(bk)=>{ const o=JSON.parse(bk); const r={v:o.v,it:o.it}; try{ r.ok=(await decryptBackup(bk,'copia segura 123')).accounts.length>0; }catch(e){ r.ok=false; }
@@ -122,12 +144,12 @@ let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed+
     const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12)); const k=await deriveKey('vieja123',salt); const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify({accounts:[1],tx:[]})));
     r.v1=(await decryptBackup(JSON.stringify({app:'misfinanzas',v:1,salt:b64(salt),iv:b64(iv),data:b64(ct)}),'vieja123')).accounts.length===1; return r; },bk);
   ok(bkc.v===2&&bkc.it===600000&&bkc.ok&&bkc.tamper&&bkc.wrong&&bkc.v1,'copia v2: 600.000 iteraciones, cabecera autenticada y compatible con v1 ('+JSON.stringify(bkc)+')');
-  await pg.click('#lockBtn'); await pg.waitForTimeout(500); ok(await pg.evaluate(()=>S===null),'bloqueo');
+  await pg.evaluate(()=>{ S.accounts[0].name='FlushTest'; save(); }); await pg.click('#lockBtn'); await pg.waitForTimeout(500); ok(await pg.evaluate(()=>S===null),'bloqueo');
   await pg.click('.langsw [data-lang=en]'); await pg.waitForTimeout(200); ok(await pg.$eval('#gate h2',e=>e.innerText)==='Unlock','pantalla de desbloqueo en inglés');
   if(process.env.SHOTS) await pg.screenshot({path:process.env.SHOTS+'/en-gate-movil.png'});
   await pg.click('.langsw [data-lang=es]'); await pg.waitForTimeout(200);
   await pg.fill('#gP','incorrecta'); await pg.click('#gGo'); await pg.waitForTimeout(2500); ok(await pg.evaluate(()=>S===null),'contraseña incorrecta rechazada');
-  await pg.fill('#gP',PASS); await pg.click('#gGo'); await pg.waitForTimeout(2500); ok(await pg.evaluate(()=>!!S&&S.accounts.length>=2),'desbloqueo con contraseña');
+  await pg.fill('#gP',PASS); await pg.click('#gGo'); await pg.waitForTimeout(2500); ok(await pg.evaluate(()=>!!S&&S.accounts.length>=2),'desbloqueo con contraseña'); ok(await pg.evaluate(()=>S.accounts.some(a=>a.name==='FlushTest')),'bloquear guarda los últimos cambios pendientes');
   await pg.click('#lockBtn'); await pg.waitForTimeout(400); await pg.click('#gPk'); await pg.waitForTimeout(1500); ok(await pg.evaluate(()=>!!S),'desbloqueo con passkey');
   await pg.click('#lockBtn'); await pg.waitForTimeout(400); await pg.click('#gRec'); await pg.fill('#gR',rec.toLowerCase()); await pg.fill('#g1','otra frase segura 22'); await pg.fill('#g2','otra frase segura 22'); await pg.click('#gGo');
   await pg.waitForSelector('.reccode',{timeout:20000}); ok(true,'recuperación con clave'); await pg.check('#gOk'); await pg.click('#gNext'); await pg.waitForTimeout(300); if(await pg.$('#gSkip')) await pg.click('#gSkip');

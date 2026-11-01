@@ -15,7 +15,7 @@ En **español e inglés** (*Copia y ajustes → Idioma*). Cada sección tiene un
 - **Bloqueo automático** tras unos minutos sin uso.
 - Los extractos (PDF y CSV) se leen dentro del navegador; los archivos no se suben a ningún sitio.
 - **Claude es opcional.** Si añades tu propia clave de API de Anthropic, la app envía a Claude solo resúmenes de cifras o texto con números de cuenta, SSN, teléfonos, emails y direcciones ocultos, y siempre con tu confirmación. La clave se guarda cifrada y no se incluye en las copias.
-- Política de seguridad de contenido estricta: la app solo puede conectarse a sí misma, a `api.anthropic.com` y a `raw.githubusercontent.com` (para descargar los titulares públicos).
+- Política de seguridad de contenido estricta: sin scripts incrustados; la app solo puede conectarse a sí misma, a `api.anthropic.com` y a los titulares públicos de la rama `news`. Todo dato externo (copias, respuestas de Claude, noticias) se valida antes de usarse.
 
 ## Instalar
 
@@ -48,7 +48,8 @@ La primera vez crearás tu contraseña maestra, guardarás la clave de recuperac
 
 | Archivo | Qué es |
 |---|---|
-| `index.html` | Toda la app (interfaz, cálculos, cifrado) |
+| `index.html` | Interfaz y estilos |
+| `app.js` | Código de la app (cálculos, cifrado, vistas) |
 | `help.js` | Textos de ayuda de cada sección y manual de usuario, en español e inglés |
 | `sw.js` | Service worker: funcionamiento sin conexión y actualizaciones |
 | `manifest.webmanifest` | Nombre, iconos y modo app |

@@ -14,10 +14,11 @@ App web instalable (PWA) de finanzas personales para un único usuario, con todo
 
 ## Arquitectura
 
-Todo vive en `index.html` (≈2.000 líneas: HTML, CSS y un único `<script>`), salvo los textos de ayuda y el manual, en `help.js`. Secciones en orden:
+`index.html` lleva el HTML y el CSS; todo el código está en `app.js` (≈1.950 líneas; fuera del HTML para que la CSP prohíba scripts incrustados) y los textos de ayuda y el manual, en `help.js`. Secciones de `app.js` en orden:
 
 | Zona | Qué contiene |
 |---|---|
+| Validación | `sanitizeState()` (al desbloquear y al restaurar: listas, números con `numStrict`, fechas con `isoDate`, ids con `cleanId`), `sanitizeExtract()` (respuesta de Claude al leer un PDF) y `sanitizeNews()` (news.json). **Todo dato externo pasa por un validador antes de usarse** |
 | Storage | `KINDS` (tipos de cuenta), `CATS` (categorías), `DEFAULT_RULES` (auto-categorización por regex), `blankState()`, `IDB` (IndexedDB clave-valor), `save()` → `persist()` con retardo |
 | Utilidades | `fmt`, `num` (parsea importes US/EU y negativos entre paréntesis), `parseDate`, `uid`, `esc` |
 | Dominio | `lastSnap`/`balanceOf` (saldos por fecha), `netWorthAt`, `cashflowByMonth`, `amortize` (hipoteca mes a mes), `categorize` |
@@ -51,6 +52,10 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 - Copias cifradas (`encryptState`/`decryptBackup`): formato v2 `{app:'misfinanzas',v:2,kdf,it:600000,salt,iv,data}`, PBKDF2-SHA256 600.000 iteraciones, AES-256-GCM con la cabecera como datos adicionales autenticados (`bkAAD`); contraseña mínima de 10 caracteres. v1 (250.000 iteraciones) se sigue pudiendo restaurar.
 - Fuera de la bóveda solo hay: el idioma en `localStorage` y el código de la app en la caché del service worker. Cualquier exportación en claro (p. ej. el resumen fiscal .txt) debe avisar antes de descargarse.
 - Usa siempre WebCrypto con algoritmos estándar (NIST/FIPS, BSI, ENISA); no implementes criptografía propia.
+- **No hay scripts incrustados**: `script-src 'self'` sin `'unsafe-inline'`. No añadas `<script>` en línea ni atributos `onclick=`; todo va en `app.js` con `addEventListener`/`.onclick`. Escapa con `esc()` todo texto que vaya a `innerHTML`, también en atributos.
+- La app se niega a ejecutarse dentro de un marco (clickjacking). `persist()` encola las escrituras; `lockNow()` y `pagehide` guardan lo pendiente con `flushSave()`.
+- **Origen compartido**: en GitHub Pages, `marcos86go.github.io` es el mismo origen para todos los repositorios del usuario. No publiques otros sitios de Pages en esta cuenta (podrían leer el almacenamiento de la app). Si se necesita, mover MyFinZen a un dominio propio.
+- GitHub Actions: acciones fijadas por SHA, `persist-credentials: false` y permisos mínimos (`contents: read`; `write` solo en el job de noticias).
 - CSP en `<meta>`: solo `'self'`, `https://api.anthropic.com` y `https://raw.githubusercontent.com` (titulares públicos de la rama `news`). Si añades un servicio (por ejemplo Dropbox), amplía `connect-src` solo con sus dominios exactos.
 - No añadas analítica, CDNs ni dependencias remotas. pdf.js está copiado en `vendor/`.
 
@@ -67,7 +72,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 9 pruebas del recolector de noticias + 53 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
+npm test           # 9 pruebas del recolector de noticias + 59 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).
@@ -94,5 +99,5 @@ Comprueba las cifras en fuentes oficiales (irs.gov, ftb.ca.gov) antes de cambiar
 - Estimación del impuesto de California (ahora solo compara deducción detallada y estándar, y el tipo marginal).
 - Lectores locales específicos para extractos de Chase, Amex, BofA y M1 (ahora: heurística genérica + Claude opcional).
 - Historial de posiciones (`S.holdingsHist`) → gráfico de evolución por activo.
-- Dividir `index.html` en módulos si supera ~2.500 líneas.
+- Dividir `app.js` en módulos si supera ~2.500 líneas.
 - Si algún día se comercializa: revisar licencia, el contrato laboral del autor (California Labor Code 2870) y valorar repo privado.
