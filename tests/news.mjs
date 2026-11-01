@@ -53,4 +53,12 @@ t('configuración coherente', () => {
   assert.equal(new Set(UNI.map(u => u.s)).size, UNI.length); assert.ok(UNI.length > 150);
   assert.equal(clean('a &amp;amp; b'), 'a & b');
 });
+t('allow limita una búsqueda a medios del país y skip descarta agregadores', () => {
+  const es = SRC.feeds.find(f => f.id === 'gn-es'); assert.ok(es.allow);
+  const xml = `<rss><channel><item><title>El Ibex sube con la banca en la sesión - Bolsamanía</title><link>https://news.google.com/rss/articles/A</link><pubDate>Sat, 31 Oct 2026 17:00:00 GMT</pubDate><source url="https://www.bolsamania.com">Bolsamanía</source></item>
+<item><title>Tierra del Fuego impulsa nuevos mercados con Brasil - Aire Libre</title><link>https://news.google.com/rss/articles/B</link><pubDate>Sat, 31 Oct 2026 17:00:00 GMT</pubDate><source url="https://airelibre.com.ar">Aire Libre</source></item>
+<item><title>Las bolsas abren en verde según Cinco Noticias - 20minutos</title><link>https://news.google.com/rss/articles/C</link><pubDate>Sat, 31 Oct 2026 17:00:00 GMT</pubDate><source url="https://www.20minutos.es">20minutos</source></item></channel></rss>`;
+  const r = normalize(parseFeed(xml), es, [...SRC.paywall, ...SRC.skip], now); assert.deepEqual(r.map(x => x.d), ['bolsamania.com', '20minutos.es']);
+  assert.ok(isPaywalled(['https://www.moomoo.com/x'], SRC.skip)); assert.ok(isPaywalled(['https://www.theglobeandmail.com/x'], SRC.paywall));
+});
 console.log(`\n${n} pruebas de noticias OK`);

@@ -1,5 +1,5 @@
 {
-  "_nota": "Fuentes públicas y gratuitas de la terminal de noticias. Las búsquedas 'gn' son de Google News (agrega a muchos medios; se filtran los de pago con 'paywall'). Si una fuente falla, el resto sigue funcionando y se ve en 'Estado de las fuentes' dentro de la app.",
+  "_nota": "Fuentes públicas y gratuitas de la terminal de noticias. Las búsquedas 'gn' son de Google News (agrega a muchos medios; se filtran los de pago con 'paywall'). Si una fuente falla, el resto sigue funcionando y se ve en 'Estado de las fuentes' dentro de la app. 'skip' descarta agregadores automáticos o de baja calidad; 'allow' en una fuente limita sus resultados a esos dominios (sufijos).",
   "editions": {
     "US": {
       "hl": "en-US",
@@ -60,6 +60,11 @@
       "hl": "en-AU",
       "gl": "AU",
       "ceid": "AU:en"
+    },
+    "IT": {
+      "hl": "it",
+      "gl": "IT",
+      "ceid": "IT:it"
     }
   },
   "regions": [
@@ -208,18 +213,6 @@
       "source": "CNBC"
     },
     {
-      "id": "yahoo-finance",
-      "region": "us",
-      "url": "https://finance.yahoo.com/news/rssindex",
-      "source": "Yahoo Finance"
-    },
-    {
-      "id": "nasdaq-markets",
-      "region": "us",
-      "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",
-      "source": "Nasdaq"
-    },
-    {
       "id": "investing-us",
       "region": "us",
       "url": "https://www.investing.com/rss/news_25.rss",
@@ -276,12 +269,6 @@
       }
     },
     {
-      "id": "eleconomista-mercados",
-      "region": "es",
-      "url": "https://www.eleconomista.es/rss/rss-mercados.php",
-      "source": "elEconomista.es"
-    },
-    {
       "id": "europapress-economia",
       "region": "es",
       "url": "https://www.europapress.es/rss/rss.aspx?ch=00136",
@@ -304,16 +291,48 @@
       "region": "es",
       "gn": {
         "ed": "ES",
-        "q": "Ibex OR \"Bolsa española\" OR \"Bolsa de Madrid\" OR mercados"
-      }
+        "q": "Ibex OR \"Bolsa española\" OR \"Bolsa de Madrid\" OR \"mercado continuo\" OR \"parqué madrileño\""
+      },
+      "allow": [
+        ".es",
+        "es.investing.com",
+        "bolsamania.com",
+        "rankia.com",
+        "estrategiasdeinversion.com",
+        "libremercado.com",
+        "eleconomista.es",
+        "europapress.es",
+        "20minutos.es",
+        "rtve.es",
+        "epdata.es",
+        "merca2.es",
+        "infobae.com/espana",
+        "forbes.es"
+      ]
     },
     {
       "id": "gn-es-eco",
       "region": "es",
       "gn": {
         "ed": "ES",
-        "q": "Banco de España OR prima de riesgo OR Euríbor OR CNMV"
-      }
+        "q": "\"Banco de España\" OR \"prima de riesgo\" OR Euríbor OR CNMV OR \"bono español\""
+      },
+      "allow": [
+        ".es",
+        "es.investing.com",
+        "bolsamania.com",
+        "rankia.com",
+        "estrategiasdeinversion.com",
+        "libremercado.com",
+        "eleconomista.es",
+        "europapress.es",
+        "20minutos.es",
+        "rtve.es",
+        "epdata.es",
+        "merca2.es",
+        "infobae.com/espana",
+        "forbes.es"
+      ]
     },
     {
       "id": "gn-gb",
@@ -328,7 +347,8 @@
       "region": "de",
       "gn": {
         "ed": "GB",
-        "q": "DAX OR \"German stocks\" OR Bundesbank OR \"German economy\""
+        "q": "DAX OR \"German stocks\" OR Bundesbank OR \"German economy\"",
+        "when": "2d"
       }
     },
     {
@@ -336,15 +356,16 @@
       "region": "fr",
       "gn": {
         "ed": "GB",
-        "q": "\"CAC 40\" OR \"French stocks\" OR \"French economy\""
+        "q": "\"CAC 40\" OR \"French stocks\" OR \"French economy\"",
+        "when": "2d"
       }
     },
     {
       "id": "gn-it",
       "region": "it",
       "gn": {
-        "ed": "GB",
-        "q": "\"FTSE MIB\" OR \"Italian stocks\" OR \"Italian bonds\" OR \"Italian economy\""
+        "ed": "IT",
+        "q": "\"Piazza Affari\" OR \"Borsa di Milano\" OR \"FTSE MIB\" OR \"spread Btp\""
       }
     },
     {
@@ -352,7 +373,8 @@
       "region": "pt",
       "gn": {
         "ed": "PT",
-        "q": "PSI OR \"Bolsa de Lisboa\" OR Euronext Lisboa OR economia portuguesa"
+        "q": "PSI OR \"bolsa de Lisboa\" OR Euribor OR \"Banco de Portugal\" OR \"juros da dívida\"",
+        "when": "2d"
       }
     },
     {
@@ -495,7 +517,7 @@
     "abc.es",
     "lavanguardia.com",
     "elperiodico.com",
-    "globeandmail.com",
+    "theglobeandmail.com",
     "nationalpost.com",
     "financialpost.com",
     "theaustralian.com.au",
@@ -526,6 +548,34 @@
     "cnbc.com/pro",
     "investing.com/pro",
     "fool.com/premium",
-    "zacks.com/premium"
+    "zacks.com/premium",
+    "marketbeat.com",
+    "tipranks.com",
+    "gurufocus.com"
+  ],
+  "skip": [
+    "moomoo.com",
+    "ad-hoc-news.de",
+    "stocktradersdaily.com",
+    "pluang.com",
+    "biggo.com",
+    "vietnam.vn",
+    "stocktitan.net",
+    "marketscreener.com",
+    "defenseworld.net",
+    "etfdailynews.com",
+    "tickerreport.com",
+    "themarketsdaily.com",
+    "thelincolnianonline.com",
+    "modernreaders.com",
+    "wkrb13.com",
+    "thecerbatgem.com",
+    "dailypolitical.com",
+    "zolmax.com",
+    "theenterpriseleader.com",
+    "sharewise.com",
+    "finanznachrichten.de",
+    "kalkinemedia.com",
+    "kalkine.com.au"
   ]
 }

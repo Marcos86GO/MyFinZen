@@ -9,8 +9,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const H = 3600e3;
+const FORMAT = 2; // súbelo si cambian los filtros para descartar lo acumulado
 const UA = 'Mozilla/5.0 (compatible; MyFinZen-news/1.0; +https://github.com/Marcos86GO/MyFinZen)';
-export const LIMITS = { regionHours: 72, regionMax: 150, countryMax: 60, tickerDays: 10, tickerMax: 10, rotation: 4, tickerDelayMs: Number(process.env.NEWS_DELAY_MS ?? 1500) };
+export const LIMITS = { regionHours: 72, regionMax: 100, countryMax: 50, tickerDays: 10, tickerMax: 6, rotation: 4, tickerDelayMs: Number(process.env.NEWS_DELAY_MS ?? 1500) };
 
 /* ---------- XML / RSS ---------- */
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', euro: '€' };
@@ -75,6 +76,7 @@ export function normalize(raw, feed, list, now = Date.now()) {
     const d = isGN ? host(r.sourceUrl) : host(r.link);
     if (!source) source = d;
     if (isPaywalled([r.link, r.sourceUrl], list)) continue;
+    if (feed.allow && !isPaywalled([isGN ? r.sourceUrl : r.link], feed.allow.map(a => a.replace(/^\./, '')))) continue; // fuera de los dominios permitidos
     let p = Date.parse(r.date); if (!Number.isFinite(p)) p = now; if (p > now + H) p = now;
     if (t.length < 12) continue;
     items.push({ t, u: r.link, s: source, d, p: new Date(p).toISOString() });
@@ -83,7 +85,7 @@ export function normalize(raw, feed, list, now = Date.now()) {
 }
 
 /* ---------- Descarga ---------- */
-export function gnURL(gn, editions, when = '1d') {
+export function gnURL(gn, editions, when = '1d') { // when: 1d, 2d, 7d…
   const e = editions[gn.ed || 'US'];
   return `https://news.google.com/rss/search?q=${encodeURIComponent(`${gn.q} when:${when}`)}&hl=${e.hl}&gl=${e.gl}&ceid=${encodeURIComponent(e.ceid)}`;
 }
@@ -134,6 +136,8 @@ async function main() {
   const SRC = JSON.parse(await fs.readFile(path.join(HERE, 'sources.json'), 'utf8'));
   const UNI = JSON.parse(await fs.readFile(path.join(HERE, 'universe.json'), 'utf8'));
   let prev = {}; if (prevPath) { try { prev = JSON.parse(await fs.readFile(prevPath, 'utf8')); } catch { prev = {}; } }
+  if (prev.v !== FORMAT) prev = {}; // al cambiar filtros o formato se empieza de cero
+  const BLOCK = [...SRC.paywall, ...(SRC.skip || [])];
   const now = Date.now();
   const status = []; const got = [];
 
@@ -142,9 +146,9 @@ async function main() {
   async function worker() {
     while (queue.length) {
       const f = queue.shift(); const t0 = Date.now();
-      const url = f.gn ? gnURL(f.gn, SRC.editions) : f.url;
+      const url = f.gn ? gnURL(f.gn, SRC.editions, f.gn.when || '1d') : f.url;
       try {
-        const items = normalize(parseFeed(await get(url)), f, SRC.paywall, now).map(x => ({ ...x, r: [f.region] }));
+        const items = normalize(parseFeed(await get(url)), f, BLOCK, now).map(x => ({ ...x, r: [f.region] }));
         got.push(items); status.push({ id: f.id, region: f.region, ok: items.length > 0, n: items.length, ms: Date.now() - t0, ...(items.length ? {} : { err: 'sin titulares' }) });
       } catch (e) { status.push({ id: f.id, region: f.region, ok: false, n: 0, ms: Date.now() - t0, err: String(e.message || e).slice(0, 120) }); }
     }
@@ -158,7 +162,7 @@ async function main() {
   let tOk = 0, tFail = 0, stopped = '';
   for (const u of todo) {
     try {
-      const items = normalize(parseFeed(await get(gnURL(tickerQuery(u), SRC.editions, '7d'))), {}, SRC.paywall, now).map(x => ({ ...x, k: [u.s] }));
+      const items = normalize(parseFeed(await get(gnURL(tickerQuery(u), SRC.editions, '7d'))), {}, BLOCK, now).map(x => ({ ...x, k: [u.s] }));
       got.push(items); tOk++;
     } catch (e) {
       tFail++;
@@ -169,10 +173,10 @@ async function main() {
 
   // 3) Unir con lo anterior, quitar duplicados y recortar
   const regions = SRC.regions;
-  const prevItems = (prev.items || []).map(x => ({ ...x, r: x.r || [], k: x.k || [] }));
+  const prevItems = (prev.items || []).filter(x => !isPaywalled(['https://' + x.d + '/'], BLOCK)).map(x => ({ ...x, r: x.r || [], k: x.k || [] }));
   const items = trim(merge([prevItems, ...got]), regions, now);
   const out = {
-    v: 1, updated: new Date(now).toISOString(), regions,
+    v: FORMAT, updated: new Date(now).toISOString(), regions,
     universe: UNI.map(u => ({ s: u.s, n: u.n, ...(u.a ? { a: u.a } : {}) })),
     feeds: status.sort((a, b) => a.id.localeCompare(b.id)),
     tickers: { queried: todo.length, ok: tOk, failed: tFail, ...(stopped ? { stopped } : {}) },

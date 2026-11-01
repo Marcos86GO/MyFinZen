@@ -28,7 +28,7 @@ La primera vez crearás tu contraseña maestra, guardarás la clave de recuperac
 
 - La tarea de GitHub Actions `Noticias` (`.github/workflows/noticias.yml`) se ejecuta cada hora, lee las fuentes de `news/sources.json` y publica `news.json` en la rama `news`. No necesita configuración.
 - Las búsquedas por símbolo usan la lista pública `news/universe.json` (unos 210 ETFs y acciones). La app filtra en tu dispositivo las de tus posiciones: tu cartera no se sube a ningún sitio.
-- Los medios de pago se descartan con la lista `paywall` de `news/sources.json`. Si se cuela alguno, ocúltalo con la ✕ de la noticia.
+- Los medios de pago y los agregadores automáticos se descartan con las listas `paywall` y `skip` de `news/sources.json`. Si se cuela alguno, ocúltalo con la ✕ de la noticia.
 - Si las noticias dejan de actualizarse (GitHub pausa las tareas programadas tras 60 días sin actividad en el repositorio): *Actions → Noticias → Enable workflow* o *Run workflow*.
 
 ## Pasar datos entre dispositivos
