@@ -8,7 +8,7 @@ const types={'.html':'text/html','.js':'application/javascript','.png':'image/pn
 const srv=http.createServer((q,r)=>{let f=decodeURIComponent(q.url.split('?')[0]);if(f.endsWith('/'))f+='index.html';const fp=path.join(ROOT,f);if(!fp.startsWith(ROOT)||!fs.existsSync(fp)){r.writeHead(404);return r.end();}r.writeHead(200,{'content-type':types[path.extname(fp)]||'text/plain'});fs.createReadStream(fp).pipe(r);}).listen(PORT);
 let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed++; };
 (async()=>{
-  const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900}}); const pg=await ctx.newPage();
+  const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const pg=await ctx.newPage();
   const errs=[]; pg.on('pageerror',e=>errs.push(e.message)); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
   const cdp=await ctx.newCDPSession(pg); await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
@@ -91,12 +91,35 @@ let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed+
   ok(await pg.evaluate(()=>S.settings.newsHide.includes('cnbc.com')&&![...document.querySelectorAll('.term-row')].some(r=>/cnbc\.com/.test(r.innerText))),'ocultar una fuente');
   await pg.click('#tFoot summary'); await pg.click('[data-unhide="cnbc.com"]'); await pg.waitForTimeout(150); ok(await pg.evaluate(()=>!S.settings.newsHide.length),'recuperar una fuente oculta');
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.click('[data-ntab="cartera"]'); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/noticias-escritorio.png'}); await pg.click('[data-ntab="paises"]'); await pg.waitForTimeout(150); await pg.screenshot({path:process.env.SHOTS+'/noticias-paises-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); await pg.click('[data-ntab="us"]'); await pg.waitForTimeout(150); await pg.screenshot({path:process.env.SHOTS+'/noticias-us-movil.png'}); }
+  // Iconos de ayuda, manual y categorías propias
+  await pg.setViewportSize({width:412,height:900}); await pg.goto(U+'#resumen'); await pg.waitForTimeout(300);
+  ok(await pg.evaluate(()=>{ const ks=[...new Set([...document.documentElement.outerHTML.matchAll(/data-help="([a-z_]+)"/g)].map(m=>m[1]))]; return ks.length>=5&&ks.every(k=>HELP[k]&&HELP[k].es&&HELP[k].en)?true:ks.join(','); })===true,'iconos de ayuda con texto en los dos idiomas');
+  await pg.click('#app .ib'); await pg.waitForTimeout(200); ok(await pg.$eval('#modal',e=>/Cómo usarlo/.test(e.innerText)),'ayuda de una sección');
+  await pg.click('#hMan'); await pg.waitForTimeout(400); ok(await pg.evaluate(()=>location.hash==='#ayuda'&&!!document.getElementById('man-rec')&&/Primeros pasos/.test(document.body.innerText)),'manual de usuario');
+  await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.click('#catMgr'); await pg.click('#ucAdd'); await pg.fill('#ncN','Mascotas'); await pg.click('#ncOk'); await pg.waitForTimeout(200); await pg.click('#ucClose'); await pg.waitForTimeout(300);
+  await pg.selectOption('#app .tcat >> nth=0','Mascotas'); await pg.waitForTimeout(200); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
+  ok(await pg.evaluate(()=>catType('Mascotas')==='expense'&&S.tx.some(t=>t.cat==='Mascotas'&&t.manual)&&[...document.querySelectorAll('#fCat option')].some(o=>o.value==='Mascotas')),'categoría propia creada y usada');
+  // Inglés en todas las pantallas
+  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
+  const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
+  for(const v of views){ await pg.goto(U+'#'+v); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push(v+': '+m[0]); }
+  for(const tab of ['resumen','perfil','optimizar','turbotax']){ await pg.goto(U+'#impuestos'); await pg.evaluate(t=>{taxSel.tab=t;route();},tab); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push('impuestos/'+tab+': '+m[0]); }
+  ok(!bad.length,'todas las pantallas en inglés'+(bad.length?' — quedan textos: '+bad.join(' | '):''));
+  if(process.env.SHOTS){ const sh=async(h,n,fn)=>{ await pg.goto(U+'#'+h); await pg.waitForTimeout(300); if(fn) await fn(); await pg.waitForTimeout(250); await pg.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); };
+    await pg.setViewportSize({width:1200,height:900}); await sh('resumen','en-resumen-escritorio'); await sh('ayuda','en-manual-escritorio'); await sh('ajustes','en-ajustes-escritorio');
+    await sh('impuestos','en-optimizar-escritorio',()=>pg.evaluate(()=>{taxSel.tab='optimizar';route();})); await sh('cuentas','en-editar-cuenta',()=>pg.click('[data-edit]'));
+    await pg.click('#mc'); await sh('flujo','en-categorias',()=>pg.click('#catMgr')); await pg.click('#ucClose'); await pg.setViewportSize({width:412,height:900}); }
+  if(process.env.SHOTS){ await pg.goto(U+'#flujo'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/en-flujo-movil.png'}); await pg.click('#app .ib'); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/en-ayuda-movil.png'}); await pg.click('#mc'); }
+  await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(500); await pg.$eval('#recBox',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/flujo-escritorio.png'}); await pg.goto(U+'#hipotecas'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/hipotecas-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300); await pg.fill('#sKey','sk-ant-test'); await pg.click('#sKeySave'); await pg.waitForTimeout(300);
   await pg.click('#sKeyTest'); await pg.waitForTimeout(600); ok(/Funciona/.test(await pg.$eval('#sKeyMsg',e=>e.innerText)),'clave de API (mock)');
   await pg.fill('#bP','copia123'); const [dl]=await Promise.all([pg.waitForEvent('download'),pg.click('#bExp')]); const bk=fs.readFileSync(await dl.path(),'utf8');
   ok(!/sk-ant/.test(bk)&&!/CuentaSecretaXYZ/.test(bk),'copia cifrada sin clave de API');
   await pg.click('#lockBtn'); await pg.waitForTimeout(500); ok(await pg.evaluate(()=>S===null),'bloqueo');
+  await pg.click('.langsw [data-lang=en]'); await pg.waitForTimeout(200); ok(await pg.$eval('#gate h2',e=>e.innerText)==='Unlock','pantalla de desbloqueo en inglés');
+  if(process.env.SHOTS) await pg.screenshot({path:process.env.SHOTS+'/en-gate-movil.png'});
+  await pg.click('.langsw [data-lang=es]'); await pg.waitForTimeout(200);
   await pg.fill('#gP','incorrecta'); await pg.click('#gGo'); await pg.waitForTimeout(2500); ok(await pg.evaluate(()=>S===null),'contraseña incorrecta rechazada');
   await pg.fill('#gP',PASS); await pg.click('#gGo'); await pg.waitForTimeout(2500); ok(await pg.evaluate(()=>!!S&&S.accounts.length>=2),'desbloqueo con contraseña');
   await pg.click('#lockBtn'); await pg.waitForTimeout(400); await pg.click('#gPk'); await pg.waitForTimeout(1500); ok(await pg.evaluate(()=>!!S),'desbloqueo con passkey');

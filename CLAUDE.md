@@ -6,13 +6,15 @@ App web instalable (PWA) de finanzas personales para un único usuario, con todo
 
 ## Idioma y estilo
 
-- Interfaz, textos, comentarios y mensajes de commit en **español**. Los nombres de los menús de TurboTax, en inglés, como aparecen en TurboTax.
+- La app es **bilingüe (español / inglés)**. Todo texto visible pasa por `L('español','English')`; nunca escribas un texto de interfaz sin su versión inglesa. Para objetos con etiquetas usa `bil({...})` o getters (como `KINDS`, `FORM_LABEL`, `FORM_FIELDS`). El idioma está en `LANG`, se cambia con `setLang()` y se guarda en `localStorage` (`mfz-lang`; no es un dato personal). Quien ya tenía bóveda y no ha elegido idioma sigue en español.
+- Los nombres internos de las categorías de sistema están en español (son los que se guardan); se muestran con `catL()` (`CAT_EN`). Las clases de activo, con `acL()`. Meses: `mesAbbr`/`mesLong`.
+- Comentarios y mensajes de commit en **español**. Los nombres de los menús de TurboTax, en inglés, como aparecen en TurboTax.
 - El usuario vive en California (EE. UU.) y declara casado conjuntamente (MFJ). Las reglas fiscales son federales y de California.
 - Importes en USD (`fmt()`), fechas en formato ISO internamente y `dLabel()` para mostrarlas.
 
 ## Arquitectura
 
-Todo vive en `index.html` (≈1.700 líneas: HTML, CSS y un único `<script>`). Secciones en orden:
+Todo vive en `index.html` (≈2.000 líneas: HTML, CSS y un único `<script>`), salvo los textos de ayuda y el manual, en `help.js`. Secciones en orden:
 
 | Zona | Qué contiene |
 |---|---|
@@ -20,6 +22,8 @@ Todo vive en `index.html` (≈1.700 líneas: HTML, CSS y un único `<script>`). 
 | Utilidades | `fmt`, `num` (parsea importes US/EU y negativos entre paréntesis), `parseDate`, `uid`, `esc` |
 | Dominio | `lastSnap`/`balanceOf` (saldos por fecha), `netWorthAt`, `cashflowByMonth`, `amortize` (hipoteca mes a mes), `categorize` |
 | Conciliación | `reconcile()` (se ejecuta en cada `route()`): empareja pagos de tarjeta y transferencias entre cuentas propias (mismo importe, ±días) y cuotas de hipoteca pagadas desde el banco (importe exacto de cuota+escrow+extra o nombre de la entidad); marca `t.rec` y ajusta la categoría salvo `t.manual`. Comprueba pagos a tarjetas no importadas, cuotas que faltan o no coinciden, saldo de la hipoteca entre extractos, saldo vs. movimientos en bancos y tarjetas, y duplicados CSV/PDF. Resultado en `REC` (`recHTML`, `wireRec`); lo ignorado va a `settings.recIgnore`. Las hipotecas cuentan en `cashflowByMonth` como cuota fija mensual (`fixedMortgages`, `mortMonthly`) |
+| Ayuda y manual | `help.js` (fuera de `index.html`): `HELP[clave]={es,en}` con título, párrafos y pasos; `HELP_GROUPS` (orden por pantalla) y `MANUAL` (capítulos generales). En `index.html`: `helpBtn(clave)` pinta el icono (i) arriba a la derecha de la tarjeta, `showHelp()` abre el tutorial y `VIEWS.ayuda` monta el manual. **Cada tarjeta nueva lleva su `helpBtn` y su texto en `help.js` en los dos idiomas** (la prueba lo comprueba) |
+| Categorías propias | `S.settings.userCats=[{name,type}]`; `catsOf(tipo)`, `allCats()`, `catType()`, `catOptions(sel)` (con la opción "+ Nueva categoría…"), `newCatModal()`, `manageCats()`. Las de sistema (`CATS`) no se borran |
 | Gráficos | SVG hechos a mano: `lineChart`, `barChart`, `hbars`, `legend`, con tooltips. Paleta en variables CSS `--s1..--s8` (modo claro/oscuro) |
 | Avisos | `computeAlerts()` |
 | Vistas | `VIEWS.<nombre>(el)` + `route()` por hash: `resumen`, `flujo`, `hipotecas`, `inversiones`, `noticias` (pestaña de Inversiones; el menú resalta Inversiones), `alquiler`, `cuentas`, `importar`, `impuestos`, `claude`, `ajustes` |
@@ -60,10 +64,10 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 9 pruebas del recolector + 36 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada)
+npm test           # 9 pruebas del recolector de noticias + 51 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
-Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900) y revísalas.
+Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).
 
 ## Publicar
 

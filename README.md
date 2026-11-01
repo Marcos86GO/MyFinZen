@@ -2,7 +2,11 @@
 
 Web app de finanzas personales, datos locales y seguros. Manual pero sin riesgos.
 
-Cuentas, hipotecas (con simulador de pagos extra), inversiones (incluye el CSV de Holdings de M1 y una terminal de noticias), casa en alquiler, ingresos y gastos, e impuestos federales y de California con guía paso a paso para TurboTax.
+Cuentas, hipotecas (con simulador de pagos extra), inversiones (incluye el CSV de Holdings de M1 y una terminal de noticias), casa en alquiler, ingresos y gastos con conciliación entre cuentas y categorías propias, e impuestos federales y de California con guía paso a paso para TurboTax.
+
+En **español e inglés** (*Copia y ajustes → Idioma*). Cada sección tiene un icono **i** con su explicación y un pequeño tutorial, y la pestaña **Manual** reúne la guía completa.
+
+*Personal finance app with local, encrypted data. Available in Spanish and English; switch in Backup & settings → Language.*
 
 ## Privacidad y seguridad
 
@@ -45,6 +49,7 @@ La primera vez crearás tu contraseña maestra, guardarás la clave de recuperac
 | Archivo | Qué es |
 |---|---|
 | `index.html` | Toda la app (interfaz, cálculos, cifrado) |
+| `help.js` | Textos de ayuda de cada sección y manual de usuario, en español e inglés |
 | `sw.js` | Service worker: funcionamiento sin conexión y actualizaciones |
 | `manifest.webmanifest` | Nombre, iconos y modo app |
 | `icons/` | Iconos de la app |
