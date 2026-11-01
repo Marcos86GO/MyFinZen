@@ -50,7 +50,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ## Noticias (servidor)
 
 - `.github/workflows/noticias.yml` corre cada hora (y al cambiar `news/**`): `node news/build.mjs out/news.json prev.json` y reescribe la rama `news` con un solo commit.
-- `news/sources.json`: regiones, feeds RSS directos y búsquedas de Google News por edición (`gn`), , la lista `paywall` (dominio o dominio/ruta), `skip` (agregadores de baja calidad) y `allow` por fuente (solo esos dominios). Solo medios de acceso libre. Si cambias filtros, sube `FORMAT` en build.mjs para descartar lo acumulado.
+- `news/sources.json`: regiones, feeds RSS directos y búsquedas de Google News por edición (`gn`), la lista `paywall` (dominio o dominio/ruta), `skip` (agregadores de baja calidad) y `allow` por fuente (solo esos dominios). Solo medios de acceso libre. Si cambias filtros, sube `FORMAT` en build.mjs para descartar lo acumulado.
 - `news/universe.json`: lista **pública** de símbolos `{s,t,n,a}`; cada ejecución busca una cuarta parte (todo en la primera). Nunca añadas aquí las posiciones del usuario por iniciativa propia: es un repo público.
 - `news.json`: `{v,updated,regions[],universe[],feeds[{id,region,ok,n,err}],tickers{},items[{t,u,s,d,p,r?,k?}]}`. Si ninguna fuente responde, la tarea falla y se conserva la versión anterior.
 - Pruebas sin red: `node tests/news.mjs`.

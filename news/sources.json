@@ -375,7 +375,10 @@
         "ed": "PT",
         "q": "PSI OR \"bolsa de Lisboa\" OR Euribor OR \"Banco de Portugal\" OR \"juros da dívida\"",
         "when": "2d"
-      }
+      },
+      "allow": [
+        ".pt"
+      ]
     },
     {
       "id": "gn-ca",

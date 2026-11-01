@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const H = 3600e3;
-const FORMAT = 2; // súbelo si cambian los filtros para descartar lo acumulado
+const FORMAT = 3; // súbelo si cambian los filtros para descartar lo acumulado
 const UA = 'Mozilla/5.0 (compatible; MyFinZen-news/1.0; +https://github.com/Marcos86GO/MyFinZen)';
 export const LIMITS = { regionHours: 72, regionMax: 100, countryMax: 50, tickerDays: 10, tickerMax: 6, rotation: 4, tickerDelayMs: Number(process.env.NEWS_DELAY_MS ?? 1500) };
 
