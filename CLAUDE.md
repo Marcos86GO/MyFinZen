@@ -19,6 +19,7 @@ Todo vive en `index.html` (≈1.700 líneas: HTML, CSS y un único `<script>`). 
 | Storage | `KINDS` (tipos de cuenta), `CATS` (categorías), `DEFAULT_RULES` (auto-categorización por regex), `blankState()`, `IDB` (IndexedDB clave-valor), `save()` → `persist()` con retardo |
 | Utilidades | `fmt`, `num` (parsea importes US/EU y negativos entre paréntesis), `parseDate`, `uid`, `esc` |
 | Dominio | `lastSnap`/`balanceOf` (saldos por fecha), `netWorthAt`, `cashflowByMonth`, `amortize` (hipoteca mes a mes), `categorize` |
+| Conciliación | `reconcile()` (se ejecuta en cada `route()`): empareja pagos de tarjeta y transferencias entre cuentas propias (mismo importe, ±días) y cuotas de hipoteca pagadas desde el banco (importe exacto de cuota+escrow+extra o nombre de la entidad); marca `t.rec` y ajusta la categoría salvo `t.manual`. Comprueba pagos a tarjetas no importadas, cuotas que faltan o no coinciden, saldo de la hipoteca entre extractos, saldo vs. movimientos en bancos y tarjetas, y duplicados CSV/PDF. Resultado en `REC` (`recHTML`, `wireRec`); lo ignorado va a `settings.recIgnore`. Las hipotecas cuentan en `cashflowByMonth` como cuota fija mensual (`fixedMortgages`, `mortMonthly`) |
 | Gráficos | SVG hechos a mano: `lineChart`, `barChart`, `hbars`, `legend`, con tooltips. Paleta en variables CSS `--s1..--s8` (modo claro/oscuro) |
 | Avisos | `computeAlerts()` |
 | Vistas | `VIEWS.<nombre>(el)` + `route()` por hash: `resumen`, `flujo`, `hipotecas`, `inversiones`, `alquiler`, `cuentas`, `importar`, `impuestos`, `claude`, `ajustes` |
@@ -50,7 +51,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 21 pruebas end-to-end (passkey con autenticador virtual PRF, API de Claude simulada)
+npm test           # 28 pruebas end-to-end (passkey con autenticador virtual PRF, API de Claude simulada)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900) y revísalas.

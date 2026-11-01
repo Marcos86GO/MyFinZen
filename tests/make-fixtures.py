@@ -29,4 +29,18 @@ open(os.path.join(D,'card.csv'),'w').write('''Transaction Date,Post Date,Descrip
 10/05/2026,10/06/2026,SHELL OIL 5744,Gas,Sale,-58.10
 10/12/2026,10/12/2026,PAYMENT THANK YOU,,Payment,1500.00
 ''')
+# Cuenta corriente: cuota de hipoteca adelantada (dos en septiembre, ninguna en octubre), pago de la tarjeta
+# de card.csv sin palabras clave, transferencia a ahorro y un pago a otra tarjeta que no está importada.
+open(os.path.join(D,'checking.csv'),'w').write('''Posting Date,Description,Amount
+09/01/2026,PENNYMAC LOAN PAYMENT,-4700.00
+09/15/2026,ACME CORP PAYROLL,8000.00
+09/30/2026,PENNYMAC LOAN PAYMENT,-4700.00
+10/11/2026,CHASE CARDMEMBER SVC,-1500.00
+10/15/2026,ACME CORP PAYROLL,8000.00
+10/20/2026,ONLINE TRANSFER TO SAV,-2000.00
+10/22/2026,AMEX EPAYMENT ACH PMT,-900.00
+''')
+open(os.path.join(D,'savings.csv'),'w').write('''Posting Date,Description,Amount
+10/21/2026,ONLINE TRANSFER FROM CHK,2000.00
+''')
 print('fixtures ok')

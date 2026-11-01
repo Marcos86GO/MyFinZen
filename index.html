@@ -252,9 +252,21 @@ function netWorthAt(upTo){
 }
 function monthsRange(n){ const out=[]; const d=new Date(); d.setDate(1); for(let i=n-1;i>=0;i--){ const x=new Date(d.getFullYear(), d.getMonth()-i, 1); out.push(x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')); } return out; }
 function monthEnd(k){ const [y,m]=k.split('-').map(Number); const d=new Date(y,m,0); return `${y}-${String(m).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// Hipotecas como coste fijo mensual: cuota + escrow + extra del extracto, cada mes con datos,
+// aunque el cargo caiga en otro mes (pago adelantado) o no esté importado.
+function fixedMortgages(){
+  const out=S.accounts.filter(a=>a.kind==='mortgage'&&mortMonthly(a)>0).map(m=>({id:m.id,cat:mortCat(m),monthly:mortMonthly(m),name:m.name}));
+  S.accounts.filter(p=>p.kind==='property'&&p.rental&&p.mortgagePay>0&&!S.accounts.some(m=>m.kind==='mortgage'&&m.propertyId===p.id)).forEach(p=>out.push({id:p.id,cat:'Hipoteca alquiler',monthly:p.mortgagePay,name:p.name}));
+  return out;
+}
 function cashflowByMonth(){
+  const fixed=fixedMortgages(); const fixedCats=new Set(fixed.map(f=>f.cat));
   const map={};
-  for(const t of S.tx){ const k=ym(t.date); const ty=catType(t.cat); if(ty==='neutral') continue; map[k]=map[k]||{income:0,expense:0,cats:{}}; if(ty==='income'){map[k].income+=t.amount;} else {map[k].expense+=-t.amount; map[k].cats[t.cat]=(map[k].cats[t.cat]||0)+(-t.amount);} }
+  for(const t of S.tx){ const k=ym(t.date); const ty=catType(t.cat); if(ty==='neutral') continue; map[k]=map[k]||{income:0,expense:0,cats:{}};
+    if(ty==='income'){ map[k].income+=t.amount; continue; }
+    if(fixedCats.has(t.cat)) continue; // se cuenta abajo como cuota fija
+    map[k].expense+=-t.amount; map[k].cats[t.cat]=(map[k].cats[t.cat]||0)+(-t.amount); }
+  for(const k of Object.keys(map)) for(const f of fixed){ map[k].expense+=f.monthly; map[k].cats[f.cat]=(map[k].cats[f.cat]||0)+f.monthly; }
   return map;
 }
 function txMonths(){ return [...new Set(S.tx.map(t=>ym(t.date)))].sort(); }
@@ -270,6 +282,124 @@ function categorize(desc){
   const D=' '+String(desc||'').toUpperCase()+' ';
   for(const r of S.rules){ try{ if(new RegExp(r.pattern,'i').test(D)) return r.cat; }catch(e){} }
   return null;
+}
+
+/* ============================================================
+   Conciliación entre cuentas
+   Empareja los movimientos que son la misma operación vista desde dos cuentas
+   (pago de tarjeta, transferencia propia, cuota de hipoteca), corrige su categoría
+   para no contar dos veces el gasto y comprueba que saldos y movimientos cuadren.
+   Cada movimiento emparejado lleva t.rec={type:'card'|'xfer'|'mortgage', acc, with?, prev?, cat?}.
+   Si el usuario cambió la categoría a mano (t.manual), no se toca.
+   ============================================================ */
+const MORT_CATS=['Hipoteca casa','Hipoteca alquiler'];
+const CARD_PAY_RE=/PAYMENT|PYMT|PMT|AUTOPAY|AUTO PAY|THANK YOU|EPAY|CRCARDPMT|PAGO/i;
+const CARD_HINT_RE=/CARD|CRD|AMEX|AMERICAN EXPRESS|DISCOVER|CAPITAL ONE|CITI|VISA|MASTERCARD|EPAY|AUTOPAY|CRCARDPMT/i;
+const XFER_RE=/TRANSFER|XFER|TRANSF|ONLINE|FROM |TO |SAVINGS|CHECKING|ZELLE|INTERNAL|MOBILE/i;
+const MORT_RE=/MORTGAGE|MTG|MTGE|HOME LOAN|LOAN PMT|LOAN PAYMENT|HIPOTECA/i;
+const r2=x=>Math.round(x*100)/100;
+function mortCat(m){ return isRentalMortgage(m)?'Hipoteca alquiler':'Hipoteca casa'; }
+function mortMonthly(m){ return r2((m.payment||0)+(m.escrow||0)+(m.extra||0)); }
+function instWord(a){ const w=String(a&&a.institution||'').toUpperCase().match(/[A-Z0-9]{3,}/); return w?w[0]:null; }
+function mentions(t,a){ if(!a) return false; const D=' '+String(t.desc||'').toUpperCase()+' '; const w=instWord(a); if(w&&D.includes(w)) return true; return !!(a.last4&&a.last4.length===4&&new RegExp('\\D'+a.last4+'\\D').test(D)); }
+function hashKey(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0; return (h>>>0).toString(36); }
+let REC=null;
+function lastRec(){ return REC||reconcile(); }
+function reconcile(){
+  if(!S) return null;
+  const sig=()=>S.tx.map(t=>t.cat+(t.rec?'|'+t.rec.type+t.rec.acc+(t.rec.with||''):'')).join(',');
+  const before=sig();
+  const cashIds=new Set(S.accounts.filter(a=>a.kind==='cash').map(a=>a.id));
+  const cardIds=new Set(S.accounts.filter(a=>a.kind==='credit').map(a=>a.id));
+  const byId={}; S.tx.forEach(t=>byId[t.id]=t);
+  // 1) Deshacer los emparejamientos anteriores (devolviendo la categoría que tenían)
+  for(const t of S.tx){ if(!t.rec) continue; if(!t.manual&&t.rec.cat&&t.cat===t.rec.cat&&t.rec.prev) t.cat=t.rec.prev; delete t.rec; }
+  const link=(t,rec,cat)=>{ t.rec=rec; if(cat&&!t.manual&&t.cat!==cat){ rec.prev=t.cat; rec.cat=cat; t.cat=cat; } };
+  const used=new Set(); const stats={card:0,xfer:0,mort:0};
+  // 2) Pagos de tarjeta y transferencias: salida en una cuenta = entrada en otra, mismo importe, ±días
+  const inAcc=t=>t.acc&&(cashIds.has(t.acc)||cardIds.has(t.acc));
+  const byAmt={}; S.tx.forEach(t=>{ if(t.amount>0&&inAcc(t)){ const k=Math.round(t.amount*100); (byAmt[k]=byAmt[k]||[]).push(t); } });
+  const cand=[];
+  for(const o of S.tx){ if(!(o.amount<0&&inAcc(o))) continue; const list=byAmt[Math.round(-o.amount*100)]; if(!list) continue;
+    for(const i of list){ if(i.acc===o.acc) continue; const dd=daysBetween(o.date,i.date); if(dd<-3||dd>7) continue;
+      if(catType(i.cat)==='income'&&i.cat!=='Otros ingresos') continue; // nómina, renta… no son transferencias
+      let score=10-Math.abs(dd); const toCard=cardIds.has(i.acc);
+      if(toCard){ const card=acc(i.acc); if(!(CARD_PAY_RE.test(i.desc)||mentions(o,card)||CARD_HINT_RE.test(o.desc)||o.cat==='Pago tarjeta')) continue; if(mentions(o,card)) score+=5; if(CARD_PAY_RE.test(i.desc)) score+=2; }
+      else { if(!(XFER_RE.test(o.desc)||XFER_RE.test(i.desc)||o.cat==='Transferencia'||i.cat==='Transferencia')) continue; if(mentions(o,acc(i.acc))||mentions(i,acc(o.acc))) score+=5; }
+      cand.push({o,i,score,type:toCard?'card':'xfer'}); } }
+  cand.sort((a,b)=>b.score-a.score);
+  for(const c of cand){ if(used.has(c.o.id)||used.has(c.i.id)) continue; used.add(c.o.id); used.add(c.i.id);
+    const cat=c.type==='card'?'Pago tarjeta':'Transferencia';
+    link(c.o,{type:c.type,acc:c.i.acc,with:c.i.id},cat); link(c.i,{type:c.type,acc:c.o.acc,with:c.o.id},cat); stats[c.type]++; }
+  // 3) Cuotas de hipoteca pagadas desde las cuentas de banco: por importe exacto y/o nombre de la entidad
+  const morts=S.accounts.filter(a=>a.kind==='mortgage'&&mortMonthly(a)>0);
+  const mres={}; morts.forEach(m=>mres[m.id]={pays:[],accs:new Set()});
+  if(morts.length) for(const t of S.tx){ if(!(t.amount<0&&t.acc&&cashIds.has(t.acc)&&!used.has(t.id))) continue; const a=-t.amount; let best=null;
+    for(const m of morts){ const exp=mortMonthly(m); const exact=[exp,r2((m.payment||0)+(m.escrow||0))].some(v=>Math.abs(a-v)<0.015);
+      const named=mentions(t,m)||MORT_RE.test(t.desc)||MORT_CATS.includes(t.cat); const near=Math.abs(a-exp)/exp;
+      let sc=0; if(exact&&named) sc=100; else if(exact&&a>=300) sc=60; else if(named&&near<=0.25) sc=40-near*100;
+      if(sc>0&&(!best||sc>best.sc)) best={m,sc}; }
+    if(best){ used.add(t.id); link(t,{type:'mortgage',acc:best.m.id},mortCat(best.m)); mres[best.m.id].pays.push(t); mres[best.m.id].accs.add(t.acc); stats.mort++; } }
+  // 4) Comprobaciones
+  const issues=[]; const ign=new Set(S.settings.recIgnore||[]);
+  const add=(key,lvl,t,det,acts)=>{ if(!ign.has(key)) issues.push({key,lvl,t,det,acts}); };
+  const line=t=>`${dLabel(t.date)} · ${esc(t.desc)} · ${fmt(t.amount,2)} · ${esc(accName(t.acc))}`;
+  const cutoff=new Date(Date.now()-365*864e5).toISOString().slice(0,10);
+  const span=ids=>{ const ds=S.tx.filter(t=>ids.has(t.acc)).map(t=>t.date).sort(); return ds.length?[ds[0],ds[ds.length-1]]:null; };
+  // 4a) Pagos de tarjeta desde el banco sin la tarjeta correspondiente
+  const lone=S.tx.filter(t=>t.acc&&cashIds.has(t.acc)&&t.cat==='Pago tarjeta'&&!t.rec&&t.date>=cutoff).sort((a,b)=>b.date.localeCompare(a.date));
+  if(lone.length){ const tot=lone.reduce((s,t)=>s-t.amount,0);
+    add('cardpay:'+hashKey(lone.map(t=>t.id).join()),'warn',`<b>${lone.length} pago${lone.length>1?'s':''} de tarjeta (${fmt(tot)}) sin sus movimientos.</b> Los pagos a la tarjeta no cuentan como gasto, así que si no importas los movimientos de esa tarjeta, sus compras no aparecen en tus gastos. Importa su CSV o PDF del mismo periodo.`,lone.slice(0,20).map(line)); }
+  // 4b) Pagos recibidos en la tarjeta sin el cargo en el banco (cuando el banco sí cubre esas fechas)
+  const cs=span(cashIds);
+  if(cs){ const orph=S.tx.filter(t=>t.acc&&cardIds.has(t.acc)&&t.amount>0&&!t.rec&&(t.cat==='Pago tarjeta'||CARD_PAY_RE.test(t.desc))&&t.date>=cs[0]&&t.date<=cs[1]);
+    if(orph.length) add('cardorph:'+hashKey(orph.map(t=>t.id).join()),'info',`<b>${orph.length} pago${orph.length>1?'s':''} a tus tarjetas sin el cargo en el banco.</b> Probablemente se pagaron desde una cuenta que no has importado, o el importe no coincide.`,orph.slice(0,20).map(line)); }
+  // 4c) Hipotecas: cuotas que faltan y cuota distinta de la del extracto
+  for(const m of morts){ const r=mres[m.id]; const exp=mortMonthly(m); r.exp=exp;
+    const ps=r.pays.slice().sort((a,b)=>a.date.localeCompare(b.date)); r.last=ps[ps.length-1]||null;
+    if(!ps.length) continue; const sp=span(r.accs); const gaps=[];
+    const pts=[sp[0],...ps.map(t=>t.date),sp[1]];
+    for(let i=1;i<pts.length;i++){ const d=daysBetween(pts[i-1],pts[i]); const lim=(i===1||i===pts.length-1)?40:45; if(d>lim) gaps.push(`Entre el ${dLabel(pts[i-1])} y el ${dLabel(pts[i])} (${Math.round(d/30.4)} mes${Math.round(d/30.4)>1?'es':''})`); }
+    if(gaps.length) add('mgap:'+m.id+':'+hashKey(gaps.join()),'warn',`<b>${esc(m.name)}: no encuentro ${gaps.length>1?'algunas cuotas':'una cuota'} en tus cuentas.</b> Puede que esos meses se pagara desde otra cuenta o que falte importar movimientos. Para el gasto mensual se cuenta igualmente la cuota fija de ${fmt(exp,2)}.`,gaps);
+    const L=r.last; const paid=-L.amount;
+    if(Math.abs(paid-exp)>1&&Math.abs(paid-r2((m.payment||0)+(m.escrow||0)))>1) add('mamt:'+m.id+':'+L.id,'warn',`<b>${esc(m.name)}: la última cuota pagada (${fmt(paid,2)} el ${dLabel(L.date)}) no coincide con la del extracto (${fmt(exp,2)} = cuota ${fmt(m.payment||0,2)}${m.escrow?' + escrow '+fmt(m.escrow,2):''}${m.extra?' + extra '+fmt(m.extra,2):''}).</b> Si cambió el escrow o el pago extra, importa el último extracto o edita la hipoteca.`); }
+  // 4d) Saldo de la hipoteca entre dos extractos frente a lo que debería haber bajado
+  for(const m of S.accounts.filter(a=>a.kind==='mortgage')){ const sn=S.snapshots.filter(s=>s.acc===m.id).sort((a,b)=>a.date.localeCompare(b.date));
+    for(let i=1;i<sn.length;i++){ const s1=sn[i-1], s2=sn[i]; const k=Math.round(daysBetween(s1.date,s2.date)/30.44); if(k<1||k>3) continue;
+      const rate=s1.rate??m.rate, pi=s1.pi??m.payment, ex=s1.extra??m.extra??0; if(!rate||!pi) continue;
+      let b=s1.value; for(let j=0;j<k&&b>0;j++){ const int=r2(b*rate/1200); b=Math.max(0,r2(b-(pi+ex-int))); }
+      const diff=r2(s2.value-b); if(Math.abs(diff)<=5) continue;
+      add('mbal:'+s2.id+':'+s2.value,s2.value>s1.value?'crit':'warn',`<b>${esc(m.name)}: el saldo no cuadra entre extractos.</b> Del ${dLabel(s1.date)} (${fmt(s1.value,2)}) al ${dLabel(s2.date)} (${fmt(s2.value,2)}) debería haber bajado a unos ${fmt(b,2)} con ${k} cuota${k>1?'s':''} de ${fmt(pi,2)} + ${fmt(ex,2)} extra. Diferencia: ${fmt(Math.abs(diff),2)} ${diff>0?'más de lo esperado (¿cuota no aplicada, extra menor o algún cargo?)':'menos de lo esperado (¿pago extra mayor?)'}.`); } }
+  // 4e) Bancos y tarjetas: el cambio de saldo entre dos extractos debe ser la suma de los movimientos
+  for(const a of S.accounts.filter(x=>x.kind==='cash'||x.kind==='credit')){ const txs=S.tx.filter(t=>t.acc===a.id); if(!txs.length) continue;
+    const ds=txs.map(t=>t.date).sort(); const sn=S.snapshots.filter(s=>s.acc===a.id).sort((x,y)=>x.date.localeCompare(y.date));
+    for(let i=1;i<sn.length;i++){ const s1=sn[i-1], s2=sn[i]; if(daysBetween(s1.date,ds[0])>7||daysBetween(ds[ds.length-1],s2.date)>7) continue; // los movimientos deben cubrir el periodo
+      const inR=txs.filter(t=>t.date>s1.date&&t.date<=s2.date); if(!inR.length) continue;
+      const sum=r2(inR.reduce((s,t)=>s+t.amount,0)); const delta=r2((s2.value-s1.value)*(a.kind==='credit'?-1:1)); const diff=r2(delta-sum); if(Math.abs(diff)<=1) continue;
+      add('bal:'+s2.id+':'+hashKey(String(s1.value)+s2.value+sum),'warn',`<b>${esc(a.name)}: saldo y movimientos no cuadran.</b> Del ${dLabel(s1.date)} al ${dLabel(s2.date)} el saldo ${a.kind==='credit'?'pendiente ':''}pasó de ${fmt(s1.value,2)} a ${fmt(s2.value,2)}, pero los ${inR.length} movimientos suman ${fmt(sum*(a.kind==='credit'?-1:1),2)}. Diferencia: ${fmt(Math.abs(diff),2)}. ${diff<0?'Puede que algún movimiento esté duplicado':'Puede que falte algún movimiento'}, o que uno cerca de la fecha de cierre esté en otro periodo.`); } }
+  // 4f) Posibles duplicados: misma cuenta e importe, ±3 días, importados de fuentes distintas (CSV y PDF)
+  const groups={}; S.tx.forEach(t=>{ if(!t.acc) return; const k=t.acc+'|'+Math.round(t.amount*100); (groups[k]=groups[k]||[]).push(t); });
+  const norm=s=>String(s||'').toUpperCase().replace(/[^A-Z]/g,'').slice(0,12);
+  for(const g of Object.values(groups)){ if(g.length<2) continue; g.sort((a,b)=>a.date.localeCompare(b.date));
+    for(let i=0;i<g.length;i++) for(let j=i+1;j<g.length;j++){ const x=g[i], y=g[j]; if(daysBetween(x.date,y.date)>3) break;
+      if(!((x.src&&y.src&&x.src!==y.src&&x.src!=='manual'&&y.src!=='manual')||(x.date===y.date&&norm(x.desc)===norm(y.desc)))) continue;
+      const dupe=(y.src==='pdf'||x.src!=='pdf')?y:x;
+      add('dup:'+[x.id,y.id].sort().join(':'),'warn',`<b>Posible movimiento duplicado</b> en ${esc(accName(x.acc))}: ${fmt(x.amount,2)} el ${dLabel(x.date)}${x.date!==y.date?' y el '+dLabel(y.date):''} (${esc(x.desc)} / ${esc(y.desc)}).`,null,[{id:'del:'+dupe.id,l:'Borrar el duplicado',cls:'dan'}]); } }
+  const order={crit:0,warn:1,info:2}; issues.sort((a,b)=>order[a.lvl]-order[b.lvl]);
+  REC={stats,issues,mort:mres,changed:sig()!==before};
+  return REC;
+}
+function recLabel(t){ if(!t.rec) return ''; const o=accName(t.rec.acc); return t.rec.type==='mortgage'?`↔ cuota de ${o}`:t.rec.type==='card'?(t.amount<0?`↔ pago a ${o}`:`↔ pagado desde ${o}`):(t.amount<0?`↔ a ${o}`:`↔ desde ${o}`); }
+function recHTML(R){
+  const s=R.stats; const pl=(n,a,b)=>n+' '+(n===1?a:b);
+  const ic={good:'✓',warn:'!',crit:'!',info:'i'};
+  return `<p class="sub">Emparejados entre cuentas: ${pl(s.card,'pago de tarjeta','pagos de tarjeta')}, ${pl(s.xfer,'transferencia','transferencias')} y ${pl(s.mort,'cuota','cuotas')} de hipoteca. Los pagos de tarjeta y las transferencias no cuentan como gasto (ya cuentan las compras); la hipoteca cuenta como cuota fija mensual.</p>`+
+   (R.issues.length?R.issues.map(i=>`<div class="alert ${i.lvl}"><span class="ic">${ic[i.lvl]}</span><div style="flex:1">${i.t}${i.det&&i.det.length?`<details style="margin-top:4px"><summary>Ver detalle (${i.det.length})</summary>${i.det.map(d=>`<div class="muted">${d}</div>`).join('')}</details>`:''}<div class="row" style="margin-top:6px;justify-content:flex-start">${(i.acts||[]).map(a=>`<button class="sm ${a.cls||''}" data-ract="${esc(a.id)}">${a.l}</button>`).join('')}<button class="sm" data-rign="${esc(i.key)}">${i.key.startsWith('dup:')?'No es duplicado':'Ignorar'}</button></div></div></div>`).join('')
+   :'<div class="alert good"><span class="ic">✓</span><div><b>Todo cuadra.</b> No hay diferencias entre tus cuentas.</div></div>');
+}
+function wireRec(el){
+  el.querySelectorAll('[data-rign]').forEach(b=>b.onclick=()=>{ S.settings.recIgnore=(S.settings.recIgnore||[]).concat(b.dataset.rign).slice(-300); save(); route(); });
+  el.querySelectorAll('[data-ract]').forEach(b=>b.onclick=()=>{ const [k,id]=b.dataset.ract.split(':'); if(k==='del'){ S.tx=S.tx.filter(x=>x.id!==id); save(); toast('Duplicado borrado'); route(); } });
 }
 
 /* ============================================================
@@ -348,6 +478,9 @@ function computeAlerts(){
   // stale balances
   const stale=S.accounts.filter(a=>{const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>40;});
   if(stale.length) A.push({lvl:'warn',t:`<b>Saldos por actualizar:</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?` y ${stale.length-4} más`:''}.`});
+  // conciliación entre cuentas
+  const RC=lastRec(); const rn=RC?RC.issues.filter(i=>i.lvl!=='info'):[];
+  if(rn.length) A.push({lvl:rn.some(i=>i.lvl==='crit')?'crit':'warn',t:`<b>Conciliación: ${rn.length} diferencia${rn.length>1?'s':''} entre tus cuentas.</b> Revísala${rn.length>1?'s':''} en <a href="#flujo">Ingresos y gastos</a>.`});
   // cashflow
   const cf=cashflowByMonth(); const ms=Object.keys(cf).sort();
   const cur=ym(today()); const complete=ms.filter(m=>m<cur);
@@ -374,7 +507,7 @@ function alertsHTML(A){ const ic={good:'✓',warn:'!',crit:'!',info:'i'}; return
    Views
    ============================================================ */
 const VIEWS={};
-function route(){ if(!S) return; const h=(location.hash||'#resumen').slice(1); const v=VIEWS[h]?h:'resumen'; document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+v)); hideTip(); VIEWS[v]($('#app')); window.scrollTo(0,0); }
+function route(){ if(!S) return; const R=reconcile(); if(R&&R.changed) save(); const h=(location.hash||'#resumen').slice(1); const v=VIEWS[h]?h:'resumen'; document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+v)); hideTip(); VIEWS[v]($('#app')); window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
 let resizeT; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
 
@@ -425,7 +558,7 @@ VIEWS.flujo=(el)=>{
   const shown=list.slice(0,300);
   const allCats=[...CATS.income,...CATS.expense,...CATS.neutral];
   el.innerHTML=`
-  <div class="card"><h2>Ingresos, gastos y ahorro</h2><p class="sub">Últimos 12 meses. No cuenta transferencias, pagos de tarjeta ni aportaciones a inversión</p>${legend([{n:'Ingresos',c:'var(--s3)'},{n:'Gastos',c:'var(--s2)'},{n:'Ahorro neto',c:'var(--s1)'}])}<div id="cCF"></div></div>
+  <div class="card"><h2>Ingresos, gastos y ahorro</h2><p class="sub">Últimos 12 meses. No cuenta transferencias, pagos de tarjeta ni aportaciones a inversión. ${fixedMortgages().length?'Las hipotecas cuentan como cuota fija mensual (cuota + escrow + extra), aunque el cargo caiga en otro mes':''}</p>${legend([{n:'Ingresos',c:'var(--s3)'},{n:'Gastos',c:'var(--s2)'},{n:'Ahorro neto',c:'var(--s1)'}])}<div id="cCF"></div></div>
   <div class="spacer"></div>
   <div class="grid g2">
     <div class="card"><h2>Gasto por categoría</h2><p class="sub">${sel?'Total de '+ymLabel(sel):'Media mensual de los meses con datos'}</p>${hbars(catItems,'var(--s2)')}</div>
@@ -435,6 +568,8 @@ VIEWS.flujo=(el)=>{
       <div class="row"><label class="f">Categoría<select id="nCat">${allCats.map(c=>`<option>${c}</option>`).join('')}</select></label><label class="f">Cuenta<select id="nAcc"><option value="">—</option>${S.accounts.filter(a=>['cash','credit'].includes(a.kind)).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label></div>
       <button class="pri" id="nAdd">Añadir</button></div>
   </div>
+  <h3 class="sec">Conciliación entre cuentas</h3>
+  <div class="card" id="recBox">${recHTML(lastRec())}</div>
   <h3 class="sec">Movimientos</h3>
   <div class="card">
     <div class="row" style="margin-bottom:10px">
@@ -443,14 +578,15 @@ VIEWS.flujo=(el)=>{
       <input id="fQ" placeholder="Buscar…" value="${esc(flujoFilter.q)}">
     </div>
     ${shown.length?`<div class="tbl"><table><thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th class="n">Importe</th><th></th></tr></thead><tbody>
-    ${shown.map(t=>`<tr><td style="white-space:nowrap">${dLabel(t.date)}</td><td>${esc(t.desc)}<div class="muted">${esc(accName(t.acc))}</div></td><td><select data-id="${t.id}" class="tcat">${allCats.map(c=>`<option ${c===t.cat?'selected':''}>${c}</option>`).join('')}</select></td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td><td><button class="sm dan tdel" data-id="${t.id}" title="Borrar">✕</button></td></tr>`).join('')}
+    ${shown.map(t=>`<tr><td style="white-space:nowrap">${dLabel(t.date)}</td><td>${esc(t.desc)}<div class="muted">${esc(accName(t.acc))}${t.rec?` · <span style="color:var(--s1)" title="Emparejado con otra cuenta">${esc(recLabel(t))}</span>`:''}</div></td><td><select data-id="${t.id}" class="tcat">${allCats.map(c=>`<option ${c===t.cat?'selected':''}>${c}</option>`).join('')}</select></td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td><td><button class="sm dan tdel" data-id="${t.id}" title="Borrar">✕</button></td></tr>`).join('')}
     </tbody></table></div>${list.length>300?`<p class="muted">Mostrando 300 de ${list.length}. Filtra para ver más.</p>`:''}`:'<div class="empty">No hay movimientos. Importa un CSV de tu banco o tarjeta en "Importar".</div>'}
   </div>`;
+  wireRec($('#recBox'));
   barChart($('#cCF'),{labels:months.map(ymLabel),series:[{name:'Ingresos',color:'var(--s3)',values:inc},{name:'Gastos',color:'var(--s2)',values:exp},{name:'Ahorro neto',color:'var(--s1)',values:net}]});
   $('#fMonth').onchange=e=>{flujoFilter.month=e.target.value;route();};
   $('#fCat').onchange=e=>{flujoFilter.cat=e.target.value;route();};
   $('#fQ').onchange=e=>{flujoFilter.q=e.target.value;route();};
-  el.querySelectorAll('.tcat').forEach(s=>s.onchange=()=>{ const t=S.tx.find(x=>x.id===s.dataset.id); const old=t.cat; t.cat=s.value; save(); offerRule(t,old); });
+  el.querySelectorAll('.tcat').forEach(s=>s.onchange=()=>{ const t=S.tx.find(x=>x.id===s.dataset.id); const old=t.cat; t.cat=s.value; t.manual=true; save(); offerRule(t,old); });
   el.querySelectorAll('.tdel').forEach(b=>b.onclick=()=>{ S.tx=S.tx.filter(x=>x.id!==b.dataset.id); save(); route(); });
   $('#nAdd').onclick=()=>{ const a=num($('#nAmt').value); if(isNaN(a)){toast('Pon un importe');return;} let amt=a; const c=$('#nCat').value; if(catType(c)==='expense'&&amt>0) amt=-amt; S.tx.push({id:uid(),date:$('#nDate').value||today(),desc:$('#nDesc').value||c,amount:amt,cat:c,acc:$('#nAcc').value||null,src:'manual'}); save(); toast('Movimiento añadido'); route(); };
 };
@@ -488,6 +624,7 @@ function renderMortgage(m){
      <div class="stat"><div class="lbl">Terminas con tu extra actual</div><div class="val" style="font-size:22px">${isFinite(curr.n)?addMonths(start,curr.n):'—'}</div><div class="note">${yrs(curr.n)} · intereses restantes ${isFinite(curr.interest)?fmtK(curr.interest):'—'}</div></div>
      <div class="stat"><div class="lbl">Ahorro frente a no pagar extra</div><div class="val pos" style="font-size:22px">${isFinite(base.interest)&&isFinite(curr.interest)?fmtK(base.interest-curr.interest):'—'}</div><div class="note">${isFinite(base.n)?Math.floor((base.n-curr.n)/12)+' a '+((base.n-curr.n)%12)+' m antes':''}</div></div>
    </div>
+   ${mortPaidHTML(m)}
    <h3 class="sec">Simulador de pago extra</h3>
    <div class="range"><span class="muted">$0</span><input type="range" min="0" max="3000" step="25" value="${sim}" data-sim="${m.id}"><span class="muted">$3,000</span></div>
    <p style="margin:6px 0 10px">Con <b>${fmt(sim)}</b> extra al mes terminarías en <b>${isFinite(alt.n)?addMonths(start,alt.n):'—'}</b> (${yrs(alt.n)}), con unos intereses restantes de <b>${isFinite(alt.interest)?fmt(alt.interest):'—'}</b>.
@@ -502,6 +639,8 @@ function renderMortgage(m){
   const r=box.querySelector('[data-sim]'); r.oninput=()=>{ extraSim[m.id]=+r.value; renderMortgage(m); const nr=$('#m_'+m.id).querySelector('[data-sim]'); nr.focus(); };
 }
 
+function mortPaidHTML(m){ const mm=mortMonthly(m); if(!mm) return ''; const R=lastRec(); const r=R&&R.mort[m.id]; const L=r&&r.last; const paid=L?-L.amount:0;
+  return `<p class="muted" style="margin:10px 0 0">En tus gastos cuenta como <b>${fmt(mm,2)} al mes</b> (cuota${m.escrow?' + escrow':''}${m.extra?' + extra':''}), cada mes, aunque el cargo caiga en otro mes. ${L?`Último pago encontrado en tus cuentas: ${fmt(paid,2)} el ${dLabel(L.date)}${Math.abs(paid-mm)<=1?' ✓':' (no coincide con el extracto)'}.`:'Todavía no encuentro sus pagos en tus cuentas de banco.'}</p>`; }
 function wireMortPick(el){ el.querySelectorAll('.mPick').forEach(i=>i.onchange=e=>{ const f=e.target.files[0]; if(!f) return; location.hash='#importar'; setTimeout(()=>queuePDF(f),80); }); }
 /* ---------- Inversiones ---------- */
 VIEWS.inversiones=(el)=>{
@@ -617,7 +756,7 @@ function addSnapshot(accId){
   $('#mc').onclick=closeModal;
   $('#sOk').onclick=()=>{ const v=num($('#sV').value); if(isNaN(v)) return toast('Pon un saldo'); upsertSnap(accId,$('#sD').value||today(),v); const c=$('#sC')&&num($('#sC').value); if(c&&!isNaN(c)) a.contributed=(a.contributed||0)+c; save(); closeModal(); route(); toast('Saldo guardado'); };
 }
-function upsertSnap(accId,date,value){ const ex=S.snapshots.find(s=>s.acc===accId&&s.date===date); if(ex) ex.value=value; else S.snapshots.push({id:uid(),acc:accId,date,value}); }
+function upsertSnap(accId,date,value){ let ex=S.snapshots.find(s=>s.acc===accId&&s.date===date); if(ex) ex.value=value; else S.snapshots.push(ex={id:uid(),acc:accId,date,value}); return ex; }
 function showHistory(accId){
   const a=acc(accId); const list=S.snapshots.filter(s=>s.acc===accId).sort((x,y)=>y.date.localeCompare(x.date));
   openModal(`<h2>Historial · ${esc(a.name)}</h2>${list.length?`<table><tbody>${list.map(s=>`<tr><td>${dLabel(s.date)}</td><td class="n">${fmt(s.value,2)}</td><td class="n"><button class="sm dan" data-del="${s.id}">✕</button></td></tr>`).join('')}</tbody></table>`:'<p class="muted">Sin saldos</p>'}<div class="row" style="margin-top:12px"><button id="mc">Cerrar</button></div>`);
@@ -702,8 +841,8 @@ function renderCSVPreview(){
     for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;} keys.add(k);
       let cat=categorize(t.desc); if(!cat) cat=t.amount>0?'Otros ingresos':'Otros gastos';
       S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat,acc:accId,src:'csv'}); added++; }
-    save(); pendingCSV=null; toast(`${added} importados${dup?` · ${dup} duplicados ignorados`:''}`);
-    out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div><b>${added} movimientos importados</b>${dup?` (${dup} ya estaban)`:''}. Revisa las categorías en <a href="#flujo">Ingresos y gastos</a>: si cambias una, puedo aplicarla a todos los parecidos. Actualiza también el saldo de la cuenta en <a href="#cuentas">Cuentas</a>.</div></div>`;
+    save(); pendingCSV=null; toast(`${added} importados${dup?` · ${dup} duplicados ignorados`:''}`); const R=reconcile(); if(R.changed) save(); const nIss=R.issues.filter(i=>i.lvl!=='info').length;
+    out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div><b>${added} movimientos importados</b>${dup?` (${dup} ya estaban)`:''}. Revisa las categorías en <a href="#flujo">Ingresos y gastos</a>: si cambias una, puedo aplicarla a todos los parecidos. Actualiza también el saldo de la cuenta en <a href="#cuentas">Cuentas</a>.<br>Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados entre cuentas, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b>`:''}.</div></div>`;
   };
 }
 async function pdfText(file){
@@ -878,8 +1017,9 @@ function renderMortgagePDF(r,name,text){
   $('#pOk').onclick=()=>{ let id=$('#pAcc').value; let m;
     if(id==='__new'){ m={id:uid(),kind:'mortgage',name:$('#pN').value.trim()||'Hipoteca',institution:r.institution,last4:r.last4}; S.accounts.push(m); } else m=acc(id);
     m.rate=num($('#pR').value); m.payment=num($('#pP').value); m.extra=num($('#pE').value)||0; m.escrow=num($('#pS').value)||0; m.nextDue=r.nextDue; if($('#pPr').value) m.propertyId=$('#pPr').value; if(r.last4) m.last4=r.last4; if(!m.institution) m.institution=r.institution;
-    upsertSnap(m.id,$('#pD').value,num($('#pB').value)); delete extraSim[m.id]; save();
-    pdfDone(`<div class="alert good"><span class="ic">✓</span><div><b>Hipoteca guardada.</b> Mírala en <a href="#hipotecas">Hipotecas</a>.</div></div>`); };
+    const sn=upsertSnap(m.id,$('#pD').value,num($('#pB').value)); Object.assign(sn,{rate:m.rate,pi:m.payment,extra:m.extra,escrow:m.escrow}); delete extraSim[m.id]; save();
+    const R=reconcile(); const mr=R.mort[m.id]; const L=mr&&mr.last;
+    pdfDone(`<div class="alert good"><span class="ic">✓</span><div><b>Hipoteca guardada.</b> Cuota mensual total ${fmt(mortMonthly(m),2)}${L?`; último pago encontrado en tus cuentas: ${fmt(-L.amount,2)} el ${dLabel(L.date)}`:''}. Mírala en <a href="#hipotecas">Hipotecas</a>.</div></div>`); };
 }
 function renderGenericPDF(r,name,text){
   const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage');
