@@ -115,6 +115,27 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>catType('Mascotas')==='expense'&&S.tx.some(t=>t.cat==='Mascotas'&&t.manual)&&[...document.querySelectorAll('#fCat option')].some(o=>o.value==='Mascotas')),'categoría propia creada y usada');
   ok(await pg.evaluate(()=>{ const hs=[...document.querySelectorAll('.txday-h')]; const l=document.querySelector('#txList'); return hs.length>=2&&hs.every(h=>h.innerText.trim().length>2)&&document.documentElement.scrollWidth<=window.innerWidth+1&&l.scrollWidth<=l.clientWidth+1; }),'movimientos por día sin desbordar en el móvil');
   const nTx=await pg.evaluate(()=>S.tx.length); await pg.click('#txList .txr >> nth=0'); await pg.click('#tsDel'); await pg.waitForTimeout(200); ok(await pg.evaluate(n=>S.tx.length===n-1,nTx),'borrar un movimiento desde su ficha');
+  // Orden de Movimientos: gasto por categoría, ingresos/gastos/ahorro y después la lista
+  ok(await pg.evaluate(()=>{ const y=e=>e.getBoundingClientRect().top+window.scrollY; const cat=document.querySelector('[data-help="cat_chart"]').closest('.card'), cf=document.querySelector('#cCF').closest('.card'), l=document.querySelector('#txList'); return y(cat)<y(cf)&&y(cf)<y(l); }),'Movimientos: categorías, luego ingresos y gastos, luego la lista');
+  // Categorías automáticas: palabras completas, sin el nombre del titular; si no está claro, "Otros" y aviso
+  const cz=await pg.evaluate(()=>[categorize('ZELLE PAYMENT TO PEDRO TARCOS',-50),categorize('ACME DES:PAYROLL ID:123 INDN:PEDRO TARCOS CO ID:9 PPD',4000),categorize('ARCO #42123 ANYTOWN CA',-45),categorize('COSTCO GAS #0453',-60),categorize('COSTCO WHSE #0453',-200),categorize('T-MOBILE AUTO PAY',-90),categorize('MOBILE DEPOSIT',300),categorize('SOME UNKNOWN LLC',-30),categorize('TST* JOES TACOS',-20),categorize('Zelle payment from TENANT for "May rent"',2500)]);
+  ok(cz.join('|')==='Transferencia|Nómina|Gasolina|Gasolina|Supermercado|Suministros|||Restaurantes|Renta alquiler','categorías automáticas por palabras completas ('+cz.join('|')+')');
+  await pg.evaluate(()=>{ const a=S.accounts.find(x=>x.kind==='cash'); importTxInto(a.id,[{date:'2026-10-21',desc:'SOME UNKNOWN LLC',amount:-30},{date:'2026-10-22',desc:'ANOTHER MYSTERY SHOP',amount:-12}],'csv'); save(); });
+  await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); await pg.click('#alertBox summary'); await pg.waitForTimeout(100);
+  await pg.locator('#alertBox .ab',{hasText:'sin categoría'}).click(); await pg.waitForTimeout(400);
+  ok(await pg.evaluate(()=>location.hash==='#flujo'&&flujoFilter.cat==='__none'&&document.querySelectorAll('#txList .txr').length>=2&&[...document.querySelectorAll('#txList .txr')].every(r=>r.classList.contains('unc'))),'aviso de movimientos sin categoría lleva a revisarlos');
+  await pg.click('#txList .txr >> nth=0'); await pg.selectOption('#tsCat','Compras'); await pg.waitForTimeout(150); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
+  ok(await pg.evaluate(()=>S.tx.filter(isUncat).length>=1&&S.tx.some(t=>t.cat==='Compras'&&t.manual&&/UNKNOWN|MYSTERY/.test(t.desc))),'asignar la categoría a mano');
+  ok(await pg.evaluate(()=>{ const keep=S.rules.slice(), cv=S.settings.catVer; S.settings.catVer=0; S.rules=[{pattern:OLD_DEFAULT_PATTERNS[8],cat:'Gasolina'},{pattern:'MIREGLA',cat:'Ocio'}]; const t={id:'migr1',date:'2026-10-01',desc:'ZELLE TO PEDRO TARCOS',amount:-5,cat:'Gasolina',acc:null,src:'csv'}; S.tx.push(t);
+    migrateCats(); const ok=S.rules.length===1&&S.rules[0].pattern==='MIREGLA'&&t.cat==='Transferencia'&&S.settings.catVer===2; S.tx=S.tx.filter(x=>x!==t); S.rules=keep; S.settings.catVer=cv; save(); return ok; }),'migración: quita las reglas antiguas y recategoriza');
+  // Avisos: la × los ignora y se pueden volver a mostrar; tocar uno lleva a su sitio
+  await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); await pg.click('#alertBox summary'); await pg.waitForTimeout(100);
+  const nA=await pg.$$eval('#alertBox [data-aign]',x=>x.length);
+  await pg.click('#alertBox [data-aign] >> nth=0'); await pg.waitForTimeout(200);
+  ok(await pg.evaluate(n=>document.querySelectorAll('#alertBox [data-aign]').length===n-1&&S.settings.alertIgnore.length===1&&!!document.querySelector('#aRestore'),nA),'ignorar un aviso');
+  await pg.click('#aRestore'); await pg.waitForTimeout(200); ok(await pg.evaluate(n=>document.querySelectorAll('#alertBox [data-aign]').length===n&&!S.settings.alertIgnore.length,nA),'volver a mostrar los avisos ignorados');
+  if(await pg.$('#alertBox .ab:has-text("Conciliación")')){ await pg.click('#alertBox .ab:has-text("Conciliación")'); await pg.waitForTimeout(300); ok(await pg.evaluate(()=>location.hash==='#flujo'&&!!document.querySelector('#recBox')),'aviso de conciliación lleva a Movimientos'); }
+  await pg.goto(U+'#flujo'); await pg.waitForTimeout(300);
   // Menú lateral y botón +
   await pg.click('#menuBtn'); await pg.waitForTimeout(250);
   ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');

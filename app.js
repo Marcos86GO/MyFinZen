@@ -96,28 +96,62 @@ const CATS = {
   expense:['Hipoteca casa','Hipoteca alquiler','HOA alquiler','Gastos alquiler','Impuestos propiedad','Supermercado','Restaurantes','Gasolina','Coche','Seguros','Suministros','Niños','Salud','Compras','Ocio','Viajes','Suscripciones','Educación','Impuestos','Otros gastos'],
   neutral:['Transferencia','Pago tarjeta','Aportación inversión']
 };
-const DEFAULT_RULES = [
-  ['PAYROLL|DIRECT DEP|DIR DEP|SALARY|NOMINA','Nómina'],
-  ['PENNYMAC','Hipoteca casa'],
-  ['HOA|HOMEOWNERS ASSOC|ASSOCIATION|COMMUNITY MGMT|FIRSTSERVICE|PROPERTY MGMT','HOA alquiler'],
-  ['RENT FROM|RENTAL INCOME|TENANT','Renta alquiler'],
-  ['PAYMENT THANK|AUTOPAY PAYMENT|AUTOMATIC PAYMENT|CARD PAYMENT|ONLINE PAYMENT|EPAY|PAYMENT - THANK|CRCARDPMT|PMT TO CREDIT','Pago tarjeta'],
-  ['M1 FINANCE|M1 FIN|VANGUARD|FIDELITY|SCHWAB|ROBINHOOD','Aportación inversión'],
-  ['ZELLE|VENMO|TRANSFER|XFER|WIRE','Transferencia'],
-  ['COSTCO|TRADER JOE|VONS|RALPHS|ALBERTSONS|WHOLE FOODS|SPROUTS|ALDI|STATER|SMART & FINAL|H MART|99 RANCH|NORTHGATE|GROCERY|SAFEWAY|WINCO|FOOD 4 LESS','Supermercado'],
-  ['SHELL|CHEVRON|ARCO|MOBIL|EXXON|76 |CIRCLE K|VALERO|COSTCO GAS|FUEL|EV CHARG|TESLA SUPERCH|ELECTRIFY','Gasolina'],
-  ['RESTAUR|CAFE|COFFEE|STARBUCKS|MCDONALD|CHIPOTLE|IN-N-OUT|DOORDASH|UBER EATS|GRUBHUB|PIZZA|TACO|SUSHI|GRILL|BAKERY|BAR ','Restaurantes'],
-  ['NETFLIX|SPOTIFY|HULU|DISNEY|YOUTUBE|APPLE.COM|ICLOUD|GOOGLE \\*|AMAZON PRIME|PRIME VIDEO|HBO|MAX.COM|OPENAI|ANTHROPIC|CLAUDE','Suscripciones'],
-  ['EDISON|SCE |SOCALGAS|SO CAL GAS|SOCAL GAS|WATER|SPECTRUM|AT&T|VERIZON|T-MOBILE|TMOBILE|COX |FRONTIER|UTILIT','Suministros'],
-  ['GEICO|STATE FARM|ALLSTATE|PROGRESSIVE|FARMERS|MERCURY INS|INSURANCE|LIBERTY MUT','Seguros'],
-  ['DMV|AUTO REPAIR|JIFFY|CAR WASH|TOYOTA|HONDA|INFINITI|NISSAN|TESLA|PARKING|TOLL|FASTRAK','Coche'],
-  ['CVS|WALGREENS|PHARM|MEDICAL|DENTAL|CLINIC|HOSPITAL|KAISER|HEALTH','Salud'],
-  ['AMAZON|AMZN|TARGET|WALMART|HOME DEPOT|LOWE|IKEA|BEST BUY|MARSHALLS|TJ MAXX|ROSS ','Compras'],
-  ['DAYCARE|PRESCHOOL|KIDS|TOYS|CHILDREN|GYMBOREE|BABY','Niños'],
-  ['AIRLINE|DELTA|UNITED|AMERICAN AIR|SOUTHWEST|IBERIA|HOTEL|AIRBNB|EXPEDIA|MARRIOTT|HILTON','Viajes'],
-  ['TAX COLLECTOR|TREASURER|FRANCHISE TAX|IRS','Impuestos'],
-  ['INTEREST PAID|INTEREST EARNED|DIVIDEND','Intereses/dividendos'],
+// Reglas de la versión anterior: se guardaban en S.rules y se quitan al migrar (ver migrateCats)
+const OLD_DEFAULT_PATTERNS=['PAYROLL|DIRECT DEP|DIR DEP|SALARY|NOMINA','PENNYMAC','HOA|HOMEOWNERS ASSOC|ASSOCIATION|COMMUNITY MGMT|FIRSTSERVICE|PROPERTY MGMT','RENT FROM|RENTAL INCOME|TENANT','PAYMENT THANK|AUTOPAY PAYMENT|AUTOMATIC PAYMENT|CARD PAYMENT|ONLINE PAYMENT|EPAY|PAYMENT - THANK|CRCARDPMT|PMT TO CREDIT','M1 FINANCE|M1 FIN|VANGUARD|FIDELITY|SCHWAB|ROBINHOOD','ZELLE|VENMO|TRANSFER|XFER|WIRE','COSTCO|TRADER JOE|VONS|RALPHS|ALBERTSONS|WHOLE FOODS|SPROUTS|ALDI|STATER|SMART & FINAL|H MART|99 RANCH|NORTHGATE|GROCERY|SAFEWAY|WINCO|FOOD 4 LESS','SHELL|CHEVRON|ARCO|MOBIL|EXXON|76 |CIRCLE K|VALERO|COSTCO GAS|FUEL|EV CHARG|TESLA SUPERCH|ELECTRIFY','RESTAUR|CAFE|COFFEE|STARBUCKS|MCDONALD|CHIPOTLE|IN-N-OUT|DOORDASH|UBER EATS|GRUBHUB|PIZZA|TACO|SUSHI|GRILL|BAKERY|BAR ','NETFLIX|SPOTIFY|HULU|DISNEY|YOUTUBE|APPLE.COM|ICLOUD|GOOGLE \\*|AMAZON PRIME|PRIME VIDEO|HBO|MAX.COM|OPENAI|ANTHROPIC|CLAUDE','EDISON|SCE |SOCALGAS|SO CAL GAS|SOCAL GAS|WATER|SPECTRUM|AT&T|VERIZON|T-MOBILE|TMOBILE|COX |FRONTIER|UTILIT','GEICO|STATE FARM|ALLSTATE|PROGRESSIVE|FARMERS|MERCURY INS|INSURANCE|LIBERTY MUT','DMV|AUTO REPAIR|JIFFY|CAR WASH|TOYOTA|HONDA|INFINITI|NISSAN|TESLA|PARKING|TOLL|FASTRAK','CVS|WALGREENS|PHARM|MEDICAL|DENTAL|CLINIC|HOSPITAL|KAISER|HEALTH','AMAZON|AMZN|TARGET|WALMART|HOME DEPOT|LOWE|IKEA|BEST BUY|MARSHALLS|TJ MAXX|ROSS ','DAYCARE|PRESCHOOL|KIDS|TOYS|CHILDREN|GYMBOREE|BABY','AIRLINE|DELTA|UNITED|AMERICAN AIR|SOUTHWEST|IBERIA|HOTEL|AIRBNB|EXPEDIA|MARRIOTT|HILTON','TAX COLLECTOR|TREASURER|FRANCHISE TAX|IRS','INTEREST PAID|INTEREST EARNED|DIVIDEND'];
+/* Categorías automáticas: palabras completas (nunca trozos: "ARCO" no casa con "MARCOS"), sobre la
+   descripción limpia (sin el nombre del titular, ids ni números). Si casan varias, gana la palabra más
+   larga (+ bonus); las de ingreso solo valen para importes positivos. Si no casa nada: "Otros" y aviso. */
+const CAT_WORDS=[
+  ['Pago tarjeta',6,'PAYMENT THANK YOU|PAYMENT - THANK|THANK YOU PAYMENT|AUTOPAY|AUTO PAY PAYMENT|AUTOMATIC PAYMENT|CARD PAYMENT|CREDIT CARD BILL PAYMENT|CREDIT CARD PAYMENT|CRCARDPMT|EPAYMENT|EPAY|PMT TO CREDIT|PAYMENT FROM CHK|PAYMENT FROM CHECKING|CARDMEMBER SERV|CARDMEMBER SVC|CARDMEMBER SERVICES|CREDIT CRD|AMEX EPAYMENT|APPLECARD GSBANK|ONLINE PAYMENT'],
+  ['Nómina',8,'PAYROLL|DIRECT DEP|DIRECT DEPOSIT|DIR DEP|SALARY|NOMINA|PAYCHECK|ADP PAYROLL|GUSTO'],
+  ['Renta alquiler',12,'RENT|RENTAL INCOME|TENANT|LEASE PAYMENT'],
+  ['Intereses/dividendos',4,'INTEREST EARNED|INTEREST PAID|INTEREST APPLICATION|INTEREST PAYMENT|INTEREST|DIVIDEND|DIVIDENDS|DIV REINVEST'],
+  ['Hipoteca casa',4,'PENNYMAC|MORTGAGE|MTG|HOME MTG|HOME MORTGAGE|ROCKET MORTGAGE|MR COOPER|MRCOOPER|LOANCARE|NEWREZ|SHELLPOINT|LOAN SERVICING'],
+  ['HOA alquiler',2,'HOA|HOMEOWNERS ASSOC|HOMEOWNERS ASSN|HOMEOWNERS ASSOCIATION|COMMUNITY ASSOCIATION|COMMUNITY MGMT|FIRSTSERVICE|PROPERTY MGMT|ASSOCIATION DUES'],
+  ['Aportación inversión',3,'M1|M1 FINANCE|M1 FIN|M1 INVEST|VANGUARD|FIDELITY|SCHWAB|ROBINHOOD|BETTERMENT|WEALTHFRONT|ETRADE|E TRADE|SCHOLARSHARE|MY529|529 PLAN'],
+  ['Transferencia',0,'ZELLE|VENMO|TRANSFER|ONLINE BANKING TRANSFER|XFER|WIRE|WIRE TRANSFER|CASH APP|INTERNAL TRANSFER'],
+  ['Impuestos propiedad',4,'TAX COLLECTOR|TREASURER TAX|TREASURER-TAX|COUNTY TREASURER|PROPERTY TAX'],
+  ['Impuestos',4,'IRS|US TREASURY|IRS USATAXPYMT|USATAXPYMT|FRANCHISE TAX|FRANCHISE TAX BD|FTB|CA FTB|TAX PYMT|TAX PAYMENT'],
+  ['Gasolina',0,'SHELL|SHELL OIL|CHEVRON|ARCO|AMPM|MOBIL|EXXON|EXXONMOBIL|VALERO|CIRCLE K|UNION 76|76 FUEL|SPEEDWAY|SINCLAIR|CITGO|SUNOCO|COSTCO GAS|SAMS CLUB FUEL|FUEL|GASOLINE|GAS STATION|CHARGEPOINT|ELECTRIFY AMERICA|EVGO|TESLA SUPERCHARGER|SUPERCHARGER|EV CHARGING'],
+  ['Supermercado',0,'COSTCO|COSTCO WHSE|TRADER JOE|TRADER JOES|VONS|RALPHS|ALBERTSONS|WHOLE FOODS|WHOLEFDS|SPROUTS|ALDI|STATER BROS|SMART FINAL|SMART AND FINAL|H MART|99 RANCH|NORTHGATE|NORTHGATE MARKET|GROCERY|GROCERIES|SAFEWAY|WINCO|FOOD 4 LESS|FOOD4LESS|PAVILIONS|GELSONS|MOTHERS MARKET|CARDENAS|VALLARTA|SEAFOOD CITY|INSTACART|AMAZON FRESH|SAMS CLUB|SUPERMARKET|MARKET PLACE'],
+  ['Restaurantes',0,'RESTAURANT|RESTAURANTE|CAFE|COFFEE|STARBUCKS|PEETS|DUNKIN|MCDONALD|MCDONALDS|CHIPOTLE|IN N OUT|IN-N-OUT|CHICK FIL A|CHICK-FIL-A|TACO BELL|DEL TACO|SUBWAY|PANERA|PANDA EXPRESS|WENDYS|BURGER KING|JACK IN THE BOX|DOMINOS|PIZZA|PIZZERIA|SUSHI|RAMEN|PHO|GRILL|BAKERY|DOORDASH|UBER EATS|UBEREATS|GRUBHUB|POSTMATES|CAVA|SWEETGREEN|RAISING CANES|THE HABIT|WINGSTOP|KFC|POPEYES|IHOP|DENNYS|CHEESECAKE FACTORY|OLIVE GARDEN|TST|BOBA|TEA HOUSE|DONUT|DONUTS|BAGEL|DINER|BISTRO|TAQUERIA|BBQ|BRASSERIE|CANTINA|KITCHEN'],
+  ['Suscripciones',0,'NETFLIX|SPOTIFY|HULU|DISNEY PLUS|DISNEYPLUS|YOUTUBE PREMIUM|YOUTUBEPREMIUM|YOUTUBE TV|APPLE COM BILL|APPLE.COM/BILL|ICLOUD|GOOGLE STORAGE|GOOGLE ONE|AMAZON PRIME|PRIME VIDEO|HBO|MAX.COM|HBO MAX|PARAMOUNT|PEACOCK|AUDIBLE|KINDLE UNLTD|OPENAI|CHATGPT|ANTHROPIC|CLAUDE.AI|MICROSOFT 365|MSFT 365|ADOBE|DROPBOX|PATREON|SIRIUSXM|NYTIMES|WSJ'],
+  ['Suministros',0,'EDISON|SO CAL EDISON|SOUTHERN CALIFORNIA EDISON|SCE|SOCALGAS|SO CAL GAS|SOCAL GAS|SOUTHERN CALIFORNIA GAS|GAS CO|WATER|WATER DIST|WATER DISTRICT|SPECTRUM|AT&T|ATT|VERIZON|VERIZON WIRELESS|T-MOBILE|TMOBILE|COX COMM|COX COMMUNICATIONS|FRONTIER|XFINITY|COMCAST|UTILITY|UTILITIES|WASTE MANAGEMENT|REPUBLIC SERVICES|STARLINK|GOOGLE FIBER|MINT MOBILE|VISIBLE'],
+  ['Seguros',0,'GEICO|STATE FARM|ALLSTATE|PROGRESSIVE|FARMERS INS|FARMERS INSURANCE|MERCURY INS|MERCURY INSURANCE|INSURANCE|INS PREM|LIBERTY MUTUAL|LEMONADE|HIPPO INS|NATIONWIDE|TRAVELERS|USAA INS|WAWANESA'],
+  ['Coche',0,'DMV|AUTO REPAIR|AUTOZONE|OREILLY|O REILLY|PEP BOYS|JIFFY LUBE|CAR WASH|TOYOTA|HONDA|INFINITI|NISSAN|TESLA|TESLA MOTORS|PARKING|TOLL|TOLL ROADS|THE TOLL ROADS|FASTRAK|UBER|UBER TRIP|LYFT|SMOG|TIRE|TIRES|DISCOUNT TIRE|AUTO PARTS'],
+  ['Salud',0,'CVS|CVS PHARMACY|WALGREENS|RITE AID|PHARMACY|MEDICAL|DENTAL|DENTIST|ORTHODONT|CLINIC|HOSPITAL|KAISER|HEALTH|URGENT CARE|LABCORP|QUEST DIAG|PEDIATRIC|PEDIATRICS|OPTOMETRY|VISION CENTER|PHYSICIAN|HEALTHCARE'],
+  ['Compras',0,'AMAZON|AMZN|AMZN MKTP|AMAZON MKTPL|AMAZON MKTPLACE|TARGET|WALMART|WAL-MART|HOME DEPOT|THE HOME DEPOT|LOWES|IKEA|BEST BUY|MARSHALLS|TJ MAXX|TJMAXX|ROSS STORES|NORDSTROM|MACYS|KOHLS|OLD NAVY|GAP|ZARA|H&M|UNIQLO|APPLE STORE|EBAY|ETSY|SHEIN|TEMU|WAYFAIR|MICHAELS|HOBBY LOBBY|DOLLAR TREE|COSTCO.COM|PAYPAL|SQ|FURNITURE|CRATE BARREL|POTTERY BARN|BATH BODY'],
+  ['Niños',0,'DAYCARE|PRESCHOOL|CHILDCARE|CHILD CARE|KIDS|TOYS|TOYS R US|BUY BUY BABY|CARTERS|CHILDREN|GYMBOREE|BABY|KUMON|MONTESSORI|KINDERCARE|BRIGHT HORIZONS'],
+  ['Viajes',0,'AIRLINES|AIRLINE|DELTA AIR|DELTA AIRLINES|UNITED AIRLINES|UNITED AIR|AMERICAN AIRLINES|AMERICAN AIR|SOUTHWEST AIR|SOUTHWEST AIRLINES|SOUTHWES|ALASKA AIR|JETBLUE|SPIRIT AIRL|IBERIA|AIR FRANCE|LUFTHANSA|HOTEL|HOTELS|AIRBNB|VRBO|EXPEDIA|BOOKING.COM|MARRIOTT|HILTON|HYATT|HERTZ|ENTERPRISE RENT|AVIS|BUDGET RENT|TRAVEL'],
+  ['Ocio',0,'CINEMA|AMC|AMC THEATRES|REGAL|CINEMARK|DISNEYLAND|DISNEY RESORT|KNOTTS|SIX FLAGS|TICKETMASTER|STUBHUB|GYM|FITNESS|24 HOUR FITNESS|LA FITNESS|PLANET FITNESS|GOLF|BOWLING|STEAM GAMES|PLAYSTATION|XBOX|NINTENDO|MUSEUM|ZOO|AQUARIUM|CONCERT'],
+  ['Educación',0,'SCHOOL|UNIVERSITY|COLLEGE|TUITION|COURSERA|UDEMY|BOOKSTORE|ACADEMY']
 ];
+const INCOME_ONLY=new Set(['Nómina','Renta alquiler','Intereses/dividendos']);
+let CAT_RE=null;
+function catRegexes(){ if(CAT_RE) return CAT_RE; const e=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  CAT_RE=CAT_WORDS.map(([cat,bonus,w])=>({cat,bonus,re:new RegExp('(?:^|[^A-Z0-9&])('+w.split('|').sort((a,b)=>b.length-a.length).map(e).join('|')+')(?=$|[^A-Z0-9&])','g')})); return CAT_RE; }
+// Descripción limpia: sin el nombre del titular (INDN:), ids, confirmaciones, fechas ni números largos
+function normDesc(desc){ let s=' '+String(desc||'').toUpperCase().replace(/[’']/g,'')+' ';
+  s=s.replace(/\bINDN:.*?(?=\bCO ID:|$)/g,' ').replace(/\b(?:CO ID|ID|CONF|CONFIRMATION|REF|TRACE|TRN|ACCT)\s*[:#]\s*\S+/g,' ').replace(/\bDES:/g,' ')
+     .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g,' ').replace(/[#*]?\d{5,}/g,' ').replace(/\bX{3,}\d*/g,' ');
+  const hide=String((S&&S.settings&&S.settings.hideNames)||'').toUpperCase().split(/[,;\n]/).map(x=>x.trim()).filter(x=>x.length>=3);
+  hide.forEach(n=>{ s=s.split(n).join(' '); });
+  return s.replace(/\s+/g,' '); }
+function categorize(desc,amount){
+  const D=' '+String(desc||'').toUpperCase()+' ';
+  for(const {r,re} of compiledRules()) if(re.test(D)) return r.cat;  // reglas del usuario primero
+  const N=normDesc(desc); let best=null;
+  for(const {cat,bonus,re} of catRegexes()){ if(INCOME_ONLY.has(cat)&&!(amount>0)) continue; re.lastIndex=0; let m;
+    while((m=re.exec(N))){ const sc=m[1].length+bonus; if(!best||sc>best.sc) best={cat,sc}; } }
+  return best?best.cat:null; }
+// "Sin categoría": lo que la app no supo clasificar y el usuario aún no ha revisado
+const isUncat=t=>!t.manual&&!t.rec&&(!t.cat||t.cat==='Otros gastos'||t.cat==='Otros ingresos');
+const otherCat=amount=>amount>0?'Otros ingresos':'Otros gastos';
+// Migración: las reglas de la versión anterior pasan a estar en el código; se recategoriza lo automático
+function migrateCats(){ if((S.settings.catVer||0)>=2) return; const old=new Set(OLD_DEFAULT_PATTERNS);
+  S.rules=S.rules.filter(r=>!old.has(r.pattern));
+  S.tx.forEach(t=>{ if(t.manual||t.rec) return; t.cat=categorize(t.desc,t.amount)||otherCat(t.amount); });
+  S.settings.catVer=2; save(); }
 // Los nombres internos de las categorías de sistema están en español (son los que se guardan); catL() los muestra traducidos.
 const CAT_EN={'Nómina':'Salary','Renta alquiler':'Rental income','Intereses/dividendos':'Interest/dividends','Otros ingresos':'Other income','Hipoteca casa':'Home mortgage','Hipoteca alquiler':'Rental mortgage','HOA alquiler':'Rental HOA','Gastos alquiler':'Rental expenses','Impuestos propiedad':'Property taxes','Supermercado':'Groceries','Restaurantes':'Restaurants','Gasolina':'Fuel & charging','Coche':'Car','Seguros':'Insurance','Suministros':'Utilities','Niños':'Kids','Salud':'Health','Compras':'Shopping','Ocio':'Leisure','Viajes':'Travel','Suscripciones':'Subscriptions','Educación':'Education','Impuestos':'Taxes','Otros gastos':'Other expenses','Transferencia':'Transfer','Pago tarjeta':'Card payment','Aportación inversión':'Investment contribution'};
 const catL=c=>LANG==='en'&&CAT_EN[c]?CAT_EN[c]:c;
@@ -166,7 +200,8 @@ function sanitizeState(st){
   S2.lastBackup=typeof s.lastBackup==='string'&&!isNaN(Date.parse(s.lastBackup))?s.lastBackup:null;
   S2.context=str(s.context,2000); S2.hideNames=str(s.hideNames,500); S2.autoClaude=!!s.autoClaude;
   S2.userCats=arr(s.userCats).map(c=>({name:str(obj(c).name,40).trim(),type:CAT_TYPES.includes(obj(c).type)?c.type:'expense'})).filter(c=>c.name);
-  S2.onboardDone=!!s.onboardDone;
+  S2.onboardDone=!!s.onboardDone; S2.catVer=Math.max(0,Math.min(99,Math.round(numStrict(s.catVer)||0)));
+  S2.alertIgnore=arr(s.alertIgnore).filter(x=>typeof x==='string').map(x=>x.slice(0,120)).slice(-300);
   S2.recIgnore=arr(s.recIgnore).filter(x=>typeof x==='string').slice(-300);
   if(s.lastAI&&typeof s.lastAI==='object') S2.lastAI={date:isoDate(s.lastAI.date)||today(),q:str(s.lastAI.q,500),text:str(s.lastAI.text,60000)};
   if(s.newsTab) S2.newsTab=str(s.newsTab,20); if(s.newsCountries) S2.newsCountries=arr(s.newsCountries).filter(x=>typeof x==='string'&&/^[a-z]{2,10}$/.test(x)); if(s.newsHide) S2.newsHide=arr(s.newsHide).filter(x=>typeof x==='string').map(x=>x.slice(0,100));
@@ -188,7 +223,7 @@ function sanitizeState(st){
 
 let S = null; // state
 function blankState(){
-  return {v:1, accounts:[], snapshots:[], tx:[], rules:DEFAULT_RULES.map(r=>({pattern:r[0],cat:r[1]})),
+  return {v:1, accounts:[], snapshots:[], tx:[], rules:[],
           settings:{emergencyMonths:6, lastBackup:null, lastAI:null}, created:new Date().toISOString()};
 }
 const IDB = {
@@ -276,11 +311,6 @@ function nextPaymentDate(m){ return m.nextDue || today(); }
 // Las reglas se compilan una vez y se recompilan si cambia la lista (r.cat se lee en vivo, por si se renombra una categoría)
 let RULES_C={arr:null,len:-1,list:[]};
 function compiledRules(){ if(RULES_C.arr!==S.rules||RULES_C.len!==S.rules.length){ RULES_C={arr:S.rules,len:S.rules.length,list:S.rules.map(r=>{ try{ return {r,re:new RegExp(r.pattern,'i')}; }catch(e){ return null; } }).filter(Boolean)}; } return RULES_C.list; }
-function categorize(desc){
-  const D=' '+String(desc||'').toUpperCase()+' ';
-  for(const {r,re} of compiledRules()) if(re.test(D)) return r.cat;
-  return null;
-}
 
 /* ============================================================
    Conciliación entre cuentas
@@ -470,37 +500,49 @@ function legend(items){ return '<div class="legend">'+items.map(i=>`<span><i sty
    ============================================================ */
 function computeAlerts(){
   const A=[];
-  if(!S.accounts.length){ A.push({lvl:'info',t:L('<b>Empieza importando un extracto</b> de cada cuenta en <a href="#cuentas">Cuentas</a>: la app crea la cuenta a partir del documento.','<b>Start by importing a statement</b> of each account in <a href="#cuentas">Accounts</a>: the app creates the account from the document.')}); return A; }
+  if(!S.accounts.length){ A.push({lvl:'info',key:'start',go:{h:'cuentas'},t:L('<b>Empieza importando un extracto</b> de cada cuenta en <a href="#cuentas">Cuentas</a>: la app crea la cuenta a partir del documento.','<b>Start by importing a statement</b> of each account in <a href="#cuentas">Accounts</a>: the app creates the account from the document.')}); return A; }
   const lb=S.settings.lastBackup;
-  if(!lb && (S.tx.length||S.snapshots.length) ) A.push({lvl:'crit',t:L('<b>No tienes copia de seguridad.</b> Los datos solo viven en este navegador: si se borra, se pierden. Haz una en "Copia y ajustes".','<b>You have no backup.</b> Your data only lives in this browser: if it is cleared, it is lost. Make one in "Backup & settings".')});
-  else if(lb && daysBetween(lb,new Date().toISOString())>30){ const d=daysBetween(lb,new Date().toISOString()); A.push({lvl:'warn',t:L(`<b>Tu última copia tiene ${d} días.</b> Haz una nueva en "Copia y ajustes".`,`<b>Your last backup is ${d} days old.</b> Make a new one in "Backup & settings".`)}); }
+  if(!lb && (S.tx.length||S.snapshots.length) ) A.push({lvl:'crit',key:'nobk',go:{h:'ajustes'},t:L('<b>No tienes copia de seguridad.</b> Los datos solo viven en este navegador: si se borra, se pierden. Haz una en "Copia y ajustes".','<b>You have no backup.</b> Your data only lives in this browser: if it is cleared, it is lost. Make one in "Backup & settings".')});
+  else if(lb && daysBetween(lb,new Date().toISOString())>30){ const d=daysBetween(lb,new Date().toISOString()); A.push({lvl:'warn',key:'oldbk:'+lb,go:{h:'ajustes'},t:L(`<b>Tu última copia tiene ${d} días.</b> Haz una nueva en "Copia y ajustes".`,`<b>Your last backup is ${d} days old.</b> Make a new one in "Backup & settings".`)}); }
   // stale balances
   const stale=S.accounts.filter(a=>{const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>40;});
-  if(stale.length) A.push({lvl:'warn',t:`<b>${L('Saldos por actualizar:','Balances to update:')}</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?L(` y ${stale.length-4} más`,` and ${stale.length-4} more`):''}.`});
+  if(stale.length) A.push({lvl:'warn',key:'stale:'+hashKey(stale.map(a=>a.id).join()),go:stale.length===1?{h:'cuentas',acc:stale[0].id}:{h:'cuentas'},t:`<b>${L('Saldos por actualizar:','Balances to update:')}</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?L(` y ${stale.length-4} más`,` and ${stale.length-4} more`):''}.`});
   // conciliación entre cuentas
   const RC=lastRec(); const rn=RC?RC.issues.filter(i=>i.lvl!=='info'):[];
-  if(rn.length) A.push({lvl:rn.some(i=>i.lvl==='crit')?'crit':'warn',t:L(`<b>Conciliación: ${rn.length} diferencia${rn.length>1?'s':''} entre tus cuentas.</b> Revísala${rn.length>1?'s':''} en <a href="#flujo">Movimientos</a>.`,`<b>Reconciliation: ${rn.length} difference${rn.length>1?'s':''} between your accounts.</b> Review ${rn.length>1?'them':'it'} in <a href="#flujo">Transactions</a>.`)});
+  if(rn.length) A.push({lvl:rn.some(i=>i.lvl==='crit')?'crit':'warn',key:'rec:'+hashKey(rn.map(i=>i.key).join()),go:{h:'flujo',el:'recBox'},t:L(`<b>Conciliación: ${rn.length} diferencia${rn.length>1?'s':''} entre tus cuentas.</b> Revísala${rn.length>1?'s':''} en <a href="#flujo">Movimientos</a>.`,`<b>Reconciliation: ${rn.length} difference${rn.length>1?'s':''} between your accounts.</b> Review ${rn.length>1?'them':'it'} in <a href="#flujo">Transactions</a>.`)});
   // cashflow
   const cf=cashflowByMonth(); const ms=Object.keys(cf).sort();
   const cur=ym(today()); const complete=ms.filter(m=>m<cur);
   if(complete.length){ const last=complete[complete.length-1]; const c=cf[last]; const net=c.income-c.expense;
-    if(net<0) A.push({lvl:'crit',t:L(`<b>En ${ymLabel(last)} gastaste más de lo que ingresaste</b> (${fmt(net)}).`,`<b>In ${ymLabel(last)} you spent more than you earned</b> (${fmt(net)}).`)});
-    else A.push({lvl:'good',t:L(`<b>${ymLabel(last)}: ahorraste ${fmt(net)}</b> (${c.income>0?Math.round(net/c.income*100):0}% de tus ingresos).`,`<b>${ymLabel(last)}: you saved ${fmt(net)}</b> (${c.income>0?Math.round(net/c.income*100):0}% of your income).`)});
+    if(net<0) A.push({lvl:'crit',key:'neg:'+last,go:{h:'flujo',month:last},t:L(`<b>En ${ymLabel(last)} gastaste más de lo que ingresaste</b> (${fmt(net)}).`,`<b>In ${ymLabel(last)} you spent more than you earned</b> (${fmt(net)}).`)});
+    else A.push({lvl:'good',key:'save:'+last,go:{h:'flujo',month:last},t:L(`<b>${ymLabel(last)}: ahorraste ${fmt(net)}</b> (${c.income>0?Math.round(net/c.income*100):0}% de tus ingresos).`,`<b>${ymLabel(last)}: you saved ${fmt(net)}</b> (${c.income>0?Math.round(net/c.income*100):0}% of your income).`)});
     const prev=complete.slice(-4,-1);
-    if(prev.length>=2){ const cats=Object.keys(c.cats); cats.forEach(k=>{ const avg=prev.reduce((s,m)=>s+(cf[m].cats[k]||0),0)/prev.length; if(avg>150 && c.cats[k]>avg*1.35 && c.cats[k]-avg>150) A.push({lvl:'warn',t:L(`<b>${esc(catL(k))} subió</b> a ${fmt(c.cats[k])} en ${ymLabel(last)}, frente a una media de ${fmt(avg)}.`,`<b>${esc(catL(k))} went up</b> to ${fmt(c.cats[k])} in ${ymLabel(last)}, against an average of ${fmt(avg)}.`)}); }); }
+    if(prev.length>=2){ const cats=Object.keys(c.cats); cats.forEach(k=>{ const avg=prev.reduce((s,m)=>s+(cf[m].cats[k]||0),0)/prev.length; if(avg>150 && c.cats[k]>avg*1.35 && c.cats[k]-avg>150) A.push({lvl:'warn',key:'spike:'+last+':'+k,go:{h:'flujo',month:last,cat:k},t:L(`<b>${esc(catL(k))} subió</b> a ${fmt(c.cats[k])} en ${ymLabel(last)}, frente a una media de ${fmt(avg)}.`,`<b>${esc(catL(k))} went up</b> to ${fmt(c.cats[k])} in ${ymLabel(last)}, against an average of ${fmt(avg)}.`)}); }); }
   }
+  // movimientos que la app no supo clasificar
+  const unc=S.tx.filter(isUncat); if(unc.length) A.push({lvl:'warn',key:'uncat:'+unc.length,go:{h:'flujo',cat:'__none',el:'txList'},t:L(`<b>${unc.length} ${unc.length>1?'movimientos':'movimiento'} sin categoría.</b> Toca para revisarlos y asignarles una.`,`<b>${unc.length} uncategorized transaction${unc.length>1?'s':''}.</b> Tap to review them and assign one.`)});
   // emergency fund
   const cash=S.accounts.filter(a=>a.kind==='cash').reduce((s,a)=>s+(balanceOf(a)||0),0);
   const lastN=complete.slice(-3); const avgExp=lastN.length?lastN.reduce((s,m)=>s+cf[m].expense,0)/lastN.length:0;
-  if(avgExp>0){ const months=cash/avgExp; const tgt=S.settings.emergencyMonths; if(months<tgt) A.push({lvl:months<3?'crit':'warn',t:L(`<b>Fondo de emergencia: ${months.toFixed(1)} meses</b> de gastos en liquidez (objetivo ${tgt}). Te faltan unos ${fmt(tgt*avgExp-cash)}.`,`<b>Emergency fund: ${months.toFixed(1)} months</b> of expenses in cash (target ${tgt}). You're about ${fmt(tgt*avgExp-cash)} short.`)}); else A.push({lvl:'good',t:L(`<b>Fondo de emergencia cubierto:</b> ${months.toFixed(1)} meses de gastos en liquidez.`,`<b>Emergency fund covered:</b> ${months.toFixed(1)} months of expenses in cash.`)}); }
+  if(avgExp>0){ const months=cash/avgExp; const tgt=S.settings.emergencyMonths; if(months<tgt) A.push({lvl:months<3?'crit':'warn',key:'ef:'+ym(today()),go:{h:'cuentas'},t:L(`<b>Fondo de emergencia: ${months.toFixed(1)} meses</b> de gastos en liquidez (objetivo ${tgt}). Te faltan unos ${fmt(tgt*avgExp-cash)}.`,`<b>Emergency fund: ${months.toFixed(1)} months</b> of expenses in cash (target ${tgt}). You're about ${fmt(tgt*avgExp-cash)} short.`)}); else A.push({lvl:'good',key:'efok:'+ym(today()),go:{h:'cuentas'},t:L(`<b>Fondo de emergencia cubierto:</b> ${months.toFixed(1)} meses de gastos en liquidez.`,`<b>Emergency fund covered:</b> ${months.toFixed(1)} months of expenses in cash.`)}); }
   // credit cards
   const cc=S.accounts.filter(a=>a.kind==='credit'&&(balanceOf(a)||0)>0);
-  cc.forEach(a=>{ if(a.apr && a.apr>0) A.push({lvl:'warn',t:L(`<b>${esc(a.name)}</b> tiene ${fmt(balanceOf(a))} pendientes al ${a.apr}% APR. Pagarla entera cada mes evita intereses.`,`<b>${esc(a.name)}</b> has ${fmt(balanceOf(a))} outstanding at ${a.apr}% APR. Paying it in full every month avoids interest.`)}); });
+  cc.forEach(a=>{ if(a.apr && a.apr>0) A.push({lvl:'warn',key:'apr:'+a.id+':'+ym(today()),go:{h:'cuentas',acc:a.id},t:L(`<b>${esc(a.name)}</b> tiene ${fmt(balanceOf(a))} pendientes al ${a.apr}% APR. Pagarla entera cada mes evita intereses.`,`<b>${esc(a.name)}</b> has ${fmt(balanceOf(a))} outstanding at ${a.apr}% APR. Paying it in full every month avoids interest.`)}); });
   // rental
-  S.accounts.filter(a=>a.kind==='property'&&a.rental).forEach(p=>{ const r=rentalPL(p); if(r.net<0) A.push({lvl:'warn',t:L(`<b>${esc(p.name)}</b> pierde unos ${fmt(-r.net)} al mes con las cifras configuradas.`,`<b>${esc(p.name)}</b> loses about ${fmt(-r.net)} a month with the configured figures.`)}); });
+  S.accounts.filter(a=>a.kind==='property'&&a.rental).forEach(p=>{ const r=rentalPL(p); if(r.net<0) A.push({lvl:'warn',key:'rent:'+p.id+':'+Math.round(r.net),go:{h:'alquiler'},t:L(`<b>${esc(p.name)}</b> pierde unos ${fmt(-r.net)} al mes con las cifras configuradas.`,`<b>${esc(p.name)}</b> loses about ${fmt(-r.net)} a month with the configured figures.`)}); });
+  const ign=new Set(S.settings.alertIgnore||[]); A.forEach(a=>{ a.ignored=!!(a.key&&ign.has(a.key)); });
   return A;
 }
-function alertsHTML(A){ const ic={good:'✓',warn:'!',crit:'!',info:'i'}; return A.map(a=>`<div class="alert ${a.lvl}"><span class="ic">${ic[a.lvl]}</span><div>${a.t}</div></div>`).join(''); }
+// Avisos: tocar uno lleva a donde hay que decidir; la × lo ignora (vuelve si la situación cambia)
+function alertsHTML(A){ const IC={good:'✓',warn:'!',crit:'!',info:'i'}; return A.map((a,i)=>`<div class="alert ${a.lvl}${a.go?' act':''}"><span class="ic">${IC[a.lvl]}</span>${a.go?`<button class="ab" data-ago="${i}"><span>${a.t.replace(/<\/?a\b[^>]*>/g,'')}</span>${ic('right','chev')}</button>`:`<div style="flex:1">${a.t}</div>`}${a.key?`<button class="ax" data-aign="${esc(a.key)}" title="${L('Ignorar','Ignore')}" aria-label="${L('Ignorar este aviso','Ignore this alert')}">${ic('close')}</button>`:''}</div>`).join(''); }
+function goAlert(go){ if(!go) return;
+  if(go.h==='flujo'){ flujoFilter.month=go.month||'all'; flujoFilter.cat=go.cat||'all'; flujoFilter.q=''; flujoFilter.limit=200; }
+  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.el){ const e=document.getElementById(go.el); if(e) e.scrollIntoView({block:'start'}); } };
+  if(location.hash==='#'+go.h) route(); else { location.hash='#'+go.h; } setTimeout(after,60); }
+function wireAlerts(root,A,refresh){
+  root.querySelectorAll('[data-ago]').forEach(b=>b.onclick=()=>goAlert(A[+b.dataset.ago].go));
+  root.querySelectorAll('[data-aign]').forEach(b=>b.onclick=()=>{ const k=b.dataset.aign; S.settings.alertIgnore=(S.settings.alertIgnore||[]).filter(x=>x!==k).concat(k).slice(-300); save(); toast(L('Aviso ignorado','Alert ignored')); refresh(); });
+  const r=root.querySelector('#aRestore'); if(r) r.onclick=()=>{ const ks=new Set(A.filter(a=>a.ignored).map(a=>a.key)); S.settings.alertIgnore=(S.settings.alertIgnore||[]).filter(x=>!ks.has(x)); save(); refresh(); }; }
 
 /* ============================================================
    Views
@@ -520,9 +562,9 @@ let resizeT; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT
 
 /* ---------- Resumen ---------- */
 // Avisos plegados en una línea: "N cosas por revisar" o "Todo en orden"
-function alertsBox(A){ const bad=A.filter(a=>a.lvl==='crit'||a.lvl==='warn'); const lvl=A.some(a=>a.lvl==='crit')?'crit':bad.length?'warn':'good';
+function alertsBox(A0,open){ const A=A0.filter(a=>!a.ignored), nIgn=A0.length-A.length; const bad=A.filter(a=>a.lvl==='crit'||a.lvl==='warn'); const lvl=A.some(a=>a.lvl==='crit')?'crit':bad.length?'warn':'good';
   const title=bad.length?L(`${bad.length} ${bad.length>1?'cosas':'cosa'} por revisar`,`${bad.length} thing${bad.length>1?'s':''} to review`):L('Todo en orden','All good');
-  return `<details class="card abox ${lvl}" id="alertBox"><summary><span class="dot">${ic(bad.length?'alert':'check')}</span><span>${title}${helpBtn('alerts',true)}</span>${ic('down','chev')}</summary><div class="abody">${alertsHTML(A)||`<p class="muted">${L('Nada que revisar.','Nothing to review.')}</p>`}</div></details>`; }
+  return `<details class="card abox ${lvl}" id="alertBox" ${open?'open':''}><summary><span class="dot">${ic(bad.length?'alert':'check')}</span><span>${title}${helpBtn('alerts',true)}</span>${ic('down','chev')}</summary><div class="abody">${alertsHTML(A)||`<p class="muted">${L('Nada que revisar.','Nothing to review.')}</p>`}${nIgn?`<p class="muted" style="margin:6px 4px 8px">${L(`${nIgn} ${nIgn>1?'avisos ignorados':'aviso ignorado'}.`,`${nIgn} ignored alert${nIgn>1?'s':''}.`)} <button class="sm" id="aRestore">${L('Volver a mostrar','Show again')}</button></p>`:''}</div></details>`; }
 // Primer uso guiado: contraseña, primer extracto y primera copia
 function onboardHTML(){ if(S.settings.onboardDone) return '';
   const st=[[true,L('Crea tu contraseña y tu clave de recuperación','Create your password and recovery key'),''],
@@ -555,7 +597,7 @@ VIEWS.resumen=(el)=>{
     ${tile('stat_inv',L('Inversiones','Investments'),inv?fmt(inv):'—',by.retirement?L(`Jubilación ${fmtK(by.retirement)}`,`Retirement ${fmtK(by.retirement)}`):L('Bróker y jubilación','Brokerage and retirement'))}
     ${tile('stat_mort',L('Hipotecas','Mortgages'),by.mortgage?fmt(by.mortgage):'—',mPay?L(`Cuota ${fmt(mPay)}/mes`,`Payment ${fmt(mPay)}/mo`):L('Lo que debes','What you owe'))}
   </div>
-  ${alertsBox(computeAlerts())}
+  <div id="alertWrap"></div>
   <div class="card">${helpBtn('mix')}<h2>${L('Dónde está tu dinero','Where your money is')}</h2><p class="sub">${L('Saldo actual por tipo de cuenta','Current balance by account type')}</p><div id="cMix"></div></div>
   </div>`;
   lineChart($('#cNW'),{labels:months.map(ymLabel),series:[{name:nNW,color:'var(--accent)',values:nwSeries,area:true}],height:150});
@@ -563,6 +605,8 @@ VIEWS.resumen=(el)=>{
   const colors={cash:'var(--s1)',brokerage:'var(--s3)',retirement:'var(--s7)',kids:'var(--s5)',property:'var(--s4)',other:'var(--s6)',credit:'var(--s8)',mortgage:'var(--s2)'};
   $('#cMix').innerHTML=order.some(k=>by[k])?hbars(order.filter(k=>by[k]).map(k=>({k:KINDS[k].label+(KINDS[k].asset?'':L(' (deuda)',' (debt)')),v:by[k],c:colors[k]}))):`<p class="muted">${L('Aún no hay saldos.','No balances yet.')}</p>`;
   if($('#obHide')) $('#obHide').onclick=()=>{ S.settings.onboardDone=true; save(); route(); };
+  const paint=open=>{ const A0=computeAlerts(); $('#alertWrap').innerHTML=alertsBox(A0,open); wireAlerts($('#alertWrap'),A0.filter(a=>!a.ignored).concat(A0.filter(a=>a.ignored)),()=>paint(true)); };
+  paint(false);
 };
 
 /* ---------- Movimientos ---------- */
@@ -573,7 +617,7 @@ function catAv(c){ const n=catL(c||''); let h=0; for(const ch of String(c)) h=(h
   return `<span class="av round" style="${ty==='neutral'?'background:var(--muted)':`--h:${ty==='income'?145:CAT_HUES[h%CAT_HUES.length]}`}">${esc((n.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/)||['·'])[0].toUpperCase())}</span>`; }
 function dayLabel(d){ const t=today(); if(d===t) return L('Hoy','Today'); const y=new Date(); y.setDate(y.getDate()-1); if(d===isoDate(y.getFullYear()+'-'+(y.getMonth()+1)+'-'+y.getDate())) return L('Ayer','Yesterday');
   const x=new Date(d+'T12:00:00'); const s=x.toLocaleDateString(LANG==='en'?'en-US':'es-ES',{weekday:'long',day:'numeric',month:'long',...(d.slice(0,4)!==t.slice(0,4)?{year:'numeric'}:{})}); return s.charAt(0).toUpperCase()+s.slice(1); }
-function txRow(t){ return `<button class="lrow txr" data-tx="${esc(t.id)}">${catAv(t.cat)}<span class="lm"><b>${esc(t.desc)}</b><span>${esc(catL(t.cat))}${t.acc?' · '+esc(accName(t.acc)):''}${t.rec?` · <span class="rec">${esc(recLabel(t))}</span>`:''}</span></span><span class="lr"><b class="${t.amount>0?'pos':''}">${t.amount>0?'+':''}${fmt(t.amount,2)}</b></span></button>`; }
+function txRow(t){ const u=isUncat(t); return `<button class="lrow txr${u?' unc':''}" data-tx="${esc(t.id)}">${u?`<span class="av round" style="background:var(--warn);color:#1a1a19">?</span>`:catAv(t.cat)}<span class="lm"><b>${esc(t.desc)}</b><span>${u?`<span class="uncl">${L('Sin categoría · toca para elegir','Uncategorized · tap to choose')}</span>`:esc(catL(t.cat))}${t.acc?' · '+esc(accName(t.acc)):''}${t.rec?` · <span class="rec">${esc(recLabel(t))}</span>`:''}</span></span><span class="lr"><b class="${t.amount>0?'pos':''}">${t.amount>0?'+':''}${fmt(t.amount,2)}</b></span></button>`; }
 VIEWS.flujo=(el)=>{
   const cf=cashflowByMonth(); const months=monthsRange(12);
   const inc=months.map(m=>cf[m]?cf[m].income:0), exp=months.map(m=>cf[m]?cf[m].expense:0), net=months.map((m,i)=>inc[i]-exp[i]);
@@ -585,32 +629,34 @@ VIEWS.flujo=(el)=>{
   const catItems=Object.entries(catTot).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({k:catL(k),v:v/div}));
   let list=S.tx.slice().sort((a,b)=>b.date.localeCompare(a.date));
   if(sel) list=list.filter(t=>ym(t.date)===sel);
-  if(flujoFilter.cat!=='all') list=list.filter(t=>flujoFilter.cat==='__none'?!t.cat||t.cat==='Otros gastos':t.cat===flujoFilter.cat);
+  if(flujoFilter.cat!=='all') list=list.filter(t=>flujoFilter.cat==='__none'?isUncat(t):t.cat===flujoFilter.cat);
   if(flujoFilter.q) { const q=flujoFilter.q.toLowerCase(); list=list.filter(t=>t.desc.toLowerCase().includes(q)); }
   const shown=list.slice(0,flujoFilter.limit);
   // Mes del resumen: el elegido o el último con datos
   const sm=sel||Object.keys(cf).sort().pop(); const c=sm&&cf[sm];
   const days=[]; shown.forEach(t=>{ const d=days[days.length-1]; if(d&&d.date===t.date) d.tx.push(t); else days.push({date:t.date,tx:[t]}); });
   const nI=L('Ingresos','Income'), nG=L('Gastos','Expenses'), nN=L('Ahorro neto','Net savings');
-  const R=lastRec(); const nIss=R?R.issues.length:0;
+  const R=lastRec(); const nUnc=S.tx.filter(isUncat).length;
   el.innerHTML=`
   <div class="toolbar">
     <div class="search">${ic('search')}<input id="fQ" type="search" placeholder="${L('Buscar movimientos','Search transactions')}" value="${esc(flujoFilter.q)}" aria-label="${L('Buscar','Search')}"></div>
     <select id="fMonth" aria-label="${L('Mes','Month')}"><option value="all">${L('Todos los meses','All months')}</option>${ms.slice().reverse().map(m=>`<option value="${m}" ${m===flujoFilter.month?'selected':''}>${ymLabel(m)}</option>`).join('')}</select>
-    <select id="fCat" aria-label="${L('Categoría','Category')}"><option value="all">${L('Todas las categorías','All categories')}</option><option value="__none" ${flujoFilter.cat==='__none'?'selected':''}>${L('Sin categorizar / Otros','Uncategorized / Other')}</option>${allCats().map(c=>`<option value="${esc(c)}" ${c===flujoFilter.cat?'selected':''}>${esc(catL(c))}</option>`).join('')}</select>
+    <select id="fCat" aria-label="${L('Categoría','Category')}"><option value="all">${L('Todas las categorías','All categories')}</option><option value="__none" ${flujoFilter.cat==='__none'?'selected':''}>${L('Sin categoría (por revisar)','Uncategorized (to review)')}</option>${allCats().map(c=>`<option value="${esc(c)}" ${c===flujoFilter.cat?'selected':''}>${esc(catL(c))}</option>`).join('')}</select>
     <button class="sm" id="catMgr">${L('Categorías','Categories')}</button>
   </div>
-  ${c?`<div class="card stat" style="margin-bottom:12px">${helpBtn('month_sum')}<div class="lbl">${ymLabel(sm)}</div><div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:6px">
-    <div><div class="note">${nI}</div><div class="val pos" style="font-size:18px">${fmt(c.income)}</div></div><div><div class="note">${nG}</div><div class="val" style="font-size:18px">${fmt(c.expense)}</div></div><div><div class="note">${L('Ahorro','Saved')}</div><div class="val ${c.income-c.expense>=0?'pos':'neg'}" style="font-size:18px">${fmt(c.income-c.expense)}</div></div></div></div>`:''}
-  ${S.tx.length?`<div class="card" id="recBox" style="margin-bottom:4px">${helpBtn('rec')}<h2>${L('Conciliación entre cuentas','Reconciliation between accounts')}</h2>${recHTML(R)}</div>`:''}
+  <div class="stack">
+    <div class="card">${helpBtn('cat_chart')}<h2>${L('Gasto por categoría','Spending by category')}</h2><p class="sub">${sel?ymLabel(sel):L('Media mensual de los últimos 12 meses','Monthly average over the last 12 months')}</p>
+      ${c?`<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 14px"><div class="stat"><div class="note">${nI}${sel?'':' · '+ymLabel(sm)}</div><div class="val pos" style="font-size:18px">${fmt(c.income)}</div></div><div class="stat"><div class="note">${nG}</div><div class="val" style="font-size:18px">${fmt(c.expense)}</div></div><div class="stat"><div class="note">${L('Ahorro','Saved')}</div><div class="val ${c.income-c.expense>=0?'pos':'neg'}" style="font-size:18px">${fmt(c.income-c.expense)}</div></div></div>`:''}
+      ${catItems.length?hbars(catItems,'var(--s2)'):`<p class="muted">${L('Sin gastos todavía.','No spending yet.')}</p>`}</div>
+    <div class="card">${helpBtn('cf_chart')}<h2>${L('Ingresos, gastos y ahorro','Income, expenses and savings')}</h2><p class="sub">${L('Últimos 12 meses','Last 12 months')}</p>${legend([{n:nI,c:'var(--s3)'},{n:nG,c:'var(--s2)'},{n:nN,c:'var(--s1)'}])}<div id="cCF"></div></div>
+    ${S.tx.length?`<div class="card" id="recBox">${helpBtn('rec')}<h2>${L('Conciliación entre cuentas','Reconciliation between accounts')}</h2>${recHTML(R)}</div>`:''}
+  </div>
   <h3 class="sec">${L('Movimientos','Transactions')}${helpBtn('tx_list',true)}<span class="tot">${list.length}</span></h3>
+  ${nUnc&&flujoFilter.cat!=='__none'?`<div class="alert warn act" style="margin-bottom:4px"><span class="ic">!</span><button class="ab" id="uncGo"><span>${L(`<b>${nUnc} ${nUnc>1?'movimientos':'movimiento'} sin categoría.</b> Revísalos y elige una.`,`<b>${nUnc} uncategorized transaction${nUnc>1?'s':''}.</b> Review them and choose one.`)}</span>${ic('right','chev')}</button></div>`:''}
+  ${flujoFilter.cat==='__none'?`<div class="alert info" style="margin-bottom:4px"><span class="ic">i</span><div style="flex:1">${L('Mostrando solo los movimientos sin categoría. Toca uno para elegirla.','Showing only uncategorized transactions. Tap one to choose it.')} <button class="sm" id="uncAll">${L('Ver todos','Show all')}</button></div></div>`:''}
   <div id="txList">${shown.length?days.map(d=>`<div class="txday"><div class="txday-h"><span>${esc(dayLabel(d.date))}</span><span>${fmt(r2(d.tx.reduce((s,t)=>s+t.amount,0)),2)}</span></div><div class="card list">${d.tx.map(txRow).join('')}</div></div>`).join('')
     +(list.length>shown.length?`<div class="row" style="justify-content:center;margin-top:12px"><button id="txMore">${L(`Ver más (${list.length-shown.length})`,`Show more (${list.length-shown.length})`)}</button></div>`:'')
     :`<div class="card empty"><div class="ei">${ic('flow')}</div><p>${S.tx.length?L('Ningún movimiento coincide con el filtro.','No transaction matches the filter.'):L('Aún no hay movimientos. Importa los extractos de tus bancos y tarjetas.','No transactions yet. Import your bank and card statements.')}</p>${S.tx.length?'':`<a class="btn pri" href="#importar">${ic('upload')}${L('Importar extractos','Import statements')}</a>`}</div>`}</div>
-  <h3 class="sec">${L('Análisis','Analysis')}</h3>
-  <div class="grid g2">
-    <div class="card">${helpBtn('cf_chart')}<h2>${L('Ingresos, gastos y ahorro','Income, expenses and savings')}</h2><p class="sub">${L('Últimos 12 meses','Last 12 months')}</p>${legend([{n:nI,c:'var(--s3)'},{n:nG,c:'var(--s2)'},{n:nN,c:'var(--s1)'}])}<div id="cCF"></div></div>
-    <div class="card">${helpBtn('cat_chart')}<h2>${L('Gasto por categoría','Spending by category')}</h2><p class="sub">${sel?L('Total de ','Total for ')+ymLabel(sel):L('Media mensual','Monthly average')}</p>${catItems.length?hbars(catItems,'var(--s2)'):`<p class="muted">${L('Sin gastos todavía.','No spending yet.')}</p>`}</div>
   </div>`;
   if($('#recBox')) wireRec($('#recBox'));
   barChart($('#cCF'),{labels:months.map(ymLabel),series:[{name:nI,color:'var(--s3)',values:inc},{name:nG,color:'var(--s2)',values:exp},{name:nN,color:'var(--s1)',values:net}]});
@@ -618,6 +664,8 @@ VIEWS.flujo=(el)=>{
   $('#fCat').onchange=e=>{flujoFilter.cat=e.target.value;flujoFilter.limit=200;route();};
   $('#fQ').onchange=e=>{flujoFilter.q=e.target.value;flujoFilter.limit=200;route();};
   $('#catMgr').onclick=()=>manageCats();
+  if($('#uncGo')) $('#uncGo').onclick=()=>{ flujoFilter.cat='__none'; flujoFilter.month='all'; flujoFilter.limit=200; route(); setTimeout(()=>{ const e=$('#txList'); if(e) e.scrollIntoView({block:'start'}); },30); };
+  if($('#uncAll')) $('#uncAll').onclick=()=>{ flujoFilter.cat='all'; route(); };
   if($('#txMore')) $('#txMore').onclick=()=>{ const y=window.scrollY; flujoFilter.limit+=300; route(); window.scrollTo(0,y); };
   $('#txList').addEventListener('click',e=>{ const b=e.target.closest('[data-tx]'); if(b) txSheet(b.dataset.tx); });
 };
@@ -1106,7 +1154,7 @@ function renderCSVPreview(){
    ${p.cAmt>=0?`<label class="f">${L('Importe','Amount')}<select id="mA">${opts(p.cAmt)}</select></label>`:`<label class="f">${L('Cargo','Debit')}<select id="mDe">${opts(p.cDeb)}</select></label><label class="f">${L('Abono','Credit')}<select id="mCr">${opts(p.cCred)}</select></label>`}</div>
    <div class="row"><label class="f">${L('Cuenta','Account')}<select id="mAcc">${accs.map(a=>`<option value="${a.id}" ${p.guess===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!p.guess&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Crear cuenta nueva…','+ Create a new account…')}</option></select></label>
    <label class="f" style="display:flex;gap:8px;align-items:center;margin-top:18px"><input type="checkbox" id="mFlip" style="width:auto" ${p.flip?'checked':''}> ${L('Invertir signo (típico en tarjetas)','Flip sign (common for cards)')}</label></div>
-   <div class="tbl"><table><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th>${L('Categoría','Category')}</th><th class="n">${L('Importe','Amount')}</th></tr></thead><tbody>${tx.slice(0,8).map(t=>`<tr><td>${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos')))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div>
+   <div class="tbl"><table><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th>${L('Categoría','Category')}</th><th class="n">${L('Importe','Amount')}</th></tr></thead><tbody>${tx.slice(0,8).map(t=>`<tr><td>${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc,t.amount)||otherCat(t.amount)))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div>
    <div class="row" style="margin-top:12px"><button id="mCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="mGo">${L(`Importar ${tx.length} movimientos`,`Import ${tx.length} transactions`)}</button></div></div>`;
   const re=()=>{ p.cDate=+$('#mD').value; p.cDesc=+$('#mS').value; if($('#mA')) p.cAmt=+$('#mA').value; if($('#mDe')){p.cDeb=+$('#mDe').value;p.cCred=+$('#mCr').value;} p.flip=$('#mFlip').checked; renderCSVPreview(); };
   ['#mD','#mS','#mA','#mDe','#mCr','#mFlip'].forEach(s=>{const e=$(s); if(e) e.onchange=re;});
@@ -1352,7 +1400,7 @@ function renderGenericPDF(r,name,text){
    ${r.cands.length?`<div style="margin-bottom:6px">${r.cands.slice(0,5).map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0"><input type="radio" name="cand" value="${c.v}" style="width:auto;margin-top:3px" ${i===0?'checked':''}><span><b>${fmt(c.v,2)}</b> <span class="muted">${esc(c.line)}</span></span></label>`).join('')}</div>`:`<p class="muted">${L('No encontré el saldo automáticamente.','I couldn\'t find the balance automatically.')}</p>`}
    <div class="row"><label class="f">${L('Saldo','Balance')}${r.kind==='credit'?L(' (lo que debes)',' (what you owe)'):''}<input id="gV" value="${r.cands[0]?r.cands[0].v:''}"></label><label class="f">${L('Fecha','Date')}<input type="date" id="gD" value="${r.date||today()}"></label><label class="f">${L('Aportado este periodo (inversión)','Contributed this period (investments)')}<input id="gC" inputmode="decimal" value="${r.contrib??''}"></label></div>
    <h3 class="sec" style="margin-top:8px">${L('Movimientos','Transactions')} (${tx.length})</h3>
-   ${tx.length?`<label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="gTx" checked style="width:auto"> ${L('Importar estos movimientos a "Movimientos"','Import these transactions into "Transactions"')}</label><div class="tbl" style="max-height:260px;overflow:auto"><table><tbody>${tx.slice(0,200).map(t=>`<tr><td style="white-space:nowrap">${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc)||''))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div><label class="f" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="gFlip" style="width:auto"> ${L('Invertir signo de todos','Flip the sign of all')}</label>`:`<p class="muted">${L('No encontré movimientos con formato reconocible. Prueba "Leer con Claude" o importa el CSV del banco.','I found no transactions in a recognizable format. Try "Read with Claude" or import the bank CSV.')}</p>`}
+   ${tx.length?`<label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="gTx" checked style="width:auto"> ${L('Importar estos movimientos a "Movimientos"','Import these transactions into "Transactions"')}</label><div class="tbl" style="max-height:260px;overflow:auto"><table><tbody>${tx.slice(0,200).map(t=>`<tr><td style="white-space:nowrap">${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc,t.amount)||otherCat(t.amount)))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div><label class="f" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="gFlip" style="width:auto"> ${L('Invertir signo de todos','Flip the sign of all')}</label>`:`<p class="muted">${L('No encontré movimientos con formato reconocible. Prueba "Leer con Claude" o importa el CSV del banco.','I found no transactions in a recognizable format. Try "Read with Claude" or import the bank CSV.')}</p>`}
    <div class="row" style="margin-top:10px"><button id="gCancel">${L('Cancelar','Cancel')}</button><button id="gAI">${L('Leer con Claude','Read with Claude')}</button><button class="pri" id="gOk">${L('Guardar','Save')}</button></div>
    <div id="gAIout"></div>
    <details style="margin-top:10px"><summary>${L('Ver el texto leído del PDF','See the text read from the PDF')}</summary><pre>${esc(text.slice(0,5000))}</pre></details></div>`;
@@ -1408,7 +1456,7 @@ const isPdfFile=f=>/\.pdf$/i.test(f.name)||f.type==='application/pdf';
 function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0; const st=uid();
   // Solo cuenta como repetido lo que ya estaba guardado: dos cargos iguales el mismo día en un extracto son dos cargos.
   for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;}
-    S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos'),acc:accId,src,st}); added++; }
+    S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc,t.amount)||otherCat(t.amount),acc:accId,src,st}); added++; }
   return {added,dup}; }
 function saveMortgageStatement(m,r,bal,date){ m.rate=r.rate; m.payment=r.pi; m.extra=r.extra||0; m.escrow=r.escrow||0; if(r.nextDue) m.nextDue=r.nextDue; if(r.last4) m.last4=r.last4; if(!m.institution) m.institution=r.institution;
   const sn=upsertSnap(m.id,date,bal); Object.assign(sn,{rate:m.rate,pi:m.payment,extra:m.extra,escrow:m.escrow}); delete extraSim[m.id]; }
@@ -2133,7 +2181,7 @@ VIEWS.ajustes=(el)=>{
   $('#sKeySave').onclick=()=>{ const v=$('#sKey').value.trim(); if(!v||/^•+$/.test(v)) return toast(L('Pega la clave','Paste the key')); if(!/^sk-ant-/.test(v)) return toast(L('La clave debe empezar por sk-ant-','The key must start with sk-ant-')); S.secret=Object.assign({},S.secret,{apiKey:v}); save(); toast(L('Clave guardada','Key saved')); route(); };
   $('#sKeyTest').onclick=async()=>{ const m=$('#sKeyMsg'); m.textContent=L('Probando…','Testing…'); try{ const r=await claudeCall('Responde solo: OK',{modelTier:'quick',maxTokens:10,stream:false}); m.textContent=L('Funciona ✓ (','Works ✓ (')+r.text.trim()+')'; }catch(e){ m.textContent=e.message; } };
   if($('#sKeyDel')) $('#sKeyDel').onclick=()=>{ if(S.secret) delete S.secret.apiKey; save(); route(); };
-  $('#reCat').onclick=()=>{ let n=0; S.tx.forEach(t=>{ if(t.manual) return; const c=categorize(t.desc); if(c&&c!==t.cat){t.cat=c;n++;} }); save(); toast(L(`${n} movimientos recategorizados`,`${n} transactions recategorized`)); };
+  $('#reCat').onclick=()=>{ let n=0; S.tx.forEach(t=>{ if(t.manual||t.rec) return; const c=categorize(t.desc,t.amount)||otherCat(t.amount); if(c!==t.cat){t.cat=c;n++;} }); save(); toast(L(`${n} movimientos recategorizados`,`${n} transactions recategorized`)); };
   $('#wipe').onclick=async()=>{ if(await confirmModal(L('¿Borrar todo?','Delete everything?'),`<p>${L('Se borrarán los datos, la contraseña y las passkeys de este dispositivo. No se puede deshacer.','The data, password and passkeys on this device will be deleted. This cannot be undone.')}</p>`)){ clearTimeout(saveTimer); saveTimer=null; await persistQ; VAULT.dk=null; S=null; await IDB.set('vault',null); try{ localStorage.removeItem('mfz-lang'); }catch(e){} location.hash=''; location.reload(); } };
 };
 
@@ -2176,7 +2224,7 @@ async function createVault(pass){
   VAULT.meta={v:1,created:new Date().toISOString(),pw:{salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),raw)},rec:{salt:b64(rsalt),it:REC_ITER,wrap:await seal(await kdfPass(normRec(rec),rsalt,REC_ITER),raw)},pk:[]};
   S=blankState(); await persist(); return rec;
 }
-async function loadState(){ const raw=await unseal(VAULT.dk,VAULT.meta.data); S=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); }
+async function loadState(){ const raw=await unseal(VAULT.dk,VAULT.meta.data); S=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); migrateCats(); }
 async function unlockWithPassword(pass){ const p=VAULT.meta.pw; const raw=await unseal(await kdfPass(pass,unb64(p.salt),p.it),p.wrap); await setDK(raw); await loadState(); }
 async function unlockWithRecovery(code){ const r=VAULT.meta.rec; const raw=await unseal(await kdfPass(normRec(code),unb64(r.salt),r.it),r.wrap); await setDK(raw); await loadState(); }
 async function setPassword(pass){ const salt=rnd(16); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)}; await persist(); }
