@@ -32,7 +32,7 @@ Todo vive en `index.html` (≈2.000 líneas: HTML, CSS y un único `<script>`), 
 | Claude en PDFs | `redact()` (oculta cuentas, SSN, EIN, teléfonos, emails, direcciones y nombres de `settings.hideNames`) → `claudeExtract()` (JSON estructurado). Siempre pide confirmación salvo que `settings.autoClaude` esté activo |
 | Impuestos | `TAXC` (tramos, deducción estándar, SALT, LTCG, CTC por año y estado civil), `CA_STD`, `computeTaxes(year, adj)`, `rentalSchedule` (Schedule E), `expectedDocs` |
 | Optimizador | `LIM` (401k, IRA, HSA, DCFSA y límites de ingresos por año), `CA_BR`, perfil familiar `prof(year)`, `recommendations(year)` (ahorro estimado con `savingsOf` = what-if de `computeTaxes`), `taxTurbo` (guía TurboTax con las cifras del usuario) |
-| Ajustes | Copia cifrada (`encryptState`/`decryptBackup`, formato `{app:'misfinanzas',v:1,salt,iv,data}`, compatible con la versión antigua), seguridad, clave de API |
+| Ajustes | Copia cifrada (`encryptState`/`decryptBackup`, formato v2, ver Seguridad; restaura también v1 y las copias de la versión antigua), seguridad, clave de API |
 | Bóveda | Ver "Seguridad". `createVault`, `unlockWith{Password,Passkey,Recovery}`, `addPasskey`, `lockNow`, `showGate(mode)` |
 | Claude | `claudeCall(prompt,{modelTier,onText,stream,maxTokens})` → API de Anthropic con la clave del usuario. `getSample()` devuelve una función compatible con la interfaz antigua (`f(prompt,opts)` y `f.json(prompt)`). Modelos en `MODELS` |
 | Boot | Abre IndexedDB, muestra `setup` o `unlock`, registra `sw.js` y la barra de "versión nueva" |
@@ -48,6 +48,9 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 - En IndexedDB solo se guarda `vault` (cifrado). Nada en claro, nunca. `persist()` vuelve a cifrar `S` completo.
 - Bloqueo: `lockNow()` borra `S` y la DK de la memoria. Hay bloqueo automático por inactividad (`settings.lockMin`) y al volver de segundo plano.
 - La clave de API vive en `S.secret` y se excluye de las copias (`encryptState`).
+- Copias cifradas (`encryptState`/`decryptBackup`): formato v2 `{app:'misfinanzas',v:2,kdf,it:600000,salt,iv,data}`, PBKDF2-SHA256 600.000 iteraciones, AES-256-GCM con la cabecera como datos adicionales autenticados (`bkAAD`); contraseña mínima de 10 caracteres. v1 (250.000 iteraciones) se sigue pudiendo restaurar.
+- Fuera de la bóveda solo hay: el idioma en `localStorage` y el código de la app en la caché del service worker. Cualquier exportación en claro (p. ej. el resumen fiscal .txt) debe avisar antes de descargarse.
+- Usa siempre WebCrypto con algoritmos estándar (NIST/FIPS, BSI, ENISA); no implementes criptografía propia.
 - CSP en `<meta>`: solo `'self'`, `https://api.anthropic.com` y `https://raw.githubusercontent.com` (titulares públicos de la rama `news`). Si añades un servicio (por ejemplo Dropbox), amplía `connect-src` solo con sus dominios exactos.
 - No añadas analítica, CDNs ni dependencias remotas. pdf.js está copiado en `vendor/`.
 
@@ -64,7 +67,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 9 pruebas del recolector de noticias + 51 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
+npm test           # 9 pruebas del recolector de noticias + 53 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).
