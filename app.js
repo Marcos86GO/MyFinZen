@@ -108,6 +108,7 @@ function sanitizeState(st){
     ACC_NUM.forEach(k=>{ if(k in x) x[k]=numStrict(x[k]); });
     if('propertyId' in x) x.propertyId=x.propertyId?cleanId(x.propertyId):null; if('nextDue' in x) x.nextDue=isoDate(x.nextDue);
     ['rental','pre2017'].forEach(k=>{ if(k in x) x[k]=!!x[k]; });
+    if('keys' in x) x.keys=arr(x.keys).filter(k=>typeof k==='string').map(k=>k.slice(0,80)).slice(0,20);
     if(x.holdings){ const h=obj(x.holdings); x.holdings=isoDate(h.date)?{date:h.date,rows:arr(h.rows).map(sanitizeHoldingRow).filter(r=>r.sym)}:undefined; if(!x.holdings) delete x.holdings; }
     return x; });
   o.snapshots=arr(o.snapshots).map(s=>{ s=obj(s); const x={id:cleanId(s.id)||uid(),acc:cleanId(s.acc),date:isoDate(s.date),value:numStrict(s.value)}; ['rate','pi','extra','escrow'].forEach(k=>{ if(s[k]!=null) x[k]=numStrict(s[k]); }); return x; }).filter(s=>s.acc&&s.date&&s.value!=null);
@@ -893,6 +894,9 @@ VIEWS.importar=(el)=>{
   const drag=L('o arrástralo aquí desde el ordenador','or drag it here from your computer');
   el.innerHTML=`
   <div class="alert info"><span class="ic">i</span><div>${L('<b>Los archivos no salen de este dispositivo.</b> Se leen dentro del navegador y solo se guardan las cifras y los movimientos.','<b>Files never leave this device.</b> They are read inside the browser and only the figures and transactions are saved.')}</div></div>
+  <div class="card" style="margin-bottom:12px">${helpBtn('imp_batch')}<h2>${L('Importar varios archivos a la vez','Import several files at once')}</h2><p class="sub">${L('Elige todos tus extractos de una vez, PDF y CSV mezclados. La app reconoce cada uno, lo guarda en su cuenta y solo te pide revisar los que no sabe asignar.','Choose all your statements at once, PDFs and CSVs mixed. The app recognizes each one, saves it to its account and only asks you to review the ones it can\'t assign.')}</p>
+    <div class="drop" id="dropAll"><label class="pick">${L('Elegir archivos (PDF y CSV)','Choose files (PDF and CSV)')}<input type="file" accept=".pdf,.csv,application/pdf,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain" id="fAll" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div>
+    <div id="batchOut"></div></div>
   <div class="grid g2">
     <div class="card">${helpBtn('imp_csv')}<h2>${L('Movimientos del banco o tarjeta (CSV)','Bank or card transactions (CSV)')}</h2><p class="sub">${L('Descarga el CSV desde la web de tu banco (Chase, Amex, BofA, Wells Fargo, Citi… todos lo permiten) y súbelo aquí. Los duplicados se ignoran. También acepta el CSV de <b>Holdings</b> de M1 (posiciones).','Download the CSV from your bank\'s website (Chase, Amex, BofA, Wells Fargo, Citi… they all offer it) and upload it here. Duplicates are skipped. It also accepts the M1 <b>Holdings</b> CSV (positions).')}</p>
       <div class="drop" id="dropCSV"><label class="pick">${L('Elegir archivo CSV','Choose CSV file')}<input type="file" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain" id="fCSV" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div></div>
@@ -904,9 +908,12 @@ VIEWS.importar=(el)=>{
   el.insertAdjacentHTML('afterbegin',`<div class="alert ${wv?'warn':'info'}" id="wvNote" style="${wv?'':'display:none'}"><span class="ic">!</span><div>${L('<b>¿El botón de elegir archivo no hace nada?</b> Estás abriendo MyFinZen dentro de otra app que no deja elegir archivos. Ábrela en Chrome o instálala desde Chrome. Para un CSV, también puedes pegar su contenido abajo.','<b>Does the choose-file button do nothing?</b> You are opening MyFinZen inside another app that doesn\'t allow picking files. Open it in Chrome or install it from Chrome. For a CSV, you can also paste its content below.')}</div></div>`);
   el.insertAdjacentHTML('beforeend',`<div class="card" style="margin-top:12px">${helpBtn('imp_paste')}<h2>${L('Pegar CSV como texto','Paste CSV as text')}</h2><p class="sub">${L('Si no puedes elegir el archivo: ábrelo en tu móvil (Archivos, Google Drive, Hojas de cálculo…), copia todo su contenido y pégalo aquí.','If you can\'t choose the file: open it on your phone (Files, Google Drive, Sheets…), copy all its content and paste it here.')}</p><textarea id="pasteCSV" placeholder="Symbol,Name,Quantity,..."></textarea><div class="row" style="margin-top:8px"><input id="pasteName" placeholder="${L('Nombre (opcional), p. ej. Holdings-Oct-30-2026','Name (optional), e.g. Holdings-Oct-30-2026')}"><button class="pri" id="pasteGo">${L('Importar texto','Import text')}</button></div></div>`);
   $('#pasteGo').onclick=()=>{ const t=$('#pasteCSV').value.trim(); if(!t) return toast(L('Pega el contenido del CSV','Paste the CSV content')); const n=($('#pasteName').value.trim()||(L('pegado-','pasted-')+today()))+'.csv'; handleCSV({name:n,text:async()=>t}); window.scrollTo(0,document.body.scrollHeight); };
-  ['#fCSV','#fPDF'].forEach(id=>{ const i=$(id); let opened=false; i.addEventListener('click',()=>{ opened=false; setTimeout(()=>{ if(!opened&&document.hasFocus()) $('#wvNote').style.display=''; },2500); }); window.addEventListener('blur',()=>{opened=true;},{once:false}); i.addEventListener('change',()=>{opened=true;}); });
-  const wire=(drop,input,fn)=>{ const d=$(drop); d.ondragover=e=>{e.preventDefault();d.classList.add('over')}; d.ondragleave=()=>d.classList.remove('over'); d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); [...e.dataTransfer.files].forEach(fn);}; $(input).onchange=e=>{ const fs=[...e.target.files]; fs.forEach(fn); e.target.value=''; }; };
-  wire('#dropCSV','#fCSV',handleCSV); wire('#dropPDF','#fPDF',queuePDF);
+  ['#fCSV','#fPDF','#fAll'].forEach(id=>{ const i=$(id); let opened=false; i.addEventListener('click',()=>{ opened=false; setTimeout(()=>{ if(!opened&&document.hasFocus()) $('#wvNote').style.display=''; },2500); }); window.addEventListener('blur',()=>{opened=true;},{once:false}); i.addEventListener('change',()=>{opened=true;}); });
+  // Un archivo: revisión paso a paso. Varios: importación por lotes.
+  const run=(fs,one)=>{ if(!fs.length) return; if(fs.length>1||!one) importBatch(fs); else one(fs[0]); };
+  const wire=(drop,input,one)=>{ const d=$(drop); d.ondragover=e=>{e.preventDefault();d.classList.add('over')}; d.ondragleave=()=>d.classList.remove('over'); d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); run([...e.dataTransfer.files],one);}; $(input).onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; run(fs,one); }; };
+  wire('#dropCSV','#fCSV',handleCSV); wire('#dropPDF','#fPDF',queuePDF); wire('#dropAll','#fAll',null);
+  if(BATCH&&!BATCH.running) renderBatch();
 };
 function csvDelimiter(text){ const line=(text.split(/\r?\n/).find(l=>l.trim())||'').replace(/"[^"]*"/g,''); const n=ch=>line.split(ch).length-1; const c=[[',',n(',')],[';',n(';')],['\t',n('\t')]].sort((a,b)=>b[1]-a[1]); return c[0][1]>0?c[0][0]:','; }
 function parseCSV(text){
@@ -922,7 +929,14 @@ async function handleCSV(file){
   let text; try{ text=await file.text(); }catch(e){ toast(L('No pude leer el archivo','I couldn\'t read the file')); return; }
   const rows=parseCSV(text); if(!rows.length){ toast(L('El archivo está vacío','The file is empty')); return; }
   if(isHoldingsCSV(rows)){ renderHoldingsPreview(file.name,rows); return; }
-  // find header row: first row with a date-like header
+  pendingCSV=csvPrepare(file.name,rows);
+  // signo: si casi todo es positivo y parece una tarjeta (por el nombre o por la cuenta que le toca) → invertir
+  const mm=matchCSV(file.name); pendingCSV.guess=mm?mm.acc.id:null; const isCard=/card|credit|amex|visa|discover|citi/i.test(file.name)||(mm&&mm.acc.kind==='credit'); const p=pendingCSV;
+  if(p.cAmt>=0){ const vals=p.data.map(r=>num(r[p.cAmt])).filter(v=>!isNaN(v)); const pos=vals.filter(v=>v>0).length; if(isCard && pos>vals.length*0.7) p.flip=true; }
+  renderCSVPreview();
+}
+function csvPrepare(name,rows){
+  // fila de cabecera: la primera que tenga una columna de fecha
   let hi=rows.findIndex(r=>r.some(c=>/date|fecha|posted/i.test(c))); if(hi<0) hi=0;
   const head=rows[hi].map(h=>h.trim()); const data=rows.slice(hi+1).filter(r=>r.length>=2);
   const find=re=>head.findIndex(h=>re.test(h));
@@ -930,11 +944,7 @@ async function handleCSV(file){
   let cDesc=-1; for(const re of [/^description$/i,/description|descrip|concepto/i,/payee|merchant|^name$/i,/memo|details/i]){ cDesc=find(re); if(cDesc>=0) break; }
   let cAmt=find(/^amount|importe|^monto/i); let cDeb=find(/debit|withdraw|cargo/i), cCred=find(/credit|deposit|abono/i);
   if(cAmt>=0){cDeb=-1;cCred=-1;}
-  const isCard=/card|credit|amex|visa|discover|citi/i.test(file.name);
-  pendingCSV={file:file.name,head,data,cDate,cDesc,cAmt,cDeb,cCred,flip:false};
-  // guess sign: if most amounts positive and file looks like a card export → flip
-  if(cAmt>=0){ const vals=data.map(r=>num(r[cAmt])).filter(v=>!isNaN(v)); const pos=vals.filter(v=>v>0).length; if(isCard && pos>vals.length*0.7) pendingCSV.flip=true; }
-  renderCSVPreview();
+  return {file:name,head,data,cDate,cDesc,cAmt,cDeb,cCred,flip:false};
 }
 function csvRowsToTx(p){
   const out=[];
@@ -952,7 +962,7 @@ function renderCSVPreview(){
   out.innerHTML=`<div class="card"><h2>${esc(p.file)}</h2><p class="sub">${L(`${tx.length} movimientos detectados. Revisa las columnas y el signo: los gastos deben salir en negativo.`,`${tx.length} transactions detected. Check the columns and the sign: expenses must be negative.`)}</p>
    <div class="row"><label class="f">${L('Fecha','Date')}<select id="mD">${opts(p.cDate)}</select></label><label class="f">${L('Descripción','Description')}<select id="mS">${opts(p.cDesc)}</select></label>
    ${p.cAmt>=0?`<label class="f">${L('Importe','Amount')}<select id="mA">${opts(p.cAmt)}</select></label>`:`<label class="f">${L('Cargo','Debit')}<select id="mDe">${opts(p.cDeb)}</select></label><label class="f">${L('Abono','Credit')}<select id="mCr">${opts(p.cCred)}</select></label>`}</div>
-   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="mAcc">${accs.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}<option value="__new">${L('+ Crear cuenta nueva…','+ Create a new account…')}</option></select></label>
+   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="mAcc">${accs.map(a=>`<option value="${a.id}" ${p.guess===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new">${L('+ Crear cuenta nueva…','+ Create a new account…')}</option></select></label>
    <label class="f" style="display:flex;gap:8px;align-items:center;margin-top:18px"><input type="checkbox" id="mFlip" style="width:auto" ${p.flip?'checked':''}> ${L('Invertir signo (típico en tarjetas)','Flip sign (common for cards)')}</label></div>
    <div class="tbl"><table><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th>${L('Categoría','Category')}</th><th class="n">${L('Importe','Amount')}</th></tr></thead><tbody>${tx.slice(0,8).map(t=>`<tr><td>${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos')))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div>
    <div class="row" style="margin-top:12px"><button id="mCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="mGo">${L(`Importar ${tx.length} movimientos`,`Import ${tx.length} transactions`)}</button></div></div>`;
@@ -962,11 +972,7 @@ function renderCSVPreview(){
   $('#mGo').onclick=()=>{
     let accId=$('#mAcc').value;
     if(accId==='__new'){ const n={id:uid(),kind:/card|credit|amex|visa/i.test(p.file)?'credit':'cash',name:p.file.replace(/\.csv$/i,''),institution:''}; S.accounts.push(n); accId=n.id; }
-    const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc));
-    let added=0, dup=0;
-    for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;} keys.add(k);
-      let cat=categorize(t.desc); if(!cat) cat=t.amount>0?'Otros ingresos':'Otros gastos';
-      S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat,acc:accId,src:'csv'}); added++; }
+    const {added,dup}=importTxInto(accId,tx,'csv'); learnKey(acc(accId),fileKey(p.file));
     save(); pendingCSV=null; toast(L(`${added} importados${dup?` · ${dup} duplicados ignorados`:''}`,`${added} imported${dup?` · ${dup} duplicates skipped`:''}`)); const R=reconcile(); if(R.changed) save(); const nIss=R.issues.filter(i=>i.lvl!=='info').length;
     out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${added} movimientos importados</b>${dup?` (${dup} ya estaban)`:''}. Revisa las categorías en <a href="#flujo">Ingresos y gastos</a>: si cambias una, puedo aplicarla a todos los parecidos. Actualiza también el saldo de la cuenta en <a href="#cuentas">Cuentas</a>.<br>Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados entre cuentas, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b>`:''}.`,`<b>${added} transactions imported</b>${dup?` (${dup} were already there)`:''}. Review the categories in <a href="#flujo">Income & expenses</a>: if you change one, I can apply it to all similar ones. Also update the account balance in <a href="#cuentas">Accounts</a>.<br>Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched between accounts, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b>`:''}.`)}</div></div>`;
   };
@@ -976,7 +982,8 @@ async function pdfText(file){
   const buf=await file.arrayBuffer(); const doc=await pdfjsLib.getDocument({data:buf, isEvalSupported:false}).promise; let lines=[];
   for(let p=1;p<=Math.min(doc.numPages,60);p++){ const page=await doc.getPage(p); const tc=await page.getTextContent(); const rows={};
     tc.items.forEach(it=>{ if(!it.str.trim())return; const y=Math.round(it.transform[5]/3)*3; (rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str}); });
-    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>lines.push(rows[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' '))); }
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>lines.push(rows[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' '))); page.cleanup(); }
+  try{ await doc.destroy(); }catch(e){}
   return lines.join('\n');
 }
 const money=s=>{ const m=String(s).match(/-?\$?\s?\(?[\d,]+\.\d{2}\)?/); return m?num(m[0]):NaN; };
@@ -1006,7 +1013,7 @@ function parseStatement(text){
   const labels=[/(?:ending|closing|new|current|total)\s+(?:account\s+)?(?:balance|value)[^\n$]*?\$?\s?([\d,]+\.\d{2})/ig,/(?:portfolio|account|total)\s+value[^\n$]*?\$?\s?([\d,]+\.\d{2})/ig,/(?:vested balance|total balance)[^\n$]*?\$?\s?([\d,]+\.\d{2})/ig,/new balance[^\n$]*?\$?\s?([\d,]+\.\d{2})/ig];
   labels.forEach(re=>{ let m; while((m=re.exec(T))&&cands.length<12){ const line=T.slice(Math.max(0,T.lastIndexOf('\n',m.index)+1), T.indexOf('\n',m.index+1)>0?T.indexOf('\n',m.index+1):undefined); cands.push({v:num(m[1]),line:line.trim().slice(0,120)}); } });
   r.cands=cands.filter((c,i,a)=>a.findIndex(x=>x.v===c.v)===i);
-  const D='([A-Za-z]+\\.? \\d{1,2},? \\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})'; const dm=T.match(new RegExp('(?:through|thru|to|ending|closing date|period ending|as of)[:\\s]+'+D,'i'))||T.match(new RegExp('(?:statement (?:period|date))[^\\n]*?'+D,'i')); r.date=dm?parseDate(dm[1].replace('.','')):today();
+  const D='([A-Za-z]+\\.? \\d{1,2},? \\d{4}|\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})'; const dm=T.match(new RegExp('(?:through|thru|to|ending|closing date|period ending|as of)[:\\s]+'+D,'i'))||T.match(new RegExp('(?:statement (?:period|date))[^\\n]*?'+D,'i')); r.date=(dm&&parseDate(dm[1].replace('.','')))||today(); r.dateFound=!!(dm&&parseDate(dm[1].replace('.','')));
   r.institution=(T.match(/\b(M1 Finance|M1|Fidelity|Vanguard|Charles Schwab|Schwab|Empower|Principal|Chase|Bank of America|Wells Fargo|Citi|American Express|Capital One|Discover|Ally|Marcus|SoFi|Guideline|Betterment|Wealthfront|Robinhood|E\*TRADE|Merrill)\b/i)||[])[1]||'';
   r.kind=/401\(?k\)?|IRA|retirement|Roth/i.test(T)?'retirement':/brokerage|portfolio|M1|invest/i.test(T)?'brokerage':/credit card|minimum payment|new balance/i.test(T)?'credit':'cash';
   return r;
@@ -1151,16 +1158,16 @@ function renderMortgagePDF(r,name,text){
   $('#pCancel').onclick=()=>pdfDone('');
   $('#pOk').onclick=()=>{ const bal=num($('#pB').value); if(isNaN(bal)) return toast(L('Pon el saldo pendiente','Enter the outstanding balance')); let id=$('#pAcc').value; let m;
     if(id==='__new'){ m={id:uid(),kind:'mortgage',name:$('#pN').value.trim()||L('Hipoteca','Mortgage'),institution:r.institution,last4:r.last4}; S.accounts.push(m); } else m=acc(id);
-    m.rate=finOrNull($('#pR').value); m.payment=finOrNull($('#pP').value); m.extra=finOrNull($('#pE').value)||0; m.escrow=finOrNull($('#pS').value)||0; m.nextDue=r.nextDue; if($('#pPr').value) m.propertyId=$('#pPr').value; if(r.last4) m.last4=r.last4; if(!m.institution) m.institution=r.institution;
-    const sn=upsertSnap(m.id,isoDate($('#pD').value)||today(),bal); Object.assign(sn,{rate:m.rate,pi:m.payment,extra:m.extra,escrow:m.escrow}); delete extraSim[m.id]; save();
+    if($('#pPr').value) m.propertyId=$('#pPr').value;
+    saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull($('#pR').value),pi:finOrNull($('#pP').value),extra:finOrNull($('#pE').value)||0,escrow:finOrNull($('#pS').value)||0}),bal,isoDate($('#pD').value)||today()); save();
     const R=reconcile(); const mr=R.mort[m.id]; const LP=mr&&mr.last;
     pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Hipoteca guardada.</b> Cuota mensual total ${fmt(mortMonthly(m),2)}${LP?`; último pago encontrado en tus cuentas: ${fmt(-LP.amount,2)} el ${dLabel(LP.date)}`:''}. Mírala en <a href="#hipotecas">Hipotecas</a>.`,`<b>Mortgage saved.</b> Total monthly payment ${fmt(mortMonthly(m),2)}${LP?`; last payment found in your accounts: ${fmt(-LP.amount,2)} on ${dLabel(LP.date)}`:''}. See it in <a href="#hipotecas">Mortgages</a>.`)}</div></div>`); };
 }
 function renderGenericPDF(r,name,text){
-  const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage');
+  const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage'); const {m:gm,key:gkey}=matchPDF(r,text); const gid=gm?gm.acc.id:null;
   const tx=r.tx||[];
   out.innerHTML=`<div class="card"><h2>${esc(r.institution||'Statement')}</h2><p class="sub">${esc(name)} · ${KINDS[r.kind]?KINDS[r.kind].label:''}. ${L('Revisa antes de guardar.','Check before saving.')}</p>
-   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}<option value="__new" ${accs.length?'':'selected'}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(r.institution||'')}"></label></div>
+   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}" ${gid===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${accs.length?'':'selected'}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(r.institution||'')}"></label></div>
    <h3 class="sec" style="margin-top:8px">${L('Saldo','Balance')}</h3>
    ${r.cands.length?`<div style="margin-bottom:6px">${r.cands.slice(0,5).map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0"><input type="radio" name="cand" value="${c.v}" style="width:auto;margin-top:3px" ${i===0?'checked':''}><span><b>${fmt(c.v,2)}</b> <span class="muted">${esc(c.line)}</span></span></label>`).join('')}</div>`:`<p class="muted">${L('No encontré el saldo automáticamente.','I couldn\'t find the balance automatically.')}</p>`}
    <div class="row"><label class="f">${L('Saldo','Balance')}${r.kind==='credit'?L(' (lo que debes)',' (what you owe)'):''}<input id="gV" value="${r.cands[0]?r.cands[0].v:''}"></label><label class="f">${L('Fecha','Date')}<input type="date" id="gD" value="${r.date||today()}"></label><label class="f">${L('Aportado este periodo (inversión)','Contributed this period (investments)')}<input id="gC" inputmode="decimal" value="${r.contrib??''}"></label></div>
@@ -1175,9 +1182,8 @@ function renderGenericPDF(r,name,text){
     let id=$('#gAcc').value; if(id==='__new'){ const a={id:uid(),kind:$('#gK').value,name:$('#gN').value.trim()||L('Cuenta','Account'),institution:r.institution}; S.accounts.push(a); id=a.id; }
     const v=num($('#gV').value); if(!isNaN(v)) upsertSnap(id,isoDate($('#gD').value)||today(),v);
     const c=num($('#gC').value); if(!isNaN(c)&&c) { const a=acc(id); a.contributed=(a.contributed||0)+c; }
-    let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc));
-      tx.forEach(t=>{ const amt=flip?-t.amount:t.amount; const k=id+'|'+t.date+'|'+amt+'|'+t.desc; if(keys.has(k)){dup++;return;} keys.add(k); S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:amt,cat:categorize(t.desc)||(amt>0?'Otros ingresos':'Otros gastos'),acc:id,src:'pdf'}); added++; }); }
-    save(); const RR=reconcile(); if(RR.changed) save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Guardado.</b> ${!isNaN(v)?`Saldo ${fmt(v,2)}. `:''}${added?`${added} movimientos importados${dup?` (${dup} ya estaban)`:''}. `:''}Revisa en <a href="#cuentas">Cuentas</a>${added?' e <a href="#flujo">Ingresos y gastos</a>':''}.`,`<b>Saved.</b> ${!isNaN(v)?`Balance ${fmt(v,2)}. `:''}${added?`${added} transactions imported${dup?` (${dup} were already there)`:''}. `:''}Check in <a href="#cuentas">Accounts</a>${added?' and <a href="#flujo">Income & expenses</a>':''}.`)}</div></div>`); };
+    let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; ({added,dup}=importTxInto(id,tx.map(t=>flip?Object.assign({},t,{amount:-t.amount}):t),'pdf')); }
+    learnKey(acc(id),gkey); save(); const RR=reconcile(); if(RR.changed) save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Guardado.</b> ${!isNaN(v)?`Saldo ${fmt(v,2)}. `:''}${added?`${added} movimientos importados${dup?` (${dup} ya estaban)`:''}. `:''}Revisa en <a href="#cuentas">Cuentas</a>${added?' e <a href="#flujo">Ingresos y gastos</a>':''}.`,`<b>Saved.</b> ${!isNaN(v)?`Balance ${fmt(v,2)}. `:''}${added?`${added} transactions imported${dup?` (${dup} were already there)`:''}. `:''}Check in <a href="#cuentas">Accounts</a>${added?' and <a href="#flujo">Income & expenses</a>':''}.`)}</div></div>`); };
   $('#gAI').onclick=async()=>{ const box=$('#gAIout'); box.innerHTML=`<p class="muted">${L('Pidiendo a Claude…','Asking Claude…')}</p>`;
     try{ const res=await claudeExtract(text); if(!res){box.innerHTML='';return;}
       if(res.tax_forms.length&&!res.transactions.length&&res.ending_balance==null){ renderTaxImport(name,text,res.tax_forms[0].form,res.tax_forms); return; }
@@ -1191,9 +1197,9 @@ function renderGenericPDF(r,name,text){
 /* ---- Tax document import ---- */
 function renderTaxImport(name,text,type,claudeForms){
   const out=$('#impOut');
-  const yr=+(text.match(/\b(20[2-3]\d)\b(?=[^\n]{0,30}(Form|W-2|1098|1099|Tax Year))/i)||text.match(/Tax Year\s*(20\d\d)/i)||[0,new Date().getFullYear()-(new Date().getMonth()<6?1:0)])[1];
+  const yr=taxYearOf(text);
   const forms=claudeForms|| (type==='C1099'?[{form:'C1099',tax_year:yr,payer:'',fields:localTaxFields('C1099',text)}]:[{form:type,tax_year:yr,payer:'',fields:localTaxFields(type,text)}]);
-  const payerGuess=(text.match(/\b(M1 Finance|M1|Fidelity|Vanguard|Charles Schwab|Schwab|Empower|Chase|Bank of America|Wells Fargo|Citi|American Express|Capital One|Discover|Ally|Marcus|SoFi|Pennymac|Robinhood|Betterment|Wealthfront|Apex Clearing|Orange County|Los Angeles County)\b/i)||[])[1]||'';
+  const payerGuess=payerOf(text);
   const accOpts=S.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   out.innerHTML=`<div class="card"><h2>${L('Documento fiscal detectado','Tax document detected')}</h2><p class="sub">${esc(name)}. ${L('Se guarda en <a href="#impuestos">Impuestos</a>. Revisa las cifras: los formularios fiscales tienen formatos muy distintos.','It is saved in <a href="#impuestos">Taxes</a>. Check the figures: tax forms come in very different layouts.')}</p>
    ${forms.map((f,i)=>{ const t=FORM_FIELDS[f.form]?f.form:'OTHER'; return `<div class="card" style="background:var(--surface-2);margin-bottom:10px" data-form="${i}">
@@ -1211,6 +1217,109 @@ function renderTaxImport(name,text,type,claudeForms){
       taxYear(year).docs.push({id:uid(),type,payer:b.querySelector('.tPayer').value.trim(),acc:b.querySelector('.tAcc').value||null,fields,src:name,added:today()}); n++; taxSel.year=year; });
     save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${n} documento${n>1?'s':''} guardado${n>1?'s':''}.</b> Míralo en <a href="#impuestos">Impuestos</a>.`,`<b>${n} document${n>1?'s':''} saved.</b> See it in <a href="#impuestos">Taxes</a>.`)}</div></div>`); };
 }
+/* ============================================================
+   Importación por lotes: varios PDF y CSV a la vez.
+   Cada archivo se reconoce y se guarda en su cuenta (últimos 4 dígitos, firma
+   aprendida o entidad). Lo que no se puede asignar con seguridad queda para revisar.
+   ============================================================ */
+const isPdfFile=f=>/\.pdf$/i.test(f.name)||f.type==='application/pdf';
+// Guardado común (importación individual y por lotes)
+function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0;
+  for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;} keys.add(k);
+    S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos'),acc:accId,src}); added++; }
+  return {added,dup}; }
+function saveMortgageStatement(m,r,bal,date){ m.rate=r.rate; m.payment=r.pi; m.extra=r.extra||0; m.escrow=r.escrow||0; if(r.nextDue) m.nextDue=r.nextDue; if(r.last4) m.last4=r.last4; if(!m.institution) m.institution=r.institution;
+  const sn=upsertSnap(m.id,date,bal); Object.assign(sn,{rate:m.rate,pi:m.payment,extra:m.extra,escrow:m.escrow}); delete extraSim[m.id]; }
+function saveHoldings(id,H,d,setBal,setCost){ const a=acc(id); const total=H.reduce((s,x)=>s+x.value,0), cost=H.reduce((s,x)=>s+(x.cost||0),0);
+  a.holdings={date:d,rows:H}; S.holdingsHist=(S.holdingsHist||[]).filter(x=>!(x.acc===id&&x.date===d)); S.holdingsHist.push({acc:id,date:d,rows:H.map(x=>({sym:x.sym,value:x.value,cost:x.cost}))});
+  if(setBal) upsertSnap(id,d,Math.round(total*100)/100); if(setCost) a.contributed=Math.round(cost*100)/100; return a; }
+// Firmas aprendidas: al guardar un archivo en una cuenta se recuerda su firma (nombre de archivo sin fechas, o entidad + últimos 4 dígitos)
+const GENERIC_FILE=/^(statement|statements|activity|transactions?|export|download|history|estado|extracto|movimientos|account|cuenta|csv|pdf)+$/;
+function fileKey(name){ let s=String(name||'').toLowerCase().replace(/\.[a-z0-9]{2,4}$/,'');
+  s=s.replace(/(19|20)\d{2}[-_. ]?\d{2}[-_. ]?\d{2}/g,' ').replace(/\b(19|20)\d{2}\b/g,' ').replace(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic)[a-z]*/g,' ').replace(/(^|\D)\d{1,3}(?=\D|$)/g,'$1 ').replace(/[^a-z0-9]+/g,'');
+  return s.length>=4&&/[a-z]/.test(s)&&!GENERIC_FILE.test(s)?'f:'+s.slice(0,60):null; }
+function pdfLast4s(text){ const out=new Set(); const T=String(text);
+  for(const m of T.matchAll(/(?:account|acct|card|loan)\b[^\n]{0,40}?(?:number|no\.?|#|ending(?: in)?)[^\n\d]{0,15}([\dXx*•.\- ]{4,30}\d)/gi)){ const d=m[1].replace(/\D/g,''); if(d.length>=4) out.add(d.slice(-4)); }
+  for(const m of T.matchAll(/ending in[^\d\n]{0,5}(\d{4})\b/gi)) out.add(m[1]);
+  return [...out]; }
+function pdfKey(r,last4s){ const i=String(r.institution||'').toLowerCase().replace(/[^a-z0-9]/g,''); return i||last4s[0]?`p:${i}|${last4s[0]||''}`:null; }
+function learnKey(a,k){ if(!a||!k) return; S.accounts.forEach(x=>{ if(x!==a&&x.keys) x.keys=x.keys.filter(y=>y!==k); }); a.keys=[k,...(a.keys||[]).filter(y=>y!==k)].slice(0,20); }
+const INST_RE=/\b(chase|amex|american express|bank of america|bofa|wells fargo|wellsfargo|citi|capital one|capitalone|discover|ally|marcus|sofi|schwab|fidelity|vanguard|m1|usaa|us bank|pnc|navy federal|apple card)\b/i;
+// Busca la cuenta: 1) últimos 4 dígitos, 2) firma aprendida, 3) entidad (si solo hay una cuenta que encaje)
+function matchAccount(filter,{last4s=[],keys=[],institution='',kind=null}){
+  const pool=S.accounts.filter(filter); const one=l=>l.length===1?l[0]:null;
+  let a=one(pool.filter(x=>x.last4&&last4s.includes(x.last4))); if(a) return {acc:a,how:'last4'};
+  const ks=keys.filter(Boolean); a=one(pool.filter(x=>(x.keys||[]).some(k=>ks.includes(k)))); if(a) return {acc:a,how:'key'};
+  const w=String(institution||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim().split(/\s+/)[0];
+  if(w&&w.length>=2){ const byInst=pool.filter(x=>(' '+(x.institution||'')+' '+x.name+' ').toLowerCase().includes(w)); a=one(kind?byInst.filter(x=>x.kind===kind):byInst)||one(byInst); if(a) return {acc:a,how:'inst'}; }
+  return null; }
+function matchCSV(name){ const last4s=(String(name).match(/\d{4}/g)||[]).filter(x=>!/^(19|20)\d\d$/.test(x)); const inst=(String(name).match(INST_RE)||[])[1]||'';
+  return matchAccount(a=>a.kind==='cash'||a.kind==='credit',{last4s,keys:[fileKey(name)],institution:inst,kind:/card|credit|amex|visa|discover/i.test(name)?'credit':null}); }
+function matchPDF(r,text){ const last4s=pdfLast4s(text); return {m:matchAccount(a=>a.kind!=='mortgage'&&a.kind!=='property',{last4s,keys:[pdfKey(r,last4s)],institution:r.institution,kind:r.kind}),key:pdfKey(r,last4s)}; }
+function taxYearOf(text){ return +(text.match(/\b(20[2-3]\d)\b(?=[^\n]{0,30}(Form|W-2|1098|1099|Tax Year))/i)||text.match(/Tax Year\s*(20\d\d)/i)||[0,new Date().getFullYear()-(new Date().getMonth()<6?1:0)])[1]; }
+function payerOf(text){ return (text.match(/\b(M1 Finance|M1|Fidelity|Vanguard|Charles Schwab|Schwab|Empower|Chase|Bank of America|Wells Fargo|Citi|American Express|Capital One|Discover|Ally|Marcus|SoFi|Pennymac|Robinhood|Betterment|Wealthfront|Apex Clearing|Orange County|Los Angeles County)\b/i)||[])[1]||''; }
+function payerAccount(pay){ pay=String(pay||'').toLowerCase(); return pay?S.accounts.find(a=>(a.institution||'').toLowerCase().includes(pay)||pay.includes((a.institution||'~').toLowerCase()))||null:null; }
+
+async function autoCSV(file){
+  const text=await file.text(); const rows=parseCSV(text); if(!rows.length) return {status:'error',msg:L('El archivo está vacío','The file is empty')};
+  if(isHoldingsCSV(rows)){ const H=parseHoldings(rows); const pool=S.accounts.filter(a=>['brokerage','kids','retirement'].includes(a.kind)); const fk=fileKey(file.name);
+    const a=(pool.find(x=>fk&&(x.keys||[]).includes(fk)))||(pool.filter(x=>/m1/i.test(x.name+' '+(x.institution||''))).length===1?pool.find(x=>/m1/i.test(x.name+' '+(x.institution||''))):null);
+    if(!a) return {status:'review',kind:'holdings',msg:L('No sé a qué cuenta de inversión pertenecen estas posiciones','I don\'t know which investment account these positions belong to')};
+    saveHoldings(a.id,H,dateFromFilename(file.name),true,true); learnKey(a,fk); return {status:'ok',kind:'holdings',acc:a.id,msg:L(`${H.length} posiciones`,`${H.length} positions`)}; }
+  const p=csvPrepare(file.name,rows);
+  if(p.cDate<0||(p.cAmt<0&&p.cDeb<0&&p.cCred<0)) return {status:'review',kind:'csv',msg:L('No reconozco las columnas de fecha e importe','I can\'t recognize the date and amount columns')};
+  const mm=matchCSV(file.name); if(!mm) return {status:'review',kind:'csv',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')};
+  const a=mm.acc; p.flip=false;
+  if(p.cAmt>=0){ const vals=p.data.map(r=>num(r[p.cAmt])).filter(v=>!isNaN(v)); const pos=vals.filter(v=>v>0).length; p.flip=a.kind==='credit'&&pos>vals.length*0.7; }
+  const tx=csvRowsToTx(p); if(!tx.length) return {status:'review',kind:'csv',msg:L('No encontré movimientos','I found no transactions')};
+  const r=importTxInto(a.id,tx,'csv'); learnKey(a,fileKey(file.name));
+  return {status:r.added?'ok':'skip',kind:'csv',acc:a.id,added:r.added,dup:r.dup,flip:p.flip}; }
+
+async function autoPDF(file){
+  const text=await pdfText(file); if(text.replace(/\s/g,'').length<40) return {status:'review',kind:'pdf',msg:L('Parece una imagen escaneada, sin texto','It looks like a scanned image, with no text')};
+  const r=parseStatement(text); const is1098=/Form\s*1098\b|Mortgage Interest Statement/i.test(text);
+  if(r.type==='mortgage'&&!is1098){ const m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4);
+    if(!m) return {status:'review',kind:'mortgage',msg:L('Hipoteca que aún no está en la app: revísala y elige la cuenta','A mortgage not yet in the app: review it and choose the account')};
+    if(isNaN(r.balance)||!r.pi) return {status:'review',kind:'mortgage',msg:L('No encontré el saldo o la cuota','I couldn\'t find the balance or the payment')};
+    saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull(r.rate)}),r.balance,r.date||today());
+    return {status:'ok',kind:'mortgage',acc:m.id,bal:r.balance,date:r.date}; }
+  const tf=detectTaxForm(text);
+  if(tf){ const yr=taxYearOf(text), ty=taxYear(yr); if(ty.docs.some(d=>d.src===file.name&&d.type===tf)) return {status:'skip',kind:'tax',msg:L('Ya estaba guardado','Already saved')};
+    const fields=localTaxFields(tf,text); if(!Object.keys(fields).length) return {status:'review',kind:'tax',msg:L('No encontré las cifras del formulario','I couldn\'t find the form\'s figures')};
+    const payer=payerOf(text), pa=payerAccount(payer); ty.docs.push({id:uid(),type:tf,payer,acc:pa?pa.id:null,fields,src:file.name,added:today()});
+    return {status:'ok',kind:'tax',msg:`${FORM_LABEL[tf]} · ${yr} · ${L('revisa las cifras en Impuestos','check the figures in Taxes')}`}; }
+  r.tx=parseTxLines(text,r.date); const {m:mm,key}=matchPDF(r,text);
+  if(!mm) return {status:'review',kind:'pdf',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')};
+  const a=mm.acc; const bal=r.cands.length?r.cands[0].v:NaN; const useBal=!isNaN(bal)&&r.dateFound; const txOk=r.tx.length&&['cash','credit'].includes(a.kind);
+  if(!useBal&&!txOk) return {status:'review',kind:'pdf',acc:a.id,msg:L('No encontré el saldo con su fecha ni movimientos','I couldn\'t find a dated balance or transactions')};
+  if(useBal) upsertSnap(a.id,r.date,bal); const res=txOk?importTxInto(a.id,r.tx,'pdf'):{added:0,dup:0}; learnKey(a,key);
+  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup}; }
+
+let BATCH=null;
+async function importBatch(files){
+  const list=[...files].filter(f=>isPdfFile(f)||/\.(csv|txt)$/i.test(f.name)||/csv|text\/plain|vnd\.ms-excel/.test(f.type));
+  const box=$('#batchOut'); if(!box) return; if(!list.length){ toast(L('Elige archivos PDF o CSV','Choose PDF or CSV files')); return; }
+  BATCH={running:true,res:[]}; box.innerHTML=`<div class="alert info" style="margin-top:10px"><span class="ic">i</span><div class="bprog"></div></div>`;
+  for(let i=0;i<list.length;i++){ const f=list[i]; const pr=box.querySelector('.bprog'); if(pr) pr.textContent=L(`Procesando ${i+1} de ${list.length}: ${f.name}`,`Processing ${i+1} of ${list.length}: ${f.name}`);
+    let r; try{ r=isPdfFile(f)?await autoPDF(f):await autoCSV(f); }catch(e){ r={status:'error',msg:String(e&&e.message||e)}; }
+    r.file=f; r.name=f.name; BATCH.res.push(r); }
+  BATCH.running=false; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch();
+}
+function renderBatch(){
+  const box=$('#batchOut'); if(!box||!BATCH) return; const res=BATCH.res; const n=s=>res.filter(r=>r.status===s).length;
+  const KL={csv:'CSV',pdf:L('Extracto','Statement'),mortgage:L('Hipoteca','Mortgage'),tax:L('Fiscal','Tax form'),holdings:L('Posiciones','Positions')};
+  const ic={ok:['good','✓'],skip:['info','i'],review:['warn','!'],error:['crit','✗']};
+  const detail=r=>{ const parts=[]; if(r.kind) parts.push(KL[r.kind]||r.kind); if(r.acc&&acc(r.acc)) parts.push(esc(acc(r.acc).name));
+    if(r.added!=null) parts.push(L(`${r.added} movimientos nuevos${r.dup?` (${r.dup} ya estaban)`:''}`,`${r.added} new transactions${r.dup?` (${r.dup} already there)`:''}`));
+    if(r.bal!=null) parts.push(`${L('saldo','balance')} ${fmt(r.bal,2)}${r.date?' · '+dLabel(r.date):''}`); if(r.flip) parts.push(L('signo invertido (tarjeta)','sign flipped (card)'));
+    if(r.msg) parts.push(esc(r.msg)); return parts.join(' · '); };
+  const R=BATCH.rec; const nIss=R?R.issues.filter(i=>i.lvl!=='info').length:0;
+  box.innerHTML=`<div style="margin-top:12px"><p><b>${L(`${res.length} archivos`,`${res.length} files`)}:</b> ${n('ok')} ${L('guardados','saved')} · ${n('review')} ${L('para revisar','to review')} · ${n('skip')} ${L('sin cambios','unchanged')}${n('error')?` · ${n('error')} ${L('con error','with errors')}`:''}</p>
+    ${res.map((r,i)=>{ const [c,s]=ic[r.status]||ic.error; return `<div class="alert ${c}" style="margin-bottom:6px"><span class="ic">${s}</span><div style="flex:1;min-width:0"><div style="overflow-wrap:anywhere"><b>${esc(r.name)}</b></div><div class="muted">${detail(r)}</div>${r.status==='review'?`<button class="sm" style="margin-top:6px" data-brev="${i}">${r.opened?L('Abierto abajo ↓','Opened below ↓'):L('Revisar','Review')}</button>`:''}</div></div>`; }).join('')}
+    ${R?`<p class="muted">${L(`Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b> en <a href="#flujo">Ingresos y gastos</a>`:''}.`,`Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b> in <a href="#flujo">Income & expenses</a>`:''}.`)}</p>`:''}</div>`;
+  box.querySelectorAll('[data-brev]').forEach(b=>b.onclick=()=>{ const r=res[+b.dataset.brev]; r.opened=true; renderBatch(); if(isPdfFile(r.file)){ pdfBusy=false; pdfQueue.length=0; queuePDF(r.file); } else handleCSV(r.file); setTimeout(()=>{ const o=$('#impOut'); if(o) o.scrollIntoView({behavior:'smooth'}); },300); });
+}
+
 function taxFieldInputs(type,vals){ return '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0 10px">'+(FORM_FIELDS[type]||FORM_FIELDS.OTHER).map(([k,l])=>`<label class="f">${l}<input data-k="${k}" inputmode="decimal" value="${vals[k]!=null&&!isNaN(vals[k])?vals[k]:''}"></label>`).join('')+'</div>'; }
 
 
@@ -1236,8 +1345,7 @@ function renderHoldingsPreview(fileName,rows){
    <div class="row" style="margin-top:10px"><button id="hCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="hOk">${L('Guardar posiciones','Save positions')}</button></div></div>`;
   $('#hCancel').onclick=()=>out.innerHTML='';
   $('#hOk').onclick=()=>{ let id=$('#hAcc').value; if(id==='__new'){ const a={id:uid(),kind:$('#hK').value,name:/m1/i.test(fileName)?'M1':L('Cuenta de inversión','Investment account'),institution:'M1 Finance'}; S.accounts.push(a); id=a.id; }
-    const a=acc(id); const d=isoDate($('#hD').value)||today(); a.holdings={date:d,rows:H}; S.holdingsHist=S.holdingsHist||[]; S.holdingsHist=S.holdingsHist.filter(x=>!(x.acc===id&&x.date===d)); S.holdingsHist.push({acc:id,date:d,rows:H.map(x=>({sym:x.sym,value:x.value,cost:x.cost}))});
-    if($('#hBal').checked) upsertSnap(id,d,Math.round(total*100)/100); if($('#hCost').checked) a.contributed=Math.round(cost*100)/100;
+    const d=isoDate($('#hD').value)||today(); const a=saveHoldings(id,H,d,$('#hBal').checked,$('#hCost').checked); learnKey(a,fileKey(fileName));
     save(); out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${H.length} posiciones guardadas en ${esc(a.name)}.</b> Míralas en <a href="#inversiones">Inversiones</a>.`,`<b>${H.length} positions saved in ${esc(a.name)}.</b> See them in <a href="#inversiones">Investments</a>.`)}</div></div>`; };
 }
 const ASSET_CLASS={VOO:'EE. UU. grandes',IVV:'EE. UU. grandes',SPY:'EE. UU. grandes',VTI:'EE. UU. total',ITOT:'EE. UU. total',QQQ:'EE. UU. tecnología',QQQM:'EE. UU. tecnología',VOOG:'EE. UU. crecimiento',VUG:'EE. UU. crecimiento',SCHD:'EE. UU. dividendos',VYM:'EE. UU. dividendos',VXUS:'Internacional',VEA:'Internacional',VWO:'Emergentes',IXUS:'Internacional',AVUV:'EE. UU. pequeñas',VB:'EE. UU. pequeñas',IJR:'EE. UU. pequeñas',SMH:'EE. UU. tecnología',SOXX:'EE. UU. tecnología',ARKK:'EE. UU. tecnología',PDBC:'Materias primas',COMT:'Materias primas',DBC:'Materias primas',GLD:'Oro',IAU:'Oro',BND:'Bonos',AGG:'Bonos',BNDX:'Bonos',VGIT:'Bonos',SGOV:'Liquidez',BIL:'Liquidez',ESGV:'EE. UU. ESG',ESGU:'EE. UU. ESG',VSGX:'Internacional ESG',ESGD:'Internacional ESG'};

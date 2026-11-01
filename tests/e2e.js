@@ -106,6 +106,19 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>catType('Mascotas')==='expense'&&S.tx.some(t=>t.cat==='Mascotas'&&t.manual)&&[...document.querySelectorAll('#fCat option')].some(o=>o.value==='Mascotas')),'categoría propia creada y usada');
   ok(await pg.evaluate(()=>{ const h=[...document.querySelectorAll('.txt thead th')].map(x=>x.innerText.trim()); const d=document.querySelector('.txt td.dt').innerText; return h[2]==='Importe'&&h[3]==='Categoría'&&/^\d{2}\/\d{2}(\/\d{2})?$/.test(d)&&document.querySelector('.txt').scrollWidth<=document.querySelector('.tbl').clientWidth+1; }),'movimientos: fecha corta, categoría tras el importe y sin desbordar en el móvil');
   if(process.env.SHOTS){ await pg.$eval('.txt',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/movs-movil-es.png'}); }
+  // Importación por lotes: PDF y CSV mezclados, asignación automática y aprendizaje
+  await pg.evaluate(()=>{ S.accounts.find(a=>a.name==='checking').last4='6789'; save(); });
+  const fx=n=>({name:n,mimeType:/\.pdf$/.test(n)?'application/pdf':'text/csv',buffer:fs.readFileSync(path.join(FX,n))}), mem=(n,t)=>({name:n,mimeType:'text/csv',buffer:Buffer.from(t)});
+  await pg.goto(U+'#importar'); await pg.waitForTimeout(300);
+  await pg.setInputFiles('#fAll',[mem('Checking6789_activity_2026-11-15.csv','Posting Date,Description,Amount\n11/03/2026,TRADER JOES #12,-45.10\n11/05/2026,ACME CORP PAYROLL,8000.00\n'),fx('bank.pdf'),fx('mortgage.pdf'),fx('w2.pdf'),mem('MyBankDownload.csv','Date,Description,Amount\n11/02/2026,SOMETHING,-5\n'),fx('Holdings-Oct-30-2026.csv')]);
+  await pg.waitForFunction(()=>BATCH&&!BATCH.running,null,{timeout:30000}); await pg.waitForTimeout(200);
+  const bt=await pg.evaluate(()=>Object.fromEntries(BATCH.res.map(r=>[r.name,r.status+(r.acc?':'+acc(r.acc).name:'')+(r.added!=null?':'+r.added:'')])));
+  ok(bt['Checking6789_activity_2026-11-15.csv']==='ok:checking:2'&&/^ok:checking/.test(bt['bank.pdf'])&&bt['mortgage.pdf']==='ok:Hipoteca'&&bt['w2.pdf']==='skip'&&bt['MyBankDownload.csv']==='review'&&/^ok:CuentaSecretaXYZ/.test(bt['Holdings-Oct-30-2026.csv']),'importación por lotes: cada archivo a su cuenta ('+JSON.stringify(bt)+')');
+  if(process.env.SHOTS){ await pg.$eval('#batchOut',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/lote-movil.png'}); }
+  await pg.click('#batchOut [data-brev]'); await pg.waitForTimeout(400); ok(/MyBankDownload/.test(await pg.$eval('#impOut h2',e=>e.innerText)),'revisar un archivo del lote');
+  await pg.selectOption('#mAcc',{label:'savings'}); await pg.click('#mGo'); await pg.waitForTimeout(200);
+  await pg.setInputFiles('#fAll',[mem('MyBankDownload (2).csv','Date,Description,Amount\n11/09/2026,OTHER THING,-7\n')]); await pg.waitForFunction(()=>BATCH&&!BATCH.running,null,{timeout:10000});
+  ok(await pg.evaluate(()=>BATCH.res[0].status==='ok'&&acc(BATCH.res[0].acc).name==='savings'),'aprende a qué cuenta va cada archivo');
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
