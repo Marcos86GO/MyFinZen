@@ -69,7 +69,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>!S.tx.some(t=>t.id==='dupx')),'borrar duplicado desde la conciliación');
   await pg.click('#recBox [data-rign^="bal:"]'); await pg.waitForTimeout(300);
   ok(await pg.evaluate(()=>!reconcile().issues.some(i=>i.key.startsWith('bal:'))),'ignorar una diferencia');
-  await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); ok(/Conciliación/.test(await pg.$eval('#app',e=>e.innerText)),'aviso de conciliación en el resumen');
+  await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); ok(/Conciliación/.test(await pg.$eval('#alertBox',e=>e.textContent))&&/por revisar/.test(await pg.$eval('#alertBox summary',e=>e.innerText)),'aviso de conciliación en el resumen (plegado en una línea)');
   // Noticias (terminal): la descarga pública se simula; el filtro de la cartera se hace en el navegador
   const ago=h=>new Date(Date.now()-h*3600e3).toISOString(); let newsHits=0;
   const NEWSFX={v:1,updated:ago(0.3),regions:[{id:'global',name:'Global'},{id:'us',name:'EE. UU.'},{id:'eu',name:'Europa'},{id:'es',name:'España'},{id:'gb',name:'Reino Unido',country:true},{id:'mx',name:'México',country:true},{id:'jp',name:'Japón',country:true}],
@@ -108,10 +108,20 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.click('#app .ib'); await pg.waitForTimeout(200); ok(await pg.$eval('#modal',e=>/Cómo usarlo/.test(e.innerText)),'ayuda de una sección');
   await pg.click('#hMan'); await pg.waitForTimeout(400); ok(await pg.evaluate(()=>location.hash==='#ayuda'&&!!document.getElementById('man-rec')&&/Primeros pasos/.test(document.body.innerText)),'manual de usuario');
   await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.click('#catMgr'); await pg.click('#ucAdd'); await pg.fill('#ncN','Mascotas'); await pg.click('#ncOk'); await pg.waitForTimeout(200); await pg.click('#ucClose'); await pg.waitForTimeout(300);
-  await pg.click('#app .tcat >> nth=1'); await pg.keyboard.press('Escape'); ok(await pg.$eval('#app .tcat >> nth=1',e=>e.options.length>20)&&await pg.$eval('#app .tcat >> nth=2',e=>e.options.length===1),'desplegables de categoría ligeros que se cargan al tocarlos'); await pg.focus('#app .tcat >> nth=0'); await pg.selectOption('#app .tcat >> nth=0','Mascotas'); await pg.waitForTimeout(200); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
+  // Movimientos agrupados por día; tocar uno abre su ficha para cambiar la categoría
+  await pg.click('#txList .txr >> nth=0'); await pg.waitForTimeout(150);
+  ok(await pg.$eval('#tsCat',e=>e.options.length>20),'ficha del movimiento con todas las categorías');
+  await pg.selectOption('#tsCat','Mascotas'); await pg.waitForTimeout(200); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
   ok(await pg.evaluate(()=>catType('Mascotas')==='expense'&&S.tx.some(t=>t.cat==='Mascotas'&&t.manual)&&[...document.querySelectorAll('#fCat option')].some(o=>o.value==='Mascotas')),'categoría propia creada y usada');
-  ok(await pg.evaluate(()=>{ const h=[...document.querySelectorAll('.txt thead th')].map(x=>x.innerText.trim()); const d=document.querySelector('.txt td.dt').innerText; return h[2]==='Importe'&&h[3]==='Categoría'&&/^\d{2}\/\d{2}(\/\d{2})?$/.test(d)&&document.querySelector('.txt').scrollWidth<=document.querySelector('.tbl').clientWidth+1; }),'movimientos: fecha corta, categoría tras el importe y sin desbordar en el móvil');
-  if(process.env.SHOTS){ await pg.$eval('.txt',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/movs-movil-es.png'}); }
+  ok(await pg.evaluate(()=>{ const hs=[...document.querySelectorAll('.txday-h')]; const l=document.querySelector('#txList'); return hs.length>=2&&hs.every(h=>h.innerText.trim().length>2)&&document.documentElement.scrollWidth<=window.innerWidth+1&&l.scrollWidth<=l.clientWidth+1; }),'movimientos por día sin desbordar en el móvil');
+  const nTx=await pg.evaluate(()=>S.tx.length); await pg.click('#txList .txr >> nth=0'); await pg.click('#tsDel'); await pg.waitForTimeout(200); ok(await pg.evaluate(n=>S.tx.length===n-1,nTx),'borrar un movimiento desde su ficha');
+  // Menú lateral y botón +
+  await pg.click('#menuBtn'); await pg.waitForTimeout(250);
+  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
+  await pg.click('#nav a[href="#cuentas"]'); await pg.waitForTimeout(300); ok(await pg.evaluate(()=>!document.body.classList.contains('menu-open')&&location.hash==='#cuentas'&&document.querySelector('#pageTitle').innerText==='Cuentas'),'el menú se cierra al elegir y el título cambia');
+  await pg.click('#fab'); await pg.click('#fabTx'); await pg.fill('#nAmt','12.5'); await pg.fill('#nDesc','Café de prueba'); await pg.selectOption('#nCat','Restaurantes'); await pg.click('#nAdd'); await pg.waitForTimeout(200);
+  ok(await pg.evaluate(()=>S.tx.some(t=>t.desc==='Café de prueba'&&t.amount===-12.5&&t.src==='manual')),'botón +: añadir un movimiento');
+  await pg.goto(U+'#flujo'); await pg.waitForTimeout(300);
   // Importación por lotes: PDF y CSV mezclados, asignación automática y aprendizaje
   await pg.evaluate(()=>{ S.accounts.find(a=>a.name==='checking').last4='6789'; save(); });
   const fx=n=>({name:n,mimeType:/\.pdf$/.test(n)?'application/pdf':'text/csv',buffer:fs.readFileSync(path.join(FX,n))}), mem=(n,t)=>({name:n,mimeType:'text/csv',buffer:Buffer.from(t)});
@@ -144,7 +154,8 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   // Botón "Importar" de una cuenta: el archivo va a esa cuenta aunque el nombre no diga nada
   await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
   const svId=await pg.evaluate(()=>S.accounts.find(a=>a.name==='savings').id);
-  const [fc]=await Promise.all([pg.waitForEvent('filechooser'),pg.click(`[data-imp="${svId}"]`)]);
+  await pg.click(`[data-acc="${svId}"]`); await pg.waitForTimeout(150); ok(await pg.evaluate(()=>!!document.querySelector('#modal .actgrid [data-snap]')&&!!document.querySelector('#modal .sheet-big')),'ficha de la cuenta con sus acciones');
+  const [fc]=await Promise.all([pg.waitForEvent('filechooser'),pg.click(`#modal [data-imp="${svId}"]`)]);
   await fc.setFiles([mem('export.csv','Date,Description,Amount\n11/12/2026,PER ACCOUNT TEST,-3\n')]); await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='export.csv',null,{timeout:10000});
   ok(await pg.evaluate(id=>BATCH.res[0].status==='ok'&&BATCH.res[0].acc===id&&/savings/.test(document.querySelector('#impFor').innerText)&&location.hash==='#importar',svId),'importar desde una cuenta');
   await pg.click('#impAny'); ok(await pg.evaluate(()=>IMPORT_FOR===null&&!document.querySelector('#impFor').innerText),'volver a importar en cualquier cuenta');
@@ -159,10 +170,10 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(!bad.length,'todas las pantallas en inglés'+(bad.length?' — quedan textos: '+bad.join(' | '):''));
   if(process.env.SHOTS){ const sh=async(h,n,fn)=>{ await pg.goto(U+'#'+h); await pg.waitForTimeout(300); if(fn) await fn(); await pg.waitForTimeout(250); await pg.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); };
     await pg.setViewportSize({width:1200,height:900}); await sh('resumen','en-resumen-escritorio'); await sh('ayuda','en-manual-escritorio'); await sh('ajustes','en-ajustes-escritorio');
-    await sh('impuestos','en-optimizar-escritorio',()=>pg.evaluate(()=>{taxSel.tab='optimizar';route();})); await sh('cuentas','en-editar-cuenta',()=>pg.click('[data-edit]'));
+    await sh('impuestos','en-optimizar-escritorio',()=>pg.evaluate(()=>{taxSel.tab='optimizar';route();})); await sh('cuentas','en-editar-cuenta',async()=>{ await pg.click('[data-acc]'); await pg.click('#modal [data-edit]'); });
     await pg.click('#mc'); await sh('flujo','en-categorias',()=>pg.click('#catMgr')); await pg.click('#ucClose'); await pg.setViewportSize({width:412,height:900}); }
   if(process.env.SHOTS){ await pg.goto(U+'#flujo'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/en-flujo-movil.png'}); await pg.click('#app .ib'); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/en-ayuda-movil.png'}); await pg.click('#mc'); }
-  if(process.env.SHOTS){ await pg.setViewportSize({width:412,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.$eval('.txt',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/movs-movil-en.png'}); await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.$eval('.txt',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/movs-escritorio-en.png'}); await pg.setViewportSize({width:412,height:900}); }
+  if(process.env.SHOTS){ await pg.setViewportSize({width:412,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.$eval('#txList',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/movs-movil-en.png'}); await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(300); await pg.$eval('#txList',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/movs-escritorio-en.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(500); await pg.$eval('#recBox',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/flujo-escritorio.png'}); await pg.goto(U+'#hipotecas'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/hipotecas-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300); await pg.fill('#sKey','sk-ant-test'); await pg.click('#sKeySave'); await pg.waitForTimeout(300);
