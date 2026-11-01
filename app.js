@@ -167,6 +167,8 @@ const MESL_={es:['enero','febrero','marzo','abril','mayo','junio','julio','agost
 const mesAbbr=i=>MES_[LANG][i], mesLong=i=>MESL_[LANG][i];
 const ym=d=>d.slice(0,7);
 const ymLabel=k=>{const [y,m]=k.split('-');return LANG==='en'?mesAbbr(+m-1)+" '"+y.slice(2):mesAbbr(+m-1)+' '+y.slice(2)};
+// Fecha corta para tablas: 06/10 (año en curso) o 06/10/25; en inglés, mes/día
+const dShort=d=>{ if(typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}/.test(d)) return '—'; const [y,m,dd]=d.slice(0,10).split('-'); const yy=y===today().slice(0,4)?'':'/'+y.slice(2); return (LANG==='en'?`${m}/${dd}`:`${dd}/${m}`)+yy; };
 const dLabel=d=>{ if(typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}/.test(d)) return '—'; const [y,m,dd]=d.split('-');return LANG==='en'?`${mesAbbr(+m-1)} ${+dd}, ${y}`:+dd+' '+mesAbbr(+m-1)+' '+y};
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 const daysBetween=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
@@ -532,8 +534,8 @@ VIEWS.flujo=(el)=>{
       <input id="fQ" placeholder="${L('Buscar…','Search…')}" value="${esc(flujoFilter.q)}">
       <button class="sm" id="catMgr">${L('Categorías…','Categories…')}</button>
     </div>
-    ${shown.length?`<div class="tbl"><table><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th>${L('Categoría','Category')}</th><th class="n">${L('Importe','Amount')}</th><th></th></tr></thead><tbody>
-    ${shown.map(t=>`<tr><td style="white-space:nowrap">${dLabel(t.date)}</td><td>${esc(t.desc)}<div class="muted">${esc(accName(t.acc))}${t.rec?` · <span style="color:var(--s1)" title="${L('Emparejado con otra cuenta','Matched with another account')}">${esc(recLabel(t))}</span>`:''}</div></td><td><select data-id="${t.id}" class="tcat"><option value="${esc(t.cat)}" selected>${esc(catL(t.cat))}</option></select></td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td><td><button class="sm dan tdel" data-id="${t.id}" title="${L('Borrar','Delete')}">✕</button></td></tr>`).join('')}
+    ${shown.length?`<div class="tbl"><table class="txt"><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th class="n">${L('Importe','Amount')}</th><th>${L('Categoría','Category')}</th></tr></thead><tbody>
+    ${shown.map(t=>`<tr><td class="dt" title="${dLabel(t.date)}">${dShort(t.date)}</td><td class="ds">${esc(t.desc)}<div class="muted">${esc(accName(t.acc))}${t.rec?` · <span style="color:var(--s1)" title="${L('Emparejado con otra cuenta','Matched with another account')}">${esc(recLabel(t))}</span>`:''}</div></td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td><td><div class="cc"><select data-id="${t.id}" class="tcat" aria-label="${L('Categoría','Category')}"><option value="${esc(t.cat)}" selected>${esc(catL(t.cat))}</option></select><button class="sm dan tdel" data-id="${t.id}" title="${L('Borrar movimiento','Delete transaction')}" aria-label="${L('Borrar movimiento','Delete transaction')}">✕</button></div></td></tr>`).join('')}
     </tbody></table></div>${list.length>300?`<p class="muted">${L(`Mostrando 300 de ${list.length}. Filtra para ver más.`,`Showing 300 of ${list.length}. Filter to see more.`)}</p>`:''}`:`<div class="empty">${L('No hay movimientos. Importa un CSV de tu banco o tarjeta en "Importar".','No transactions yet. Import a CSV from your bank or card in "Import".')}</div>`}
   </div>`;
   wireRec($('#recBox'));
