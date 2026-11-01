@@ -27,9 +27,9 @@ App web instalable (PWA) de finanzas personales para un único usuario, con todo
 | Categorías propias | `S.settings.userCats=[{name,type}]`; `catsOf(tipo)`, `allCats()`, `catType()`, `catOptions(sel)` (con la opción "+ Nueva categoría…"), `newCatModal()`, `manageCats()`. Las de sistema (`CATS`) no se borran |
 | Gráficos | SVG hechos a mano: `lineChart`, `barChart`, `hbars`, `legend`, con tooltips. Paleta en variables CSS `--s1..--s8` (modo claro/oscuro) |
 | Avisos | `computeAlerts()` |
-| Vistas | `VIEWS.<nombre>(el)` + `route()` por hash: `resumen`, `flujo`, `hipotecas`, `inversiones`, `noticias` (pestaña de Inversiones; el menú resalta Inversiones), `alquiler`, `cuentas`, `importar`, `impuestos`, `claude`, `ajustes` |
+| Vistas | `VIEWS.<nombre>(el)` + `route()` por hash: `resumen`, `flujo`, `hipotecas`, `inversiones`, `noticias` (pestaña de Inversiones; el menú resalta Inversiones), `alquiler`, `cuentas`, `importar` (pestaña de Cuentas, no está en el menú; el menú resalta Cuentas; `acctTabs`), `impuestos`, `claude`, `ajustes` |
 | Noticias | `loadNews()` descarga `news.json` de la rama `news` (`newsURL()`, raw.githubusercontent.com) y lo guarda solo en memoria (`NEWS`). `newsRows()` filtra por pestaña; "Mi cartera" cruza en el navegador las posiciones (`myPositions()`) con `it.k` (símbolos buscados por el servidor) y con `newsMatcher()` (símbolo o nombre en el titular). Ajustes: `settings.newsTab`, `newsCountries`, `newsHide` (dominios ocultos). Atajos 1–6, `/`, `R` |
-| Importar | CSV de banco/tarjeta (`handleCSV`, detección de columnas y signo), CSV de Holdings (`isHoldingsCSV`, `parseHoldings`), PDF (`pdfText` con pdf.js → `parseStatement` → hipoteca / genérico con `parseTxLines` / fiscal con `detectTaxForm` + `localTaxFields`). Cola de PDFs: `queuePDF`/`pdfDone` |
+| Importar | Es una acción de Cuentas: alta de cuenta desde un extracto (`addAccountModal`, estado vacío con `#fFirst`; "Crear sin documento" → `editAccount`), botón "Importar" por cuenta (`IMPORT_FOR`: los archivos van a esa cuenta salvo que sus últimos 4 dígitos sean de otra; `forAcc`), `importFiles`/`openImport`. `IMPORT_NEW` preselecciona "cuenta nueva" en la revisión. Ambos se borran al salir de `#importar`. CSV de banco/tarjeta (`handleCSV`, detección de columnas y signo), CSV de Holdings (`isHoldingsCSV`, `parseHoldings`), PDF (`pdfText` con pdf.js → `parseStatement` → hipoteca / genérico con `parseTxLines` / fiscal con `detectTaxForm` + `localTaxFields`). Cola de PDFs: `queuePDF`/`pdfDone` |
 | Claude en PDFs | `redact()` (oculta cuentas, SSN, EIN, teléfonos, emails, direcciones y nombres de `settings.hideNames`) → `claudeExtract()` (JSON estructurado). Siempre pide confirmación salvo que `settings.autoClaude` esté activo |
 | Impuestos | `TAXC` (tramos, deducción estándar, SALT, LTCG, CTC por año y estado civil), `CA_STD`, `computeTaxes(year, adj)`, `rentalSchedule` (Schedule E), `expectedDocs` |
 | Optimizador | `LIM` (401k, IRA, HSA, DCFSA y límites de ingresos por año), `CA_BR`, perfil familiar `prof(year)`, `recommendations(year)` (ahorro estimado con `savingsOf` = what-if de `computeTaxes`), `taxTurbo` (guía TurboTax con las cifras del usuario) |
@@ -72,7 +72,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 9 pruebas del recolector de noticias + 63 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
+npm test           # 9 pruebas del recolector de noticias + 69 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).

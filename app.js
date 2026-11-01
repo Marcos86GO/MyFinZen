@@ -12,7 +12,7 @@ try{ const s=localStorage.getItem('mfz-lang'); LANG=(s==='es'||s==='en')?s:(/^es
 const L=(es,en)=>LANG==='en'?en:es;
 function setLang(l,keep){ LANG=l==='en'?'en':'es'; if(!keep) try{ localStorage.setItem('mfz-lang',LANG); }catch(e){} applyStatic(); if(S) route(); }
 function bil(o){ const r={}; for(const k of Object.keys(o)) Object.defineProperty(r,k,{enumerable:true,get(){ const v=o[k]; return Array.isArray(v)?L(v[0],v[1]):v; }}); return r; }
-const NAV=[['resumen','Resumen','Overview'],['flujo','Ingresos y gastos','Income & expenses'],['hipotecas','Hipotecas','Mortgages'],['inversiones','Inversiones','Investments'],['alquiler','Casa en alquiler','Rental'],['cuentas','Cuentas','Accounts'],['importar','Importar','Import'],['impuestos','Impuestos','Taxes'],['claude','Claude','Claude'],['ayuda','Manual','Manual'],['ajustes','Copia y ajustes','Backup & settings']];
+const NAV=[['resumen','Resumen','Overview'],['flujo','Ingresos y gastos','Income & expenses'],['hipotecas','Hipotecas','Mortgages'],['inversiones','Inversiones','Investments'],['alquiler','Casa en alquiler','Rental'],['cuentas','Cuentas','Accounts'],['impuestos','Impuestos','Taxes'],['claude','Claude','Claude'],['ayuda','Manual','Manual'],['ajustes','Copia y ajustes','Backup & settings']];
 function applyStatic(){
   document.documentElement.lang=LANG;
   const cur=(location.hash||'#resumen').slice(1);
@@ -423,7 +423,7 @@ function legend(items){ return '<div class="legend">'+items.map(i=>`<span><i sty
    ============================================================ */
 function computeAlerts(){
   const A=[];
-  if(!S.accounts.length){ A.push({lvl:'info',t:L('<b>Empieza añadiendo tus cuentas</b> en "Cuentas", o importa un statement en "Importar".','<b>Start by adding your accounts</b> in "Accounts", or import a statement in "Import".')}); return A; }
+  if(!S.accounts.length){ A.push({lvl:'info',t:L('<b>Empieza importando un extracto</b> de cada cuenta en <a href="#cuentas">Cuentas</a>: la app crea la cuenta a partir del documento.','<b>Start by importing a statement</b> of each account in <a href="#cuentas">Accounts</a>: the app creates the account from the document.')}); return A; }
   const lb=S.settings.lastBackup;
   if(!lb && (S.tx.length||S.snapshots.length) ) A.push({lvl:'crit',t:L('<b>No tienes copia de seguridad.</b> Los datos solo viven en este navegador: si se borra, se pierden. Haz una en "Copia y ajustes".','<b>You have no backup.</b> Your data only lives in this browser: if it is cleared, it is lost. Make one in "Backup & settings".')});
   else if(lb && daysBetween(lb,new Date().toISOString())>30){ const d=daysBetween(lb,new Date().toISOString()); A.push({lvl:'warn',t:L(`<b>Tu última copia tiene ${d} días.</b> Haz una nueva en "Copia y ajustes".`,`<b>Your last backup is ${d} days old.</b> Make a new one in "Backup & settings".`)}); }
@@ -460,7 +460,8 @@ function alertsHTML(A){ const ic={good:'✓',warn:'!',crit:'!',info:'i'}; return
    ============================================================ */
 const VIEWS={};
 function route(){ if(!S) return; const h=(location.hash||'#resumen').slice(1); const v=Object.prototype.hasOwnProperty.call(VIEWS,h)?h:'resumen';
-  document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+(v==='noticias'?'inversiones':v))); hideTip();
+  document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+(v==='noticias'?'inversiones':v==='importar'?'cuentas':v))); hideTip();
+  if(v!=='importar'){ IMPORT_FOR=null; IMPORT_NEW=false; }
   try{ const R=reconcile(); if(R&&R.changed) save(); VIEWS[v]($('#app')); }
   catch(e){ console.warn('vista',v,e); $('#app').innerHTML=`<div class="alert crit"><span class="ic">!</span><div><b>${L('Algo ha fallado al mostrar esta pantalla.','Something went wrong showing this screen.')}</b> ${L('Tus datos no se han tocado. Prueba otra pestaña o recarga la app; si se repite, haz una copia cifrada y avísame.','Your data hasn\'t been touched. Try another tab or reload the app; if it keeps happening, make an encrypted backup and report it.')}<div class="muted" style="margin-top:4px">${esc(String(e&&e.message||e))}</div></div></div>`; }
   window.scrollTo(0,0); }
@@ -537,7 +538,7 @@ VIEWS.flujo=(el)=>{
     </div>
     ${shown.length?`<div class="tbl"><table class="txt"><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th class="n">${L('Importe','Amount')}</th><th>${L('Categoría','Category')}</th></tr></thead><tbody>
     ${shown.map(t=>`<tr><td class="dt" title="${dLabel(t.date)}">${dShort(t.date)}</td><td class="ds">${esc(t.desc)}<div class="muted">${esc(accName(t.acc))}${t.rec?` · <span style="color:var(--s1)" title="${L('Emparejado con otra cuenta','Matched with another account')}">${esc(recLabel(t))}</span>`:''}</div></td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td><td><div class="cc"><select data-id="${t.id}" class="tcat" aria-label="${L('Categoría','Category')}"><option value="${esc(t.cat)}" selected>${esc(catL(t.cat))}</option></select><button class="sm dan tdel" data-id="${t.id}" title="${L('Borrar movimiento','Delete transaction')}" aria-label="${L('Borrar movimiento','Delete transaction')}">✕</button></div></td></tr>`).join('')}
-    </tbody></table></div>${list.length>300?`<p class="muted">${L(`Mostrando 300 de ${list.length}. Filtra para ver más.`,`Showing 300 of ${list.length}. Filter to see more.`)}</p>`:''}`:`<div class="empty">${L('No hay movimientos. Importa un CSV de tu banco o tarjeta en "Importar".','No transactions yet. Import a CSV from your bank or card in "Import".')}</div>`}
+    </tbody></table></div>${list.length>300?`<p class="muted">${L(`Mostrando 300 de ${list.length}. Filtra para ver más.`,`Showing 300 of ${list.length}. Filter to see more.`)}</p>`:''}`:`<div class="empty">${L('No hay movimientos. Importa un CSV de tu banco o tarjeta en <a href="#importar">Cuentas → Importar</a>.','No transactions yet. Import a CSV from your bank or card in <a href="#importar">Accounts → Import</a>.')}</div>`}
   </div>`;
   wireRec($('#recBox'));
   barChart($('#cCF'),{labels:months.map(ymLabel),series:[{name:nI,color:'var(--s3)',values:inc},{name:nG,color:'var(--s2)',values:exp},{name:nN,color:'var(--s1)',values:net}]});
@@ -641,7 +642,7 @@ function renderMortgage(m){
 
 function mortPaidHTML(m){ const mm=mortMonthly(m); if(!mm) return ''; const R=lastRec(); const r=R&&R.mort[m.id]; const LP=r&&r.last; const paid=LP?-LP.amount:0; const ok=Math.abs(paid-mm)<=1;
   return `<p class="muted" style="margin:10px 0 0">${L(`En tus gastos cuenta como <b>${fmt(mm,2)} al mes</b> (cuota${m.escrow?' + escrow':''}${m.extra?' + extra':''}), cada mes, aunque el cargo caiga en otro mes.`,`In your expenses it counts as <b>${fmt(mm,2)} per month</b> (payment${m.escrow?' + escrow':''}${m.extra?' + extra':''}), every month, even if the debit falls in another month.`)} ${LP?L(`Último pago encontrado en tus cuentas: ${fmt(paid,2)} el ${dLabel(LP.date)}${ok?' ✓':' (no coincide con el extracto)'}.`,`Last payment found in your accounts: ${fmt(paid,2)} on ${dLabel(LP.date)}${ok?' ✓':' (doesn\'t match the statement)'}.`):L('Todavía no encuentro sus pagos en tus cuentas de banco.','I can\'t find its payments in your bank accounts yet.')}</p>`; }
-function wireMortPick(el){ el.querySelectorAll('.mPick').forEach(i=>i.onchange=e=>{ const f=e.target.files[0]; if(!f) return; location.hash='#importar'; setTimeout(()=>queuePDF(f),80); }); }
+function wireMortPick(el){ el.querySelectorAll('.mPick').forEach(i=>i.onchange=e=>{ const f=e.target.files[0]; if(!f) return; openImport(()=>queuePDF(f)); }); }
 /* ---------- Inversiones ---------- */
 VIEWS.inversiones=(el)=>{
   const inv=S.accounts.filter(a=>['brokerage','retirement','kids'].includes(a.kind));
@@ -663,7 +664,7 @@ VIEWS.inversiones=(el)=>{
    <div class="card tbl"><table><thead><tr><th>${L('Cuenta','Account')}</th><th>${L('Tipo','Type')}</th><th class="n">${L('Saldo','Balance')}</th><th class="n">${L('Actualizado','Updated')}</th><th></th></tr></thead><tbody>
    ${inv.map(a=>{const s=lastSnap(a.id);return `<tr><td>${esc(a.name)}<div class="muted">${esc(a.institution||'')}</div></td><td>${KINDS[a.kind].label}</td><td class="n">${s?fmt(s.value):'—'}</td><td class="n">${s?dLabel(s.date):'—'}</td><td><button class="sm" data-snap="${a.id}">${L('Actualizar saldo','Update balance')}</button></td></tr>`}).join('')}
    </tbody></table></div>`;
-  el.insertAdjacentHTML('beforeend',inv.map(holdingsHTML).join('')+`<p class="muted" style="margin-top:10px">${L('Para ver las posiciones, descarga en M1 el CSV de Holdings y súbelo en <a href="#importar">Importar</a>.','To see your positions, download the Holdings CSV from M1 and upload it in <a href="#importar">Import</a>.')}</p>`);
+  el.insertAdjacentHTML('beforeend',inv.map(holdingsHTML).join('')+`<p class="muted" style="margin-top:10px">${L('Para ver las posiciones, descarga en M1 el CSV de Holdings y súbelo en <a href="#importar">Cuentas → Importar</a>.','To see your positions, download the Holdings CSV from M1 and upload it in <a href="#importar">Accounts → Import</a>.')}</p>`);
   lineChart($('#cInv'),{labels:months.map(ymLabel),series:inv.map((a,i)=>({name:a.name,color:pal[i%8],values:months.map(m=>balanceOf(a,monthEnd(m)))}))});
   el.querySelectorAll('[data-snap]').forEach(b=>b.onclick=()=>addSnapshot(b.dataset.snap));
 };
@@ -724,7 +725,7 @@ function newsRows(st){ const D=NEWS.data; if(!D) return {rows:[],extra:''};
   const hide=new Set(st.newsHide), q=NEWS.q.trim().toLowerCase(); const tab=st.newsTab; const R=new Map((D.regions||[]).map(r=>[r.id,r]));
   let rows=[], extra='';
   if(tab==='cartera'){
-    const pos=myPositions(); if(!pos.length) return {rows:[],extra:'',empty:L('Sube el CSV de Holdings de M1 en <a href="#importar" style="color:var(--t-amber)">Importar</a> y aquí verás las noticias de cada una de tus posiciones.','Upload the M1 Holdings CSV in <a href="#importar" style="color:var(--t-amber)">Import</a> and you\'ll see news for each of your positions here.')};
+    const pos=myPositions(); if(!pos.length) return {rows:[],extra:'',empty:L('Sube el CSV de Holdings de M1 en <a href="#importar" style="color:var(--t-amber)">Cuentas → Importar</a> y aquí verás las noticias de cada una de tus posiciones.','Upload the M1 Holdings CSV in <a href="#importar" style="color:var(--t-amber)">Accounts → Import</a> and you\'ll see news for each of your positions here.')};
     const M=newsMatcher(pos,D.universe); const cnt={};
     D.items.forEach(it=>{ const hits=M.filter(m=>(it.k||[]).includes(m.s)||m.rx.some(r=>r.test(it.t))).map(m=>m.s); if(hits.length){ hits.forEach(h=>cnt[h]=(cnt[h]||0)+1); rows.push(Object.assign({},it,{mine:hits})); } });
     if(NEWS.tk!=='all'&&!pos.some(p=>p.s===NEWS.tk)) NEWS.tk='all';
@@ -832,15 +833,46 @@ VIEWS.alquiler=(el)=>{
 };
 
 /* ---------- Cuentas ---------- */
+/* Cuentas → Importar: importar es una acción de Cuentas, no una sección aparte.
+   IMPORT_FOR: cuenta elegida con su botón "Importar" (los archivos van a ella salvo que sus
+   últimos 4 dígitos sean de otra). IMPORT_NEW: se viene de "Añadir cuenta" (en la revisión,
+   "cuenta nueva" queda preseleccionada si el archivo no es de ninguna cuenta conocida). */
+let IMPORT_FOR=null, IMPORT_NEW=false;
+function forAcc(filter){ const a=IMPORT_FOR&&acc(IMPORT_FOR); return a&&filter(a)?a:null; }
+function acctTabs(cur){ return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cuentas'?'pri':''}" href="#cuentas">${L('Mis cuentas','My accounts')}</a><a class="btn ${cur==='importar'?'pri':''}" href="#importar">${L('Importar','Import')}</a></div>`; }
+// Abre Cuentas → Importar y, ya pintada la pantalla, ejecuta fn.
+function openImport(fn){ if(location.hash==='#importar'){ fn(); return; } const h=()=>{ window.removeEventListener('hashchange',h); setTimeout(fn,0); }; window.addEventListener('hashchange',h); location.hash='#importar'; }
+// Un archivo: revisión paso a paso (permite crear la cuenta). Varios: por lotes.
+function importFiles(fs,{forId=null,isNew=false}={}){ fs=[...fs]; if(!fs.length) return;
+  openImport(()=>{ IMPORT_FOR=forId; IMPORT_NEW=isNew; importBanner(); if(fs.length===1&&!forId){ isPdfFile(fs[0])?queuePDF(fs[0]):handleCSV(fs[0]); } else importBatch(fs); }); }
+const PICK_ACCEPT='.pdf,.csv,application/pdf,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain';
 VIEWS.cuentas=(el)=>{
   const groups=Object.keys(KINDS);
-  el.innerHTML=`<div class="card" style="margin-bottom:12px">${helpBtn('accounts')}<div class="row"><div><h2 style="margin:0">${L('Tus cuentas','Your accounts')}</h2><p class="muted" style="margin:2px 0 0">${L('Bancos, tarjetas, inversiones, jubilación, inmuebles e hipotecas','Banks, cards, investments, retirement, property and mortgages')}</p></div><button class="pri" id="addA">${L('+ Añadir cuenta','+ Add account')}</button></div></div>
-  ${S.accounts.length?groups.filter(k=>S.accounts.some(a=>a.kind===k)).map(k=>`<h3 class="sec">${KINDS[k].label}</h3><div class="card tbl"><table><tbody>${S.accounts.filter(a=>a.kind===k).map(a=>{const s=lastSnap(a.id);return `<tr><td>${esc(a.name)}<div class="muted">${esc(a.institution||'')}${a.last4?' · ···'+esc(a.last4):''}</div></td><td class="n">${s?fmt(s.value,2):'—'}<div class="muted">${s?dLabel(s.date):L('sin saldo','no balance')}</div></td><td class="n" style="width:1%"><button class="sm" data-snap="${a.id}">${L('Saldo','Balance')}</button> <button class="sm" data-edit="${a.id}">${L('Editar','Edit')}</button> <button class="sm" data-hist="${a.id}">${L('Historial','History')}</button></td></tr>`}).join('')}</tbody></table></div>`).join(''):`<div class="card empty">${L('Todavía no hay cuentas.','No accounts yet.')}</div>`}`;
-  $('#addA').onclick=()=>editAccount(null,'cash');
+  el.innerHTML=acctTabs('cuentas')+`<div class="card" style="margin-bottom:12px">${helpBtn('accounts')}<div class="row"><div><h2 style="margin:0">${L('Tus cuentas','Your accounts')}</h2><p class="muted" style="margin:2px 0 0">${L('Bancos, tarjetas, inversiones, jubilación, inmuebles e hipotecas','Banks, cards, investments, retirement, property and mortgages')}</p></div><div class="row" style="gap:6px;flex:0 0 auto"><a class="btn" href="#importar">${L('Importar extractos','Import statements')}</a><button class="pri" id="addA">${L('+ Añadir cuenta','+ Add account')}</button></div></div></div>
+  <input type="file" id="fAcc" accept="${PICK_ACCEPT}" multiple hidden>
+  ${S.accounts.length?groups.filter(k=>S.accounts.some(a=>a.kind===k)).map(k=>`<h3 class="sec">${KINDS[k].label}</h3><div class="card tbl"><table class="acct"><tbody>${S.accounts.filter(a=>a.kind===k).map(a=>{const s=lastSnap(a.id);return `<tr><td>${esc(a.name)}<div class="muted">${esc(a.institution||'')}${a.last4?' · ···'+esc(a.last4):''}</div></td><td class="n">${s?fmt(s.value,2):'—'}<div class="muted">${s?dLabel(s.date):L('sin saldo','no balance')}</div></td><td class="n acts"><div class="ab">${k==='property'?'':`<button class="sm pri" data-imp="${esc(a.id)}" title="${L('Importar extractos de esta cuenta','Import statements for this account')}">${L('Importar','Import')}</button> `}<button class="sm" data-snap="${esc(a.id)}">${L('Saldo','Balance')}</button> <button class="sm" data-edit="${esc(a.id)}">${L('Editar','Edit')}</button> <button class="sm" data-hist="${esc(a.id)}">${L('Historial','History')}</button></div></td></tr>`}).join('')}</tbody></table></div>`).join('')
+  :`<div class="card">${helpBtn('acc_first')}<h2>${L('Crea tu primera cuenta desde un extracto','Create your first account from a statement')}</h2><p class="sub">${L('Elige uno o varios extractos (PDF o CSV) descargados de tu banco, tarjeta, inversión o hipoteca. La app lee de qué entidad y de qué tipo de cuenta es, sus últimos 4 dígitos, el saldo y los movimientos, y crea la cuenta por ti. Solo tienes que revisarlo.','Choose one or more statements (PDF or CSV) downloaded from your bank, card, brokerage or mortgage. The app reads the institution, the account type, the last 4 digits, the balance and the transactions, and creates the account for you. You just review it.')}</p>
+    <div class="drop" id="dropFirst"><label class="pick">${L('Elegir extractos (PDF o CSV)','Choose statements (PDF or CSV)')}<input type="file" accept="${PICK_ACCEPT}" id="fFirst" multiple></label><div class="muted" style="margin-top:8px">${L('o arrástralos aquí desde el ordenador','or drag them here from your computer')}</div></div>
+    <p class="muted" style="margin:10px 0 0">${L('¿Una casa, efectivo o una cuenta sin extractos?','A house, cash or an account without statements?')} <button class="sm" id="addNoDoc">${L('Crear sin documento','Create without a document')}</button></p></div>`}`;
+  $('#addA').onclick=addAccountModal;
+  if($('#addNoDoc')) $('#addNoDoc').onclick=()=>editAccount(null,'cash');
+  if($('#dropFirst')){ const d=$('#dropFirst'); d.ondragover=e=>{e.preventDefault();d.classList.add('over')}; d.ondragleave=()=>d.classList.remove('over'); d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); importFiles(e.dataTransfer.files,{isNew:true});}; $('#fFirst').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; importFiles(fs,{isNew:true}); }; }
+  let target=null; $('#fAcc').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(target&&acc(target)) importFiles(fs,{forId:target}); };
+  el.querySelectorAll('[data-imp]').forEach(b=>b.onclick=()=>{ target=b.dataset.imp; $('#fAcc').click(); });
   el.querySelectorAll('[data-snap]').forEach(b=>b.onclick=()=>addSnapshot(b.dataset.snap));
   el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editAccount(b.dataset.edit));
   el.querySelectorAll('[data-hist]').forEach(b=>b.onclick=()=>showHistory(b.dataset.hist));
 };
+// Alta de cuenta: primero desde un extracto; a mano solo si no hay documento.
+function addAccountModal(){
+  openModal(`<h2>${L('Nueva cuenta','New account')}</h2>
+   <p class="sub">${L('Lo más rápido y fiable es importar un extracto de la cuenta: la app lee la entidad, el tipo, los últimos 4 dígitos, el saldo y los movimientos, y crea la cuenta con todo. Después solo revisas.','The fastest and most reliable way is to import a statement of the account: the app reads the institution, the type, the last 4 digits, the balance and the transactions, and creates the account with everything. Then you just review.')}</p>
+   <label class="pick" style="display:block;text-align:center">${L('Elegir extracto (PDF o CSV)','Choose statement (PDF or CSV)')}<input type="file" id="fNew" accept="${PICK_ACCEPT}" multiple></label>
+   <p class="muted" style="margin:14px 0 6px">${L('¿No tienes extractos? Por ejemplo, una casa, efectivo o un préstamo sin documentos.','No statements? For example, a house, cash or a loan without documents.')}</p>
+   <div class="row"><button id="nNoDoc">${L('Crear sin documento','Create without a document')}</button><button id="nCancel">${L('Cancelar','Cancel')}</button></div>`);
+  $('#nCancel').onclick=closeModal; $('#nNoDoc').onclick=()=>{ closeModal(); editAccount(null,'cash'); };
+  $('#fNew').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(!fs.length) return; closeModal(); importFiles(fs,{isNew:true}); };
+}
 function editAccount(id, kind='cash', preset={}){
   const a=id?acc(id):Object.assign({id:null,kind,name:'',institution:''},preset);
   const k=a.kind;
@@ -892,7 +924,7 @@ let pendingCSV=null;
 VIEWS.importar=(el)=>{
   pdfBusy=false; pdfQueue.length=0;
   const drag=L('o arrástralo aquí desde el ordenador','or drag it here from your computer');
-  el.innerHTML=`
+  el.innerHTML=acctTabs('importar')+`<div id="impFor"></div>
   <div class="alert info"><span class="ic">i</span><div>${L('<b>Los archivos no salen de este dispositivo.</b> Se leen dentro del navegador y solo se guardan las cifras y los movimientos.','<b>Files never leave this device.</b> They are read inside the browser and only the figures and transactions are saved.')}</div></div>
   <div class="card" style="margin-bottom:12px">${helpBtn('imp_batch')}<h2>${L('Importar varios archivos a la vez','Import several files at once')}</h2><p class="sub">${L('Elige todos tus extractos de una vez, PDF y CSV mezclados. La app reconoce cada uno, lo guarda en su cuenta y solo te pide revisar los que no sabe asignar.','Choose all your statements at once, PDFs and CSVs mixed. The app recognizes each one, saves it to its account and only asks you to review the ones it can\'t assign.')}</p>
     <div class="drop" id="dropAll"><label class="pick">${L('Elegir archivos (PDF y CSV)','Choose files (PDF and CSV)')}<input type="file" accept=".pdf,.csv,application/pdf,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain" id="fAll" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div>
@@ -905,7 +937,7 @@ VIEWS.importar=(el)=>{
   </div>
   <div id="impOut" style="margin-top:12px"></div>`;
   const wv=/; wv\)|Version\/[\d.]+ Chrome\/[\d.]+ Mobile/.test(navigator.userAgent)&&/Android/.test(navigator.userAgent);
-  el.insertAdjacentHTML('afterbegin',`<div class="alert ${wv?'warn':'info'}" id="wvNote" style="${wv?'':'display:none'}"><span class="ic">!</span><div>${L('<b>¿El botón de elegir archivo no hace nada?</b> Estás abriendo MyFinZen dentro de otra app que no deja elegir archivos. Ábrela en Chrome o instálala desde Chrome. Para un CSV, también puedes pegar su contenido abajo.','<b>Does the choose-file button do nothing?</b> You are opening MyFinZen inside another app that doesn\'t allow picking files. Open it in Chrome or install it from Chrome. For a CSV, you can also paste its content below.')}</div></div>`);
+  el.querySelector('.tabs-inline').insertAdjacentHTML('afterend',`<div class="alert ${wv?'warn':'info'}" id="wvNote" style="${wv?'':'display:none'}"><span class="ic">!</span><div>${L('<b>¿El botón de elegir archivo no hace nada?</b> Estás abriendo MyFinZen dentro de otra app que no deja elegir archivos. Ábrela en Chrome o instálala desde Chrome. Para un CSV, también puedes pegar su contenido abajo.','<b>Does the choose-file button do nothing?</b> You are opening MyFinZen inside another app that doesn\'t allow picking files. Open it in Chrome or install it from Chrome. For a CSV, you can also paste its content below.')}</div></div>`);
   el.insertAdjacentHTML('beforeend',`<div class="card" style="margin-top:12px">${helpBtn('imp_paste')}<h2>${L('Pegar CSV como texto','Paste CSV as text')}</h2><p class="sub">${L('Si no puedes elegir el archivo: ábrelo en tu móvil (Archivos, Google Drive, Hojas de cálculo…), copia todo su contenido y pégalo aquí.','If you can\'t choose the file: open it on your phone (Files, Google Drive, Sheets…), copy all its content and paste it here.')}</p><textarea id="pasteCSV" placeholder="Symbol,Name,Quantity,..."></textarea><div class="row" style="margin-top:8px"><input id="pasteName" placeholder="${L('Nombre (opcional), p. ej. Holdings-Oct-30-2026','Name (optional), e.g. Holdings-Oct-30-2026')}"><button class="pri" id="pasteGo">${L('Importar texto','Import text')}</button></div></div>`);
   $('#pasteGo').onclick=()=>{ const t=$('#pasteCSV').value.trim(); if(!t) return toast(L('Pega el contenido del CSV','Paste the CSV content')); const n=($('#pasteName').value.trim()||(L('pegado-','pasted-')+today()))+'.csv'; handleCSV({name:n,text:async()=>t}); window.scrollTo(0,document.body.scrollHeight); };
   ['#fCSV','#fPDF','#fAll'].forEach(id=>{ const i=$(id); let opened=false; i.addEventListener('click',()=>{ opened=false; setTimeout(()=>{ if(!opened&&document.hasFocus()) $('#wvNote').style.display=''; },2500); }); window.addEventListener('blur',()=>{opened=true;},{once:false}); i.addEventListener('change',()=>{opened=true;}); });
@@ -913,8 +945,11 @@ VIEWS.importar=(el)=>{
   const run=(fs,one)=>{ if(!fs.length) return; if(fs.length>1||!one) importBatch(fs); else one(fs[0]); };
   const wire=(drop,input,one)=>{ const d=$(drop); d.ondragover=e=>{e.preventDefault();d.classList.add('over')}; d.ondragleave=()=>d.classList.remove('over'); d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); run([...e.dataTransfer.files],one);}; $(input).onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; run(fs,one); }; };
   wire('#dropCSV','#fCSV',handleCSV); wire('#dropPDF','#fPDF',queuePDF); wire('#dropAll','#fAll',null);
-  if(BATCH&&!BATCH.running) renderBatch();
+  importBanner(); if(BATCH&&!BATCH.running) renderBatch();
 };
+function importBanner(){ const b=$('#impFor'); if(!b) return; const a=IMPORT_FOR&&acc(IMPORT_FOR);
+  b.innerHTML=a?`<div class="alert good"><span class="ic">→</span><div style="flex:1">${L(`Importando en <b>${esc(a.name)}</b>. Los archivos se guardan en esta cuenta salvo que sus últimos 4 dígitos sean de otra.`,`Importing into <b>${esc(a.name)}</b>. Files are saved to this account unless their last 4 digits belong to another one.`)} <button class="sm" id="impAny">${L('Cualquier cuenta','Any account')}</button></div></div>`:'';
+  if(a) $('#impAny').onclick=()=>{ IMPORT_FOR=null; importBanner(); }; }
 function csvDelimiter(text){ const line=(text.split(/\r?\n/).find(l=>l.trim())||'').replace(/"[^"]*"/g,''); const n=ch=>line.split(ch).length-1; const c=[[',',n(',')],[';',n(';')],['\t',n('\t')]].sort((a,b)=>b[1]-a[1]); return c[0][1]>0?c[0][0]:','; }
 function parseCSV(text){
   text=String(text).replace(/^\uFEFF/,''); const dl=csvDelimiter(text);
@@ -962,7 +997,7 @@ function renderCSVPreview(){
   out.innerHTML=`<div class="card"><h2>${esc(p.file)}</h2><p class="sub">${L(`${tx.length} movimientos detectados. Revisa las columnas y el signo: los gastos deben salir en negativo.`,`${tx.length} transactions detected. Check the columns and the sign: expenses must be negative.`)}</p>
    <div class="row"><label class="f">${L('Fecha','Date')}<select id="mD">${opts(p.cDate)}</select></label><label class="f">${L('Descripción','Description')}<select id="mS">${opts(p.cDesc)}</select></label>
    ${p.cAmt>=0?`<label class="f">${L('Importe','Amount')}<select id="mA">${opts(p.cAmt)}</select></label>`:`<label class="f">${L('Cargo','Debit')}<select id="mDe">${opts(p.cDeb)}</select></label><label class="f">${L('Abono','Credit')}<select id="mCr">${opts(p.cCred)}</select></label>`}</div>
-   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="mAcc">${accs.map(a=>`<option value="${a.id}" ${p.guess===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new">${L('+ Crear cuenta nueva…','+ Create a new account…')}</option></select></label>
+   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="mAcc">${accs.map(a=>`<option value="${a.id}" ${p.guess===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!p.guess&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Crear cuenta nueva…','+ Create a new account…')}</option></select></label>
    <label class="f" style="display:flex;gap:8px;align-items:center;margin-top:18px"><input type="checkbox" id="mFlip" style="width:auto" ${p.flip?'checked':''}> ${L('Invertir signo (típico en tarjetas)','Flip sign (common for cards)')}</label></div>
    <div class="tbl"><table><thead><tr><th>${L('Fecha','Date')}</th><th>${L('Descripción','Description')}</th><th>${L('Categoría','Category')}</th><th class="n">${L('Importe','Amount')}</th></tr></thead><tbody>${tx.slice(0,8).map(t=>`<tr><td>${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc)||(t.amount>0?'Otros ingresos':'Otros gastos')))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div>
    <div class="row" style="margin-top:12px"><button id="mCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="mGo">${L(`Importar ${tx.length} movimientos`,`Import ${tx.length} transactions`)}</button></div></div>`;
@@ -1145,7 +1180,7 @@ async function handlePDF(file){
   if(S.settings.autoClaude && (!r.cands.length || !r.tx.length)) $('#gAI')&&$('#gAI').click();
 }
 function renderMortgagePDF(r,name,text){
-  const out=$('#impOut'); const ms=S.accounts.filter(a=>a.kind==='mortgage'); const match=ms.find(a=>r.last4&&a.last4===r.last4)||null;
+  const out=$('#impOut'); const ms=S.accounts.filter(a=>a.kind==='mortgage'); const match=ms.find(a=>r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage')||null;
   const props=S.accounts.filter(a=>a.kind==='property');
   out.innerHTML=`<div class="card"><h2>${L('Hipoteca detectada','Mortgage detected')} · ${esc(r.institution)}</h2><p class="sub">${esc(name)} · ${L('extracto del','statement of')} ${r.date?dLabel(r.date):'—'}. ${L('Revisa los datos antes de guardar.','Check the data before saving.')}</p>
    <div class="row"><label class="f">${L('Saldo pendiente','Outstanding balance')}<input id="pB" value="${isNaN(r.balance)?'':r.balance}"></label><label class="f">${L('Tipo %','Rate %')}<input id="pR" value="${isNaN(r.rate)?'':r.rate}"></label></div>
@@ -1167,7 +1202,7 @@ function renderGenericPDF(r,name,text){
   const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage'); const {m:gm,key:gkey}=matchPDF(r,text); const gid=gm?gm.acc.id:null;
   const tx=r.tx||[];
   out.innerHTML=`<div class="card"><h2>${esc(r.institution||'Statement')}</h2><p class="sub">${esc(name)} · ${KINDS[r.kind]?KINDS[r.kind].label:''}. ${L('Revisa antes de guardar.','Check before saving.')}</p>
-   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}" ${gid===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${accs.length?'':'selected'}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(r.institution||'')}"></label></div>
+   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}" ${gid===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!gid&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(r.institution||'')}"></label></div>
    <h3 class="sec" style="margin-top:8px">${L('Saldo','Balance')}</h3>
    ${r.cands.length?`<div style="margin-bottom:6px">${r.cands.slice(0,5).map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0"><input type="radio" name="cand" value="${c.v}" style="width:auto;margin-top:3px" ${i===0?'checked':''}><span><b>${fmt(c.v,2)}</b> <span class="muted">${esc(c.line)}</span></span></label>`).join('')}</div>`:`<p class="muted">${L('No encontré el saldo automáticamente.','I couldn\'t find the balance automatically.')}</p>`}
    <div class="row"><label class="f">${L('Saldo','Balance')}${r.kind==='credit'?L(' (lo que debes)',' (what you owe)'):''}<input id="gV" value="${r.cands[0]?r.cands[0].v:''}"></label><label class="f">${L('Fecha','Date')}<input type="date" id="gD" value="${r.date||today()}"></label><label class="f">${L('Aportado este periodo (inversión)','Contributed this period (investments)')}<input id="gC" inputmode="decimal" value="${r.contrib??''}"></label></div>
@@ -1249,6 +1284,7 @@ const INST_RE=/\b(chase|amex|american express|bank of america|bofa|wells fargo|w
 function matchAccount(filter,{last4s=[],keys=[],institution='',kind=null}){
   const pool=S.accounts.filter(filter); const one=l=>l.length===1?l[0]:null;
   let a=one(pool.filter(x=>x.last4&&last4s.includes(x.last4))); if(a) return {acc:a,how:'last4'};
+  const fa=forAcc(filter); if(fa) return {acc:fa,how:'forced'};
   const ks=keys.filter(Boolean); a=one(pool.filter(x=>(x.keys||[]).some(k=>ks.includes(k)))); if(a) return {acc:a,how:'key'};
   const w=String(institution||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim().split(/\s+/)[0];
   if(w&&w.length>=2){ const byInst=pool.filter(x=>(' '+(x.institution||'')+' '+x.name+' ').toLowerCase().includes(w)); a=one(kind?byInst.filter(x=>x.kind===kind):byInst)||one(byInst); if(a) return {acc:a,how:'inst'}; }
@@ -1263,7 +1299,7 @@ function payerAccount(pay){ pay=String(pay||'').toLowerCase(); return pay?S.acco
 async function autoCSV(file){
   const text=await file.text(); const rows=parseCSV(text); if(!rows.length) return {status:'error',msg:L('El archivo está vacío','The file is empty')};
   if(isHoldingsCSV(rows)){ const H=parseHoldings(rows); const pool=S.accounts.filter(a=>['brokerage','kids','retirement'].includes(a.kind)); const fk=fileKey(file.name);
-    const a=(pool.find(x=>fk&&(x.keys||[]).includes(fk)))||(pool.filter(x=>/m1/i.test(x.name+' '+(x.institution||''))).length===1?pool.find(x=>/m1/i.test(x.name+' '+(x.institution||''))):null);
+    const a=forAcc(x=>pool.includes(x))||(pool.find(x=>fk&&(x.keys||[]).includes(fk)))||(pool.filter(x=>/m1/i.test(x.name+' '+(x.institution||''))).length===1?pool.find(x=>/m1/i.test(x.name+' '+(x.institution||''))):null);
     if(!a) return {status:'review',kind:'holdings',msg:L('No sé a qué cuenta de inversión pertenecen estas posiciones','I don\'t know which investment account these positions belong to')};
     saveHoldings(a.id,H,dateFromFilename(file.name),true,true); learnKey(a,fk); return {status:'ok',kind:'holdings',acc:a.id,msg:L(`${H.length} posiciones`,`${H.length} positions`)}; }
   const p=csvPrepare(file.name,rows);
@@ -1278,7 +1314,7 @@ async function autoCSV(file){
 async function autoPDF(file){
   const text=await pdfText(file); if(text.replace(/\s/g,'').length<40) return {status:'review',kind:'pdf',msg:L('Parece una imagen escaneada, sin texto','It looks like a scanned image, with no text')};
   const r=parseStatement(text); const is1098=/Form\s*1098\b|Mortgage Interest Statement/i.test(text);
-  if(r.type==='mortgage'&&!is1098){ const m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4);
+  if(r.type==='mortgage'&&!is1098){ const m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage'&&!(r.last4&&a.last4&&a.last4!==r.last4));
     if(!m) return {status:'review',kind:'mortgage',msg:L('Hipoteca que aún no está en la app: revísala y elige la cuenta','A mortgage not yet in the app: review it and choose the account')};
     if(isNaN(r.balance)||!r.pi) return {status:'review',kind:'mortgage',msg:L('No encontré el saldo o la cuota','I couldn\'t find the balance or the payment')};
     saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull(r.rate)}),r.balance,r.date||today());
@@ -1336,9 +1372,9 @@ function renderHoldingsPreview(fileName,rows){
   const H=parseHoldings(rows); const out=$('#impOut'); const date=dateFromFilename(fileName);
   const total=H.reduce((s,x)=>s+x.value,0), cost=H.reduce((s,x)=>s+(x.cost||0),0);
   const accs=S.accounts.filter(a=>['brokerage','kids','retirement'].includes(a.kind));
-  const guess=accs.find(a=>/m1/i.test(a.name+' '+(a.institution||'')))||accs[0];
+  const guess=forAcc(a=>accs.includes(a))||accs.find(a=>/m1/i.test(a.name+' '+(a.institution||'')))||(IMPORT_NEW?null:accs[0]);
   out.innerHTML=`<div class="card"><h2>${L('Posiciones','Positions')} · ${esc(fileName)}</h2><p class="sub">${L(`${H.length} posiciones · valor ${fmt(total,2)} · coste ${fmt(cost,2)} · ganancia no realizada`,`${H.length} positions · value ${fmt(total,2)} · cost ${fmt(cost,2)} · unrealized gain`)} <span class="${total-cost>=0?'pos':'neg'}">${fmt(total-cost,2)}</span></p>
-   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="hAcc">${accs.map(a=>`<option value="${a.id}" ${guess&&guess.id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${accs.length?'':'selected'}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Fecha','Date')}<input type="date" id="hD" value="${date}"></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="hK"><option value="brokerage">${KINDS.brokerage.label}</option><option value="kids">${KINDS.kids.label}</option><option value="retirement">${KINDS.retirement.label}</option></select></label></div>
+   <div class="row"><label class="f">${L('Cuenta','Account')}<select id="hAcc">${accs.map(a=>`<option value="${a.id}" ${guess&&guess.id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${guess?'':'selected'}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Fecha','Date')}<input type="date" id="hD" value="${date}"></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="hK"><option value="brokerage">${KINDS.brokerage.label}</option><option value="kids">${KINDS.kids.label}</option><option value="retirement">${KINDS.retirement.label}</option></select></label></div>
    <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="hBal" checked style="width:auto"> ${L('Actualizar el saldo de la cuenta a','Update the account balance to')} ${fmt(total,2)}</label>
    <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="hCost" checked style="width:auto"> ${L(`Usar el coste (${fmt(cost)}) como "total aportado" para calcular la ganancia`,`Use the cost (${fmt(cost)}) as "total contributed" to compute the gain`)}</label>
    <div class="tbl" style="max-height:280px;overflow:auto"><table><thead><tr><th>${L('Símbolo','Symbol')}</th><th class="n">${L('Valor','Value')}</th><th class="n">${L('Ganancia','Gain')}</th></tr></thead><tbody>${H.map(x=>`<tr><td><b>${esc(x.sym)}</b> <span class="muted">${esc(x.name)}</span></td><td class="n">${fmt(x.value,2)}</td><td class="n ${x.gain>=0?'pos':'neg'}">${x.gain!=null?fmt(x.gain,2):'—'}</td></tr>`).join('')}</tbody></table></div>

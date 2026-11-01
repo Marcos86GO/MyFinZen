@@ -29,6 +29,12 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.check('#gOk'); await pg.click('#gNext'); await pg.waitForTimeout(300); await pg.click('#gPk'); await pg.waitForTimeout(1500);
   ok(await pg.evaluate(()=>VAULT.meta.pk.length)===1,'passkey PRF creada');
   if(await pg.$('#mc')) await pg.click('#mc');
+  // Cuentas → Importar: sin pestaña propia en el menú; la primera cuenta se crea desde un extracto
+  await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
+  ok(await pg.evaluate(()=>!document.querySelector('nav a[href="#importar"]')&&!!document.querySelector('#fFirst')&&!!document.querySelector('.tabs-inline a[href="#importar"]')),'Importar está dentro de Cuentas');
+  await pg.setInputFiles('#fFirst',path.join(FX,'checking.csv')); await pg.waitForTimeout(500);
+  ok(await pg.evaluate(()=>location.hash==='#importar'&&document.querySelector('nav a.on').getAttribute('href')==='#cuentas'&&document.querySelector('#mAcc').value==='__new'),'primera cuenta desde un extracto ("cuenta nueva" preseleccionada)');
+  await pg.click('#mCancel');
   await pg.evaluate(()=>{ S.accounts.push({id:'m1',kind:'brokerage',name:'CuentaSecretaXYZ',institution:'M1 Finance'}); save(); }); await pg.waitForTimeout(600);
   ok(!/CuentaSecretaXYZ/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v)))),'IndexedDB sin texto en claro');
   await pg.goto(U+'#importar'); await pg.waitForTimeout(300);
@@ -37,7 +43,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.setInputFiles('#fCSV',path.join(FX,'card.csv')); await pg.waitForTimeout(300); ok(/3 movimientos/.test(await pg.$eval('#impOut',e=>e.innerText)),'CSV de tarjeta'); await pg.click('#mGo');
   await pg.setInputFiles('#fPDF',path.join(FX,'mortgage.pdf')); await pg.waitForTimeout(2000);
   ok(/Hipoteca detectada/.test(await pg.$eval('#impOut h2',e=>e.innerText))&&await pg.$eval('#pB',e=>e.value)==='800000','PDF de hipoteca (no confundido con impuestos)'); await pg.click('#pOk');
-  await pg.setInputFiles('#fPDF',path.join(FX,'bank.pdf')); await pg.waitForTimeout(2000);
+  await pg.setInputFiles('#fPDF',path.join(FX,'bank.pdf')); await pg.waitForSelector('#gV',{timeout:15000});
   ok(await pg.$eval('#gV',e=>e.value)==='12000'&&(await pg.$$('#impOut tbody tr')).length===5,'PDF de banco: saldo y movimientos'); await pg.click('#gCancel');
   await pg.setInputFiles('#fPDF',path.join(FX,'w2.pdf')); await pg.waitForTimeout(2000);
   ok(await pg.$eval('[data-k=wages]',e=>e.value)==='150000'&&await pg.$eval('[data-k=k401]',e=>e.value)==='24500','W-2'); await pg.click('#tOk');
@@ -119,6 +125,16 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.selectOption('#mAcc',{label:'savings'}); await pg.click('#mGo'); await pg.waitForTimeout(200);
   await pg.setInputFiles('#fAll',[mem('MyBankDownload (2).csv','Date,Description,Amount\n11/09/2026,OTHER THING,-7\n')]); await pg.waitForFunction(()=>BATCH&&!BATCH.running,null,{timeout:10000});
   ok(await pg.evaluate(()=>BATCH.res[0].status==='ok'&&acc(BATCH.res[0].acc).name==='savings'),'aprende a qué cuenta va cada archivo');
+  // Botón "Importar" de una cuenta: el archivo va a esa cuenta aunque el nombre no diga nada
+  await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
+  const svId=await pg.evaluate(()=>S.accounts.find(a=>a.name==='savings').id);
+  const [fc]=await Promise.all([pg.waitForEvent('filechooser'),pg.click(`[data-imp="${svId}"]`)]);
+  await fc.setFiles([mem('export.csv','Date,Description,Amount\n11/12/2026,PER ACCOUNT TEST,-3\n')]); await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='export.csv',null,{timeout:10000});
+  ok(await pg.evaluate(id=>BATCH.res[0].status==='ok'&&BATCH.res[0].acc===id&&/savings/.test(document.querySelector('#impFor').innerText)&&location.hash==='#importar',svId),'importar desde una cuenta');
+  await pg.click('#impAny'); ok(await pg.evaluate(()=>IMPORT_FOR===null&&!document.querySelector('#impFor').innerText),'volver a importar en cualquier cuenta');
+  await pg.goto(U+'#cuentas'); await pg.waitForTimeout(200); await pg.click('#addA'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>!!document.querySelector('#modal #fNew')&&!!document.querySelector('#modal #nNoDoc')),'añadir cuenta empieza por un extracto');
+  await pg.click('#nNoDoc'); await pg.waitForTimeout(150); ok(await pg.evaluate(()=>/Nueva cuenta/.test(document.querySelector('#modal').innerText)&&!!document.querySelector('#modal input')),'crear cuenta sin documento'); await pg.evaluate(()=>closeModal());
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
