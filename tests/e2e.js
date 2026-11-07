@@ -70,7 +70,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.click('#recBox [data-rign^="bal:"]'); await pg.waitForTimeout(300);
   ok(await pg.evaluate(()=>!reconcile().issues.some(i=>i.key.startsWith('bal:'))),'ignorar una diferencia');
   await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); ok(/Conciliación/.test(await pg.$eval('#alertBox',e=>e.textContent))&&/por revisar/.test(await pg.$eval('#alertBox summary',e=>e.innerText)),'aviso de conciliación en el resumen (plegado en una línea)');
-  // Noticias (terminal): la descarga pública se simula; el filtro de la cartera se hace en el navegador
+  // Noticias: la descarga pública se simula; el filtro de la cartera se hace en el navegador
   const ago=h=>new Date(Date.now()-h*3600e3).toISOString(); let newsHits=0;
   const NEWSFX={v:1,updated:ago(0.3),regions:[{id:'global',name:'Global'},{id:'us',name:'EE. UU.'},{id:'eu',name:'Europa'},{id:'es',name:'España'},{id:'gb',name:'Reino Unido',country:true},{id:'mx',name:'México',country:true},{id:'jp',name:'Japón',country:true}],
     universe:[{s:'VOO',n:'Vanguard S&P 500 ETF'},{s:'VXUS',n:'Vanguard Total International Stock ETF'},{s:'NFLX',n:'Netflix'}],
@@ -82,24 +82,32 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
       {t:'El BCE mantiene los tipos de interés por tercera reunión',u:'https://www.europapress.es/economia/bce.html',s:'Europa Press',d:'europapress.es',p:ago(4),r:['es','eu']},
       {t:'FTSE 100 edges higher as Bank of England holds rates',u:'https://www.bbc.com/news/business-1',s:'BBC',d:'bbc.com',p:ago(2),r:['gb']},
       {t:'La Bolsa Mexicana avanza y el peso se aprecia frente al dólar',u:'https://www.eleconomista.com.mx/mercados/bmv',s:'El Economista México',d:'eleconomista.com.mx',p:ago(5),r:['mx']},
-      {t:'Nikkei hits record as yen weakens against the dollar',u:'https://www.cnbc.com/2026/10/31/nikkei.html',s:'CNBC',d:'cnbc.com',p:ago(6),r:['jp']}]};
+      {t:'Nikkei hits record as yen weakens against the dollar',u:'https://www.cnbc.com/2026/10/31/nikkei.html',s:'CNBC',d:'cnbc.com',p:ago(6),r:['jp']},
+      {t:'CalPERS boosts its stake in green bonds as Sacramento weighs new rules',u:'https://www.latimes.com/business/calpers',s:'Los Angeles Times',d:'latimes.com',p:ago(7),r:['us']}]};
   await pg.route('https://raw.githubusercontent.com/**',r=>{ newsHits++; r.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(NEWSFX)}); });
-  await pg.goto(U+'#inversiones'); await pg.waitForTimeout(300); await pg.click('a.btn[href="#noticias"]'); await pg.waitForSelector('.term-row',{timeout:5000});
-  const nv=await pg.evaluate(()=>({tab:S.settings.newsTab,rows:[...document.querySelectorAll('.term-row .hl')].map(a=>a.innerText),tk:[...document.querySelectorAll('.term-row .tk')].map(e=>e.innerText),nav:document.querySelector('nav a.on').getAttribute('href'),
-    chips:[...document.querySelectorAll('[data-tk]')].map(b=>b.innerText.replace(/\s+/g,' ')),link:(a=>a&&{href:a.href,target:a.target,rel:a.rel})(document.querySelector('.term-row .hl'))}));
+  await pg.goto(U+'#inversiones'); await pg.waitForTimeout(300); await pg.click('a.btn[href="#noticias"]'); await pg.waitForSelector('.nw',{timeout:5000});
+  const nv=await pg.evaluate(()=>({tab:S.settings.newsTab,rows:[...document.querySelectorAll('.nw .nw-t')].map(a=>a.innerText),tk:[...document.querySelectorAll('.nw .tk')].map(e=>e.innerText),nav:document.querySelector('nav a.on').getAttribute('href'),
+    chips:[...document.querySelectorAll('[data-tk]')].map(b=>b.innerText.replace(/\s+/g,' ')),link:(a=>a&&{href:a.href,target:a.target,rel:a.rel})(document.querySelector('.nw .nw-t'))}));
   ok(nv.tab==='cartera'&&nv.rows.length===2&&nv.tk.includes('VOO')&&nv.tk.includes('NFLX')&&nv.nav==='#inversiones','noticias de mis posiciones (símbolo del servidor + nombre detectado en el navegador) · '+nv.rows.length+' filas');
   ok(nv.link&&nv.link.target==='_blank'&&/noopener/.test(nv.link.rel)&&/^https:\/\/(www\.fool\.com|finance\.yahoo\.com)\//.test(nv.link.href),'enlace al medio que publica, en pestaña nueva');
   ok(newsHits===1&&nv.chips.some(c=>/^VXUS\s*0$/.test(c)),'una sola descarga pública, igual para todos ('+nv.chips.join(' | ')+')');
   if(process.env.SHOTS){ await pg.screenshot({path:process.env.SHOTS+'/noticias-movil.png'}); }
   await pg.click('[data-ntab="es"]'); await pg.waitForTimeout(150);
-  ok(await pg.$$eval('.term-row .hl',a=>a.length===2&&a.every(x=>/Ibex|BCE/.test(x.innerText))),'pestaña España');
+  ok(await pg.$$eval('.nw .nw-t',a=>a.length===2&&a.every(x=>/Ibex|BCE/.test(x.innerText))),'pestaña España');
+  ok(await pg.evaluate(()=>{ const r=[...document.querySelectorAll('.nw')].map(n=>({t:n.querySelector('.nw-t').innerText,tp:n.querySelector('.ntp').innerText.trim(),o:(n.querySelector('.nrg')||{}).innerText||'',logo:n.querySelector('.nlogo').innerText}));
+    const ib=r.find(x=>/Ibex/.test(x.t)), bce=r.find(x=>/BCE/.test(x.t)); return ib.tp==='Mercados'&&/🇪🇸\s*España/.test(ib.o)&&ib.logo==='EL'&&bce.tp==='Economía'&&/España/.test(bce.o); }),'noticias con tema, origen y logo del medio');
+  ok(await pg.evaluate(()=>[...document.querySelectorAll('[data-topic]')].map(b=>b.dataset.topic).join()==='all,economia,mercados'),'chips de tema con los que hay');
+  await pg.click('[data-topic="economia"]'); await pg.waitForTimeout(150); ok(await pg.$$eval('.nw .nw-t',a=>a.length===1&&/BCE/.test(a[0].innerText)),'filtrar por tema');
+  await pg.click('[data-topic="all"]'); await pg.click('[data-ntab="us"]'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>{ const n=[...document.querySelectorAll('.nw')].find(x=>/CalPERS/.test(x.innerText)); return n&&/California/.test(n.querySelector('.nrg').innerText)&&!!document.querySelector('.nday'); }),'origen California y titulares agrupados por día');
+  await pg.click('[data-ntab="es"]'); await pg.waitForTimeout(150);
   await pg.keyboard.press('6'); await pg.waitForTimeout(150);
-  const p1=await pg.$$eval('.term-row .hl',a=>a.map(x=>x.innerText)); await pg.click('[data-cty="mx"]'); await pg.waitForTimeout(150); const p2=await pg.$$eval('.term-row .hl',a=>a.map(x=>x.innerText));
+  const p1=await pg.$$eval('.nw .nw-t',a=>a.map(x=>x.innerText)); await pg.click('[data-cty="mx"]'); await pg.waitForTimeout(150); const p2=await pg.$$eval('.nw .nw-t',a=>a.map(x=>x.innerText));
   ok(p1.length===3&&p2.length===2&&!p2.some(x=>/Mexicana/.test(x))&&await pg.evaluate(()=>!S.settings.newsCountries.includes('mx')),'países seleccionables (atajo 6) y se recuerdan');
   await pg.click('[data-ntab="us"]'); await pg.fill('#tQ','netflix'); await pg.waitForTimeout(300);
-  ok(await pg.$$eval('.term-row .hl',a=>a.length===1&&/Netflix/.test(a[0].innerText)),'filtro de titulares');
-  await pg.fill('#tQ',''); await pg.waitForTimeout(250); await pg.click('.term-row .x[data-hide="cnbc.com"]'); await pg.waitForTimeout(150);
-  ok(await pg.evaluate(()=>S.settings.newsHide.includes('cnbc.com')&&![...document.querySelectorAll('.term-row')].some(r=>/cnbc\.com/.test(r.innerText))),'ocultar una fuente');
+  ok(await pg.$$eval('.nw .nw-t',a=>a.length===1&&/Netflix/.test(a[0].innerText)),'filtro de titulares');
+  await pg.fill('#tQ',''); await pg.waitForTimeout(250); await pg.click('.nw .x[data-hide="cnbc.com"]'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>S.settings.newsHide.includes('cnbc.com')&&![...document.querySelectorAll('.nw')].some(r=>/cnbc\.com/.test(r.innerText))),'ocultar una fuente');
   await pg.click('#tFoot summary'); await pg.click('[data-unhide="cnbc.com"]'); await pg.waitForTimeout(150); ok(await pg.evaluate(()=>!S.settings.newsHide.length),'recuperar una fuente oculta');
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.click('[data-ntab="cartera"]'); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/noticias-escritorio.png'}); await pg.click('[data-ntab="paises"]'); await pg.waitForTimeout(150); await pg.screenshot({path:process.env.SHOTS+'/noticias-paises-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); await pg.click('[data-ntab="us"]'); await pg.waitForTimeout(150); await pg.screenshot({path:process.env.SHOTS+'/noticias-us-movil.png'}); }
   // Iconos de ayuda, manual y categorías propias

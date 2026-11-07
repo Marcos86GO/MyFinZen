@@ -30,7 +30,12 @@ const ICONS={
   refresh:'M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5', shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
   alert:'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM12 8v5M12 16h.01', search:'M11 4a7 7 0 1 1 0 14a7 7 0 1 1 0-14zM20 20l-4-4',
   card:'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4',
-  bank:'M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18', piggy:'M5 11a7 6 0 0 1 13-2h2v4l-2 1v3h-3v-2H9v2H6v-3a6 6 0 0 1-1-3zM15 10h.01'
+  bank:'M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18',
+  landmark:'M3 9l9-5 9 5M4 9h16M6 9v9M10 9v9M14 9v9M18 9v9M3 20h18', briefcase:'M4 8h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM9 8V5h6v3M3 13h18',
+  bars:'M4 20V12M10 20V6M16 20v-9M22 20H2', cpu:'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
+  bolt:'M13 3L5 14h6l-1 7 8-11h-6z', coin:'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2',
+  globe:'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
+  news:'M5 5h12v14H6a1 1 0 0 1-1-1zM17 9h2a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0M8 9h6M8 13h6M8 16h4', pin:'M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11zM12 8a2 2 0 1 1 0 4a2 2 0 1 1 0-4z', piggy:'M5 11a7 6 0 0 1 13-2h2v4l-2 1v3h-3v-2H9v2H6v-3a6 6 0 0 1-1-3zM15 10h.01'
 };
 const ic=(n,cls)=>`<svg class="ico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]||''}"/></svg>`;
 // Menú: orden pedido por el usuario. Lo que no cabe va en "Más".
@@ -819,7 +824,7 @@ VIEWS.inversiones=(el)=>{
 function newsURL(){ const h=location.hostname; let owner='Marcos86GO', repo='MyFinZen';
   if(/\.github\.io$/i.test(h)){ owner=h.split('.')[0]; const seg=location.pathname.split('/').filter(Boolean)[0]; repo=seg&&!/\.html$/.test(seg)?seg:owner+'.github.io'; }
   return `https://raw.githubusercontent.com/${owner}/${repo}/news/news.json`; }
-const NEWS={data:null,at:0,err:'',loading:null,q:'',tk:'all',limit:120};
+const NEWS={data:null,at:0,err:'',loading:null,q:'',tk:'all',topic:'all',limit:120};
 const NEWS_TABS_=[['cartera','Mi cartera','My portfolio'],['global','Global','Global'],['us','EE. UU.','US'],['eu','Europa','Europe'],['es','España','Spain'],['paises','Países','Countries']];
 const NEWS_TABS={ some:f=>NEWS_TABS_.some(t=>f([t[0],L(t[1],t[2])])), map:f=>NEWS_TABS_.map((t,i)=>f([t[0],L(t[1],t[2])],i)) };
 // Nombres de región en inglés (el servidor los publica en español)
@@ -828,6 +833,32 @@ const regionL=r=>LANG==='en'&&REGION_EN[r.id]?REGION_EN[r.id]:r.name;
 const NEWS_LOC=()=>LANG==='en'?'en-US':'es-ES';
 const NEWS_AMBIG=new Set(['Target','Block','Strategy','Square','Booking','Arm','Shell','Visa','Southern Company','Meta']);
 const NEWS_WORDS=new Set(['NOW','MAIN','NET','LOW','COST','ARM','CAT','ALL','ARE','FOR','BIG','CAN','HAS','KEY','PLAY','HOOD','TAN','DIA','ONE','NEW','BIL','FAST','LIFE','REAL','SAFE','SEE','WELL','TEAM','TRUE','CASH','GOOD','BEST','OPEN','EAT','FUN','GO']);
+// Tema de cada noticia: por su titular (español e inglés). Las que nombran tus posiciones son "Empresas".
+const NEWS_TOPICS=[
+  ['impuestos','Impuestos','Taxes','receipt',28,/\b(tax|taxes|IRS|tax cuts?|impuestos?|hacienda|fiscal|IRPF|IVA)\b/i],
+  ['cripto','Cripto','Crypto','coin',45,/\b(bitcoin|crypto\w*|cripto\w*|ether(eum)?|stablecoins?|blockchain|BTC|Coinbase|Binance)\b/i],
+  ['energia','Energía','Energy','bolt',38,/\b(oil|crude|brent|WTI|OPEC\+?|natural gas|petr[oó]leo|crudo|OPEP|energ[ií]a|energy|gasolina|electricity|electricidad)\b/i],
+  ['vivienda','Vivienda','Housing','house',20,/\b(housing|home prices?|home sales|mortgage rates?|real estate|homebuilders?|vivienda|inmobiliari\w*|hipotecas?|alquiler(es)?|rent prices)\b/i],
+  ['politica','Política','Politics','landmark',350,/\b(election|elections|congress|senate|white house|trump|biden|harris|president|presidente|government|gobierno|shutdown|tariffs?|aranceles?|sanctions?|sanciones|parliament|parlamento|elecciones|ministro|minister|ley|law|bill|regulation|regulaci[oó]n|newsom|legislat\w*|geopol\w*|war|guerra)\b/i],
+  ['economia','Economía','Economy','globe',200,/\b(fed|federal reserve|powell|ECB|BCE|lagarde|inflation|inflaci[oó]n|CPI|IPC|PCE|jobs report|payrolls?|unemployment|paro|empleo|GDP|PIB|recession|recesi[oó]n|interest rates?|tipos de inter[eé]s|rate (cut|hike)s?|bajada de tipos|subida de tipos|econom(y|ía)|bank of england|BoJ|consumer (spending|confidence)|retail sales)\b/i],
+  ['empresas','Empresas','Companies','briefcase',262,/\b(earnings|results|resultados|beneficios?|revenue|ingresos|profit|CEO|CFO|layoffs?|despidos|merger|fusi[oó]n|acquisition|acquire[sd]?|adquiere|adquisici[oó]n|takeover|OPA|IPO|salida a bolsa|guidance|quarter(ly)?|trimestre|dividend|dividendo|buyback|shares? (jump|fall|soar|plunge|rise|drop)\w*|stock (jumps?|falls?|soars?|plunges?)|acciones de)\b/i],
+  ['tecnologia','Tecnología','Tech','cpu',190,/\b(AI|IA|artificial intelligence|inteligencia artificial|chips?|semiconductor\w*|nvidia|openai|software|cloud|tech|tecnol[oó]g\w*|smartphone|data cent(er|re)s?)\b/i],
+  ['mercados','Mercados','Markets','bars',152,/\b(stocks?|wall street|S&P|S&P 500|dow|nasdaq|ibex|ftse|dax|cac|nikkei|bolsas?|markets?|mercados?|bonds?|bonos|treasur(y|ies)|yields?|rentabilidad|futures|futuros|rally|sell-?off|index|[ií]ndice|ETFs?|prima de riesgo|divisas?|dollar|d[oó]lar|euro|peso|yen)\b/i]];
+const NEWS_GENERAL=['general','Finanzas','Finance','news',215];
+function newsTopic(it){ if(it.mine&&it.mine.length) return NEWS_TOPICS.find(t=>t[0]==='empresas');
+  const t=it.t; return NEWS_TOPICS.find(x=>x[5].test(t))||((it.k||[]).length?NEWS_TOPICS.find(t=>t[0]==='empresas'):NEWS_GENERAL); }
+// Origen: California si el titular lo menciona; si no, la región más concreta del servidor o el dominio del medio
+const NEWS_FLAG={global:'🌍',us:'🇺🇸',eu:'🇪🇺',es:'🇪🇸',gb:'🇬🇧',de:'🇩🇪',fr:'🇫🇷',it:'🇮🇹',pt:'🇵🇹',ca:'🇨🇦',mx:'🇲🇽',br:'🇧🇷',ar:'🇦🇷',co:'🇨🇴',cl:'🇨🇱',jp:'🇯🇵',cn:'🇨🇳',in:'🇮🇳',kr:'🇰🇷',au:'🇦🇺'};
+const NEWS_CAL=/\b(California|Californian|Los Angeles|San Francisco|Silicon Valley|Bay Area|San Diego|San Jose|Sacramento|Orange County|Newsom|CalPERS|CalSTRS|Golden State|Irvine|Oakland|Long Beach|Pasadena|Hollywood)\b/i;
+const NEWS_TLD={'.es':'es','.mx':'mx','.com.mx':'mx','.co.uk':'gb','.uk':'gb','.de':'de','.fr':'fr','.it':'it','.pt':'pt','.ca':'ca','.com.br':'br','.br':'br','.com.ar':'ar','.ar':'ar','.com.co':'co','.cl':'cl','.jp':'jp','.cn':'cn','.hk':'cn','.in':'in','.kr':'kr','.com.au':'au','.au':'au','.eu':'eu'};
+function newsOrigin(it,R){ if(NEWS_CAL.test(it.t)) return {cal:true,label:'California'};
+  const pri=r=>r==='global'?0:r==='us'?1:r==='eu'?2:3; let r=(it.rg&&it.rg[0])||(it.r||[]).slice().sort((a,b)=>pri(b)-pri(a))[0];
+  if(!r){ const d=String(it.d||''); const k=Object.keys(NEWS_TLD).sort((a,b)=>b.length-a.length).find(x=>d.endsWith(x)); r=k?NEWS_TLD[k]:''; }
+  if(!r) return null; const reg=R.get(r)||{id:r,name:r.toUpperCase()}; return {flag:NEWS_FLAG[r]||'',label:regionL(reg)}; }
+// Logo del medio: iniciales y un color estable por dominio (no se descargan logotipos: ni CDNs ni rastreo)
+function newsLogo(it){ const n=String(it.s||it.d||'?').replace(/^(the|el|la|los|las)\s+/i,'').replace(/\.(com|es|org|net|co\.uk|mx)$/i,''); const w=n.split(/[\s.\-]+/).filter(Boolean);
+  const ini=(w.length>1?w[0][0]+w[1][0]:n.slice(0,2)).toUpperCase(); let h=0; for(const c of String(it.d||it.s)) h=(h*31+c.charCodeAt(0))%9973; h=[215,262,190,350,152,18,240,320,200,280,170,0][h%12];
+  return `<span class="nlogo" style="--h:${h}" aria-hidden="true">${esc(ini)}</span>`; }
 async function loadNews(force){
   if(NEWS.loading) return NEWS.loading;
   if(!force&&NEWS.data&&Date.now()-NEWS.at<10*60000) return NEWS.data;
@@ -868,60 +899,73 @@ function newsRows(st){ const D=NEWS.data; if(!D) return {rows:[],extra:''};
   const hide=new Set(st.newsHide), q=NEWS.q.trim().toLowerCase(); const tab=st.newsTab; const R=new Map((D.regions||[]).map(r=>[r.id,r]));
   let rows=[], extra='';
   if(tab==='cartera'){
-    const pos=myPositions(); if(!pos.length) return {rows:[],extra:'',empty:L('Sube el CSV de Holdings de M1 en <a href="#importar" style="color:var(--t-amber)">Cuentas → Importar</a> y aquí verás las noticias de cada una de tus posiciones.','Upload the M1 Holdings CSV in <a href="#importar" style="color:var(--t-amber)">Accounts → Import</a> and you\'ll see news for each of your positions here.')};
+    const pos=myPositions(); if(!pos.length) return {rows:[],extra:'',empty:L('Sube el CSV de Holdings de M1 en <a href="#importar">Cuentas → Importar</a> y aquí verás las noticias de cada una de tus posiciones.','Upload the M1 Holdings CSV in <a href="#importar">Accounts → Import</a> and you\'ll see news for each of your positions here.')};
     const M=newsMatcher(pos,D.universe); const cnt={};
     D.items.forEach(it=>{ const hits=M.filter(m=>(it.k||[]).includes(m.s)||m.rx.some(r=>r.test(it.t))).map(m=>m.s); if(hits.length){ hits.forEach(h=>cnt[h]=(cnt[h]||0)+1); rows.push(Object.assign({},it,{mine:hits})); } });
     if(NEWS.tk!=='all'&&!pos.some(p=>p.s===NEWS.tk)) NEWS.tk='all';
     if(NEWS.tk!=='all') rows=rows.filter(it=>it.mine.includes(NEWS.tk));
     const unc=M.filter(m=>!m.covered).map(m=>m.s);
-    extra=`<div class="term-chips"><button class="chip ${NEWS.tk==='all'?'on':''}" data-tk="all">${L('TODAS','ALL')}<i>${pos.length}</i></button>${pos.map(p=>`<button class="chip ${NEWS.tk===p.s?'on':''}" data-tk="${esc(p.s)}" title="${esc(p.name)}">${esc(p.s)}<i>${cnt[p.s]||0}</i></button>`).join('')}</div>`
-      +(unc.length?`<div class="term-note">${L(`Sin búsqueda propia: ${unc.map(esc).join(', ')}. Solo aparecen si salen en los titulares generales. Para cubrirlos, añádelos a <code>news/universe.json</code> en GitHub (es un archivo público: no incluyas nada que no quieras que se vea).`,`No dedicated search: ${unc.map(esc).join(', ')}. They only appear if they show up in the general headlines. To cover them, add them to <code>news/universe.json</code> on GitHub (it is a public file: don't include anything you don't want seen).`)}</div>`:'');
+    extra=`<div class="nchips">${ic('briefcase')}<button class="${NEWS.tk==='all'?'on':''}" data-tk="all">${L('Todas','All')}<i>${pos.length}</i></button>${pos.map(p=>`<button class="${NEWS.tk===p.s?'on':''}" data-tk="${esc(p.s)}" title="${esc(p.name)}">${esc(p.s)}<i>${cnt[p.s]||0}</i></button>`).join('')}</div>`
+      +(unc.length?`<div class="nnote">${L(`Sin búsqueda propia: ${unc.map(esc).join(', ')}. Solo aparecen si salen en los titulares generales. Para cubrirlos, añádelos a <code>news/universe.json</code> en GitHub (es un archivo público: no incluyas nada que no quieras que se vea).`,`No dedicated search: ${unc.map(esc).join(', ')}. They only appear if they show up in the general headlines. To cover them, add them to <code>news/universe.json</code> on GitHub (it is a public file: don't include anything you don't want seen).`)}</div>`:'');
   } else if(tab==='paises'){
     const C=(D.regions||[]).filter(r=>r.country); const sel=new Set(st.newsCountries.filter(c=>R.has(c)));
-    extra=`<div class="term-chips">${C.map(c=>`<button class="chip ${sel.has(c.id)?'on':''}" data-cty="${esc(c.id)}">${esc(regionL(c))}</button>`).join('')}</div>`;
+    extra=`<div class="nchips">${C.map(c=>`<button class="${sel.has(c.id)?'on':''}" data-cty="${esc(c.id)}">${NEWS_FLAG[c.id]||''} ${esc(regionL(c))}</button>`).join('')}</div>`;
     rows=D.items.filter(it=>(it.r||[]).some(r=>sel.has(r))).map(it=>Object.assign({},it,{rg:(it.r||[]).filter(r=>sel.has(r))}));
     if(!sel.size) return {rows:[],extra,empty:L('Elige uno o varios países.','Choose one or more countries.')};
   } else rows=D.items.filter(it=>(it.r||[]).includes(tab));
   rows=rows.filter(it=>!hide.has(it.d)&&(!q||(it.t+' '+it.s+' '+(it.mine||[]).join(' ')).toLowerCase().includes(q)));
-  rows.sort((a,b)=>b.p.localeCompare(a.p)); return {rows,extra};
+  rows.forEach(it=>{ it.tp=newsTopic(it); }); const tcount={}; rows.forEach(it=>{ tcount[it.tp[0]]=(tcount[it.tp[0]]||0)+1; });
+  if(NEWS.topic!=='all'&&!tcount[NEWS.topic]) NEWS.topic='all';
+  if(NEWS.topic!=='all') rows=rows.filter(it=>it.tp[0]===NEWS.topic);
+  rows.sort((a,b)=>b.p.localeCompare(a.p)); return {rows,extra,tcount};
 }
-function newsRowHTML(it){ const old=Date.now()-Date.parse(it.p)>12*3600e3; const src=esc(it.s||it.d);
-  const tags=(it.mine||[]).map(s=>`<span class="tk">${esc(s)}</span>`).join('')+(it.rg||[]).map(r=>`<span class="rg">${esc(r.toUpperCase())}</span>`).join('');
-  return `<div class="term-row"><span class="tm ${old?'old':''}" title="${esc(new Date(it.p).toLocaleString(NEWS_LOC()))}">${newsTime(it.p)}</span><span class="src2" title="${src}">${src}</span>
-    <a class="hl" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">${esc(it.t)}</a>
-    <span class="mt"><span class="src src1">${src}</span><span>${esc(it.d)}</span><span>${newsAgo(it.p)}</span>${tags}</span>
-    <button class="x" data-hide="${esc(it.d)}" title="${L('Ocultar','Hide')} ${src}" aria-label="${L('Ocultar las noticias de','Hide news from')} ${src}">×</button></div>`; }
+function newsRowHTML(it,R){ const src=esc(it.s||it.d), tp=it.tp||newsTopic(it), o=newsOrigin(it,R);
+  return `<article class="nw">${newsLogo(it)}<div class="nw-b"><div class="nw-m"><b>${src}</b><span title="${esc(new Date(it.p).toLocaleString(NEWS_LOC()))}">· ${newsAgo(it.p)}</span></div>
+    <a class="nw-t" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">${esc(it.t)}</a>
+    <div class="nw-tags"><span class="ntp" style="--h:${tp[4]}">${ic(tp[3])}${L(tp[1],tp[2])}</span>${o?`<span class="nrg">${o.cal?ic('pin'):`<span class="fl">${o.flag}</span>`}${esc(o.label)}</span>`:''}${(it.mine||[]).map(s=>`<span class="tk">${esc(s)}</span>`).join('')}</div></div>
+    <button class="x" data-hide="${esc(it.d)}" title="${L('Ocultar','Hide')} ${src}" aria-label="${L('Ocultar las noticias de','Hide news from')} ${src}">${ic('close')}</button></article>`; }
+function newsDay(iso){ const d=new Date(iso), n=new Date(); const y=new Date(); y.setDate(n.getDate()-1);
+  if(d.toDateString()===n.toDateString()) return L('Hoy','Today'); if(d.toDateString()===y.toDateString()) return L('Ayer','Yesterday');
+  const s=d.toLocaleDateString(NEWS_LOC(),{weekday:'long',day:'numeric',month:'long'}); return s.charAt(0).toUpperCase()+s.slice(1); }
 function invTabs(cur){ return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cartera'?'pri':''}" href="#inversiones">${L('Cartera','Portfolio')}</a><a class="btn ${cur==='noticias'?'pri':''}" href="#noticias">${L('Noticias','News')}</a>${cur==='noticias'?helpBtn('news',true):''}</div>`; }
 VIEWS.noticias=(el)=>{
   const st=newsSettings(); if(!NEWS_TABS.some(t=>t[0]===st.newsTab)) st.newsTab='cartera';
-  el.innerHTML=invTabs('noticias')+`<div class="term" id="term"><div class="term-bar"><b>MYFINZEN&nbsp;NEWS</b><span class="st" id="tClock"></span><span class="st sp" id="tState"></span><button id="tRef" title="${L('Actualizar (R)','Refresh (R)')}">↻ ${L('Actualizar','Refresh')}</button></div>
-    <div class="term-tabs" role="tablist">${NEWS_TABS.map(([k,l],i)=>`<button role="tab" data-ntab="${k}" class="${st.newsTab===k?'on':''}"><span class="fk">${i+1}</span>${l}</button>`).join('')}</div>
-    <div class="term-cmd"><span class="pr">&gt;</span><input id="tQ" placeholder="${L('Filtrar titulares o símbolos…','Filter headlines or symbols…')}" value="${esc(NEWS.q)}" autocomplete="off" spellcheck="false"></div>
-    <div id="tBody"></div><div class="term-foot" id="tFoot"></div></div>
-    <p class="muted" style="margin-top:10px">${L('Titulares de medios de acceso libre; los enlaces llevan a la web que publica cada noticia. Se actualizan cada hora. Para ver tus posiciones, la app descarga la misma lista que cualquiera y la filtra en este dispositivo: nadie sabe qué tienes.','Headlines from free-access outlets; the links go to the website that publishes each story. They refresh every hour. To show your positions, the app downloads the same list as everyone else and filters it on this device: nobody knows what you hold.')}</p>`;
+  el.innerHTML=invTabs('noticias')+`<div class="card" id="newsTop">
+      <div class="nhead"><h2>${L('Noticias de inversión','Investment news')}</h2><span class="nlive" id="tState"></span><button class="sm sp" id="tRef" title="${L('Actualizar (R)','Refresh (R)')}">${ic('refresh')}${L('Actualizar','Refresh')}</button></div>
+      <div class="ntabs" role="tablist">${NEWS_TABS.map(([k,l],i)=>`<button role="tab" data-ntab="${k}" class="${st.newsTab===k?'on':''}" aria-selected="${st.newsTab===k}"><span class="fk">${i+1}</span>${l}</button>`).join('')}</div>
+      <div class="nsearch">${ic('search')}<input id="tQ" type="search" placeholder="${L('Buscar en los titulares o por símbolo','Search headlines or symbols')}" value="${esc(NEWS.q)}" autocomplete="off" spellcheck="false" aria-label="${L('Buscar','Search')}"></div>
+      <div id="tTopics"></div><div id="tExtra"></div></div>
+    <div id="tBody"></div><div class="nfoot" id="tFoot"></div>
+    <p class="muted" style="margin:12px 4px 0">${L('Titulares de medios de acceso libre, actualizados cada hora; los enlaces llevan a la web que publica cada noticia. El tema y el origen los deduce la app del titular. Para ver tus posiciones, la app descarga la misma lista que cualquiera y la filtra en este dispositivo: nadie sabe qué tienes.','Headlines from free-access outlets, refreshed every hour; the links go to the website that publishes each story. The app works out the topic and origin from the headline. To show your positions, the app downloads the same list as everyone else and filters it on this device: nobody knows what you hold.')}</p>`;
   const body=$('#tBody'), foot=$('#tFoot');
-  const clock=()=>{ const c=$('#tClock'); if(!c){ clearInterval(NEWS.clk); return; } c.textContent=new Date().toLocaleString(NEWS_LOC(),{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}).toUpperCase(); };
-  clearInterval(NEWS.clk); clock(); NEWS.clk=setInterval(clock,30000);
   const draw=()=>{ const D=NEWS.data; const stt=$('#tState');
-    if(!D){ stt.innerHTML=`<span class="term-live ${NEWS.loading?'old':'off'}"></span>${NEWS.loading?L('CARGANDO…','LOADING…'):L('SIN DATOS','NO DATA')}`; body.innerHTML=`<div class="term-empty">${NEWS.loading?L('Cargando titulares…','Loading headlines…'):L('No se pudieron cargar las noticias (','Could not load the news (')+esc(NEWS.err)+').'+(NEWS.errCode==='none'?L('<br>La tarea de GitHub "Noticias" aún no se ha ejecutado.','<br>The GitHub "Noticias" workflow hasn\'t run yet.'):'')}</div>`; foot.innerHTML=''; return; }
-    const age=Date.now()-Date.parse(D.updated); const stale=age>6*3600e3;
-    stt.innerHTML=`<span class="term-live ${NEWS.err?'off':stale?'old':''}"></span>${NEWS.err?L('SIN CONEXIÓN · ','OFFLINE · '):''}${L('ACT.','UPD.')} ${newsAgo(D.updated).toUpperCase()}`;
-    const {rows,extra,empty}=newsRows(st);
-    body.innerHTML=(stale?`<div class="term-note warn">${L(`Las noticias son de ${newsAgo(D.updated)}. Puede que GitHub haya pausado la tarea: en el repositorio, Actions → Noticias → Enable workflow / Run workflow.`,`The news is from ${newsAgo(D.updated)}. GitHub may have paused the workflow: in the repository, Actions → Noticias → Enable workflow / Run workflow.`)}</div>`:'')+extra
-      +(empty?`<div class="term-empty">${empty}</div>`:rows.length?rows.slice(0,NEWS.limit).map(newsRowHTML).join('')+(rows.length>NEWS.limit?`<div class="term-empty" style="padding:12px"><button id="tMore">${L(`Ver ${Math.min(120,rows.length-NEWS.limit)} más (${rows.length-NEWS.limit} restantes)`,`Show ${Math.min(120,rows.length-NEWS.limit)} more (${rows.length-NEWS.limit} left)`)}</button></div>`:''):`<div class="term-empty">${NEWS.q?L('Ningún titular coincide con el filtro.','No headline matches the filter.'):st.newsTab==='cartera'&&NEWS.tk!=='all'?L('Sin noticias recientes de ','No recent news for ')+esc(NEWS.tk)+'.':L('Sin titulares en esta sección ahora mismo.','No headlines in this section right now.')}</div>`);
+    if(!D){ stt.innerHTML=`<i class="${NEWS.loading?'old':'off'}"></i>${NEWS.loading?L('Cargando…','Loading…'):L('Sin datos','No data')}`; $('#tTopics').innerHTML=''; $('#tExtra').innerHTML='';
+      body.innerHTML=`<div class="card nempty"><div class="empty"><div class="ei">${ic('news')}</div><p>${NEWS.loading?L('Cargando titulares…','Loading headlines…'):L('No se pudieron cargar las noticias (','Could not load the news (')+esc(NEWS.err)+').'+(NEWS.errCode==='none'?L('<br>La tarea de GitHub "Noticias" aún no se ha ejecutado.','<br>The GitHub "Noticias" workflow hasn\'t run yet.'):'')}</p></div></div>`; foot.innerHTML=''; return; }
+    const age=Date.now()-Date.parse(D.updated); const stale=age>6*3600e3; const R=new Map((D.regions||[]).map(r=>[r.id,r]));
+    stt.innerHTML=`<i class="${NEWS.err?'off':stale?'old':''}"></i>${NEWS.err?L('Sin conexión · ','Offline · '):''}${L('Actualizado ','Updated ')}${newsAgo(D.updated)}`;
+    const {rows,extra,empty,tcount}=newsRows(st);
+    const tops=[['all',L('Todas','All'),'news',(rows&&!empty)?Object.values(tcount||{}).reduce((a,b)=>a+b,0):0]].concat([...NEWS_TOPICS,NEWS_GENERAL].filter(t=>tcount&&tcount[t[0]]).map(t=>[t[0],L(t[1],t[2]),t[3],tcount[t[0]]]).sort((a,b)=>b[3]-a[3]));
+    $('#tTopics').innerHTML=empty||tops.length<3?'':`<div class="nchips scroll" role="group" aria-label="${L('Temas','Topics')}">${tops.map(([k,l,i,n])=>`<button class="${NEWS.topic===k?'on':''}" data-topic="${k}">${ic(i)}${esc(l)}<i>${n}</i></button>`).join('')}</div>`;
+    $('#tExtra').innerHTML=(stale?`<div class="nnote warn">${L(`Las noticias son de ${newsAgo(D.updated)}. Puede que GitHub haya pausado la tarea: en el repositorio, Actions → Noticias → Enable workflow / Run workflow.`,`The news is from ${newsAgo(D.updated)}. GitHub may have paused the workflow: in the repository, Actions → Noticias → Enable workflow / Run workflow.`)}</div>`:'')+extra;
+    if(empty) body.innerHTML=`<div class="card nempty">${empty}</div>`;
+    else if(!rows.length) body.innerHTML=`<div class="card nempty">${NEWS.q?L('Ningún titular coincide con la búsqueda.','No headline matches the search.'):st.newsTab==='cartera'&&NEWS.tk!=='all'?L('Sin noticias recientes de ','No recent news for ')+esc(NEWS.tk)+'.':L('Sin titulares en esta pestaña.','No headlines in this tab.')}</div>`;
+    else { const shown=rows.slice(0,NEWS.limit); const g=[]; shown.forEach(it=>{ const k=newsDay(it.p); const l=g[g.length-1]; if(l&&l.k===k) l.items.push(it); else g.push({k,items:[it]}); });
+      body.innerHTML=g.map(x=>`<div class="nday">${esc(x.k)}</div><div class="card list">${x.items.map(it=>newsRowHTML(it,R)).join('')}</div>`).join('')
+        +(rows.length>NEWS.limit?`<div class="row" style="justify-content:center;margin-top:12px"><button id="tMore">${L(`Ver ${Math.min(120,rows.length-NEWS.limit)} más (${rows.length-NEWS.limit} restantes)`,`Show ${Math.min(120,rows.length-NEWS.limit)} more (${rows.length-NEWS.limit} left)`)}</button></div>`:''); }
     const F=D.feeds||[]; const okN=F.filter(f=>f.ok).length;
-    foot.innerHTML=`<span>${rows.length} ${L('titulares','headlines')}</span><span>${okN}/${F.length} ${L('fuentes activas','active sources')}</span><span class="hide-sm">${L('Atajos: 1–6 pestañas · / filtrar · R actualizar','Shortcuts: 1–6 tabs · / filter · R refresh')}</span>
+    foot.innerHTML=`<span>${rows.length} ${L('titulares','headlines')}</span><span>${okN}/${F.length} ${L('fuentes activas','active sources')}</span><span class="hide-sm">${L('Atajos: 1–6 pestañas · / buscar · R actualizar','Shortcuts: 1–6 tabs · / search · R refresh')}</span>
       <details><summary>${L('Estado de las fuentes','Source status')}${st.newsHide.length?` · ${st.newsHide.length} ${L('ocultas','hidden')}`:''}</summary>
       ${st.newsHide.length?`<p style="margin:6px 0">${L('Ocultas','Hidden')}: ${st.newsHide.map(d=>`<button class="sm" data-unhide="${esc(d)}">${esc(d)} ✕</button>`).join(' ')}</p>`:''}
       <div class="tbl"><table><tbody>${F.map(f=>`<tr><td class="${f.ok?'ok':'ko'}">${f.ok?'●':'○'}</td><td>${esc(f.id)}</td><td>${esc(regionL(D.regions.find(r=>r.id===f.region)||{id:f.region,name:f.region}))}</td><td class="n">${f.n}</td><td>${esc(f.err||'')}</td></tr>`).join('')}</tbody></table></div>
       ${D.tickers?`<p style="margin:6px 0 0">${L('Búsquedas por símbolo en la última hora','Symbol searches in the last hour')}: ${D.tickers.ok}/${D.tickers.queried}${D.tickers.stopped?' · '+esc(D.tickers.stopped):''}. ${L('Cada símbolo se renueva cada ~4 horas.','Each symbol is refreshed every ~4 hours.')}</p>`:''}</details>`;
-    body.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{ NEWS.tk=b.dataset.tk; NEWS.limit=120; draw(); });
-    body.querySelectorAll('[data-cty]').forEach(b=>b.onclick=()=>{ const c=b.dataset.cty; st.newsCountries=st.newsCountries.includes(c)?st.newsCountries.filter(x=>x!==c):st.newsCountries.concat(c); save(); draw(); });
+    el.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{ NEWS.tk=b.dataset.tk; NEWS.limit=120; draw(); });
+    el.querySelectorAll('[data-topic]').forEach(b=>b.onclick=()=>{ NEWS.topic=b.dataset.topic; NEWS.limit=120; draw(); });
+    el.querySelectorAll('[data-cty]').forEach(b=>b.onclick=()=>{ const c=b.dataset.cty; st.newsCountries=st.newsCountries.includes(c)?st.newsCountries.filter(x=>x!==c):st.newsCountries.concat(c); save(); draw(); });
     body.querySelectorAll('[data-hide]').forEach(b=>b.onclick=()=>{ const d=b.dataset.hide; if(!d) return; if(!st.newsHide.includes(d)) st.newsHide.push(d); save(); draw(); toast(L('Ocultado '+d+'. Lo recuperas en "Estado de las fuentes".','Hidden '+d+'. You can bring it back in "Source status".')); });
     foot.querySelectorAll('[data-unhide]').forEach(b=>b.onclick=()=>{ st.newsHide=st.newsHide.filter(x=>x!==b.dataset.unhide); save(); draw(); });
     const more=$('#tMore'); if(more) more.onclick=()=>{ NEWS.limit+=120; draw(); };
   };
-  el.querySelectorAll('[data-ntab]').forEach(b=>b.onclick=()=>{ st.newsTab=b.dataset.ntab; NEWS.limit=120; save(); el.querySelectorAll('[data-ntab]').forEach(x=>x.classList.toggle('on',x===b)); draw(); });
+  el.querySelectorAll('[data-ntab]').forEach(b=>b.onclick=()=>{ st.newsTab=b.dataset.ntab; NEWS.limit=120; NEWS.topic='all'; save(); el.querySelectorAll('[data-ntab]').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',x===b); }); draw(); });
   const qi=$('#tQ'); let qt; qi.oninput=()=>{ clearTimeout(qt); qt=setTimeout(()=>{ NEWS.q=qi.value; NEWS.limit=120; draw(); },120); };
   const refresh=async(force)=>{ const b=$('#tRef'); if(b) b.disabled=true; const pr=loadNews(force); draw(); await pr; if($('#tBody')===body){ draw(); if(b) b.disabled=false; } };
   $('#tRef').onclick=()=>refresh(true);
