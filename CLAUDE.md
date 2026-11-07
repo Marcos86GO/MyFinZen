@@ -65,7 +65,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 
 - `.github/workflows/noticias.yml` corre cada hora (y al cambiar `news/**`): `node news/build.mjs out/news.json prev.json` y reescribe la rama `news` con un solo commit.
 - `news/sources.json`: regiones, feeds RSS directos y búsquedas de Google News por edición (`gn`), **`trusted`** (lista blanca: solo se publican esos medios; 1 = agencia, pública o redacción de referencia, 2 = prensa reconocida), `paywall` (dominio o dominio/ruta; también muros dinámicos o por cuota, como bbc.com en EE. UU., cnn.com o reuters.com) y `skip` (agregadores con contenido patrocinado, notas de prensa, medios estatales de países sin prensa libre). Solo medios contrastados y de acceso libre. Si cambias listas o filtros, sube `FORMAT` en build.mjs para descartar lo acumulado.
-- `build.mjs`: `normalize` (con `trustTier` e `isJunk`: opinión, patrocinado, "acciones para comprar", predicciones de precio, rutas /opinion/, /select/…), `merge`, `cluster` (misma noticia en varios medios por palabras del titular con `sameStory`, ventana de 36 h; representante = medio de nivel 1 más antiguo; `n`, `o`) e `impact` (tema HI/MID + número de medios) antes de `trim`.
+- `build.mjs`: `normalize` (con `trustTier`, `isJunk` —opinión, patrocinado, "acciones para comprar", predicciones de precio, "precio del dólar hoy", boletines, rutas /opinion/, /select/…— e `isRelevant` —economía, mercados, empresas o política económica, sin deportes ni sucesos, 5+ palabras; no se aplica a lo buscado por símbolo—). Las búsquedas regionales usan `site:` con medios de `trusted`; el registro de la tarea lista los dominios descartados más frecuentes (`REJECTED`), `merge`, `cluster` (misma noticia en varios medios por palabras del titular con `sameStory`, ventana de 36 h; representante = medio de nivel 1 más antiguo; `n`, `o`) e `impact` (tema HI/MID + número de medios) antes de `trim`.
 - `news/universe.json`: lista **pública** de símbolos `{s,t,n,a}`; cada ejecución busca una cuarta parte (todo en la primera). Nunca añadas aquí las posiciones del usuario por iniciativa propia: es un repo público.
 - `news.json`: `{v,updated,regions[],universe[],feeds[{id,region,ok,n,err}],tickers{},items[{t,u,s,d,p,i,r?,k?,n?,o?[{s,u,d}]}]}`. Si ninguna fuente responde, la tarea falla y se conserva la versión anterior.
 - Pruebas sin red: `node tests/news.mjs`.
@@ -75,7 +75,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 11 pruebas del recolector de noticias + 110 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
+npm test           # 12 pruebas del recolector de noticias + 110 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).

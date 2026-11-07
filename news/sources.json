@@ -264,10 +264,12 @@
       "source": "CNBC"
     },
     {
-      "id": "euronews-business",
+      "id": "gn-euronews",
       "region": "eu",
-      "url": "https://www.euronews.com/rss?level=vertical&name=business",
-      "source": "Euronews"
+      "gn": {
+        "ed": "GB",
+        "q": "site:euronews.com (economy OR markets OR business OR ECB OR inflation OR stocks)"
+      }
     },
     {
       "id": "dw-business",
@@ -341,7 +343,7 @@
       "region": "de",
       "gn": {
         "ed": "GB",
-        "q": "(DAX OR Bundesbank OR \"German economy\" OR Germany) (site:dw.com OR site:euronews.com OR site:theguardian.com OR site:cnbc.com OR site:apnews.com)",
+        "q": "(DAX OR Bundesbank OR \"German economy\" OR \"German stocks\" OR \"German inflation\" OR Volkswagen OR Siemens) (site:dw.com OR site:euronews.com OR site:theguardian.com OR site:cnbc.com OR site:apnews.com)",
         "when": "2d"
       }
     },
@@ -350,7 +352,7 @@
       "region": "fr",
       "gn": {
         "ed": "GB",
-        "q": "(\"CAC 40\" OR \"French economy\" OR \"Banque de France\" OR France) (site:france24.com OR site:rfi.fr OR site:euronews.com OR site:theguardian.com OR site:apnews.com)",
+        "q": "(\"CAC 40\" OR \"French economy\" OR \"French stocks\" OR \"Banque de France\" OR \"French budget\" OR LVMH OR TotalEnergies) (site:france24.com OR site:rfi.fr OR site:euronews.com OR site:theguardian.com OR site:apnews.com)",
         "when": "2d"
       }
     },
@@ -410,7 +412,7 @@
       "region": "co",
       "gn": {
         "ed": "CO",
-        "q": "(Colcap OR \"Bolsa de Valores de Colombia\" OR \"Banco de la República\" OR dólar) (site:valoraanalitik.com OR site:bluradio.com OR site:caracol.com.co OR site:infobae.com)",
+        "q": "(Colcap OR \"Bolsa de Valores de Colombia\" OR \"Banco de la República\" OR \"peso colombiano\" OR \"economía colombiana\") (site:valoraanalitik.com OR site:bluradio.com OR site:caracol.com.co OR site:infobae.com)",
         "when": "2d"
       }
     },

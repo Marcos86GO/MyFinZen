@@ -77,7 +77,15 @@ export const JUNK = [
   /\b(stocks?|ETFs?|shares)\s+to\s+(buy|sell|watch|own|hold)\b/i,
   /\b(should you (buy|sell)|is it (time|too late) to (buy|sell)|buy (now|the dip)\?|no-?brainer|millionaire[- ]maker|retire (rich|early)|passive income|price (prediction|forecast)|could (soar|skyrocket|double|triple)|smartest \w+ to buy|forever stocks?|before it'?s too late|what to know before (you )?buy)\b/i,
   /\b(acciones|valores|fondos) (para comprar|que comprar|a comprar|a vigilar|para invertir)\b/i,
-  /\b(hor[oó]scopo|horoscope|loter[ií]a|lottery|powerball|mega millions|promo code|c[oó]digo promocional|black friday deals?)\b/i];
+  /\b(hor[oó]scopo|horoscope|loter[ií]a|lottery|powerball|mega millions|promo code|c[oó]digo promocional|black friday deals?)\b/i,
+  /\b(newsletter|sign ?up|suscr[ií]bete|subscribe)\b/i,
+  /\b(precio del d[oó]lar|tipo de cambio|precio del oro|price of (gold|silver|oil)|current price of|cotizaci[oó]n del d[oó]lar)\b.*\b(hoy|today|\d{1,2} de \w+)\b/i];
+// Temas de economía, mercados, empresas y política económica (español, inglés, italiano, portugués, francés)
+const FIN = /\b(econom\w*|market(s)?|stocks?|shares?|bonds?|yields?|invest\w*|inversi\w*|bolsas?|mercados?|acciones|bonos|divisas?|d[oó]lar|dollar|euro|yen|yuan|peso|currenc\w*|inflation|inflaci\w*|inflazione|infla[cç][aã]o|rates?|tipos|tasas?|interest|inter[eé]s|banks?|banking|bancos?|banca|bancari\w*|fed|ecb|bce|gdp|pib|growth|crecimiento|recession|recesi\w*|jobs|employment|unemployment|empleo|paro|desempleo|wages?|salari\w*|prices?|precios?|cost of living|housing|vivienda|mortgages?|hipotec\w*|rents?|alquiler\w*|tax\w*|impuest\w*|fiscal|budget|presupuestos?|debt|deuda|deficit|d[eé]ficit|tariffs?|arancel\w*|trade|comercio|exports?|imports?|exportaci\w*|importaci\w*|oil|crude|petr[oó]leo|crudo|gas|energy|energ[ií]a|electricity|electricidad|earnings|profits?|revenue|beneficios?|ingresos|ventas|sales|compan(y|ies)|empresas?|firms?|corporate|ceo|merger|acquisition|takeover|fusi[oó]n|adquisici[oó]n|deal|ipo|layoffs?|despidos|startups?|business\w*|negocios?|industr\w*|manufactur\w*|retail\w*|consum\w*|spending|gasto|bitcoin|crypto\w*|cripto\w*|ai|ia|chips?|semiconductor\w*|tech|technology|tecnolog\w*|nvidia|apple|microsoft|amazon|tesla|alphabet|ibex|ftse|dax|cac|nikkei|hang seng|s&p|nasdaq|dow|tsx|asx|kospi|sensex|nifty|merval|ibovespa|ipsa|colcap|riesgo pa[ií]s|prima de riesgo|eur[ií]bor|sanctions?|sanci[oó]n|sanciones|subsid\w*|pensions?|pensi[oó]n|pensiones|retirement|jubilaci\w*|social security|seguridad social|wall street|borsa|mercati|azioni|imprese|aziende|lavoro|occupazione|tassi|prezzi|juros|emprego|a[cç][oõ]es|c[aâ]mbio|bourse|march[eé]s?|banque|croissance|ch[oô]mage|entreprises?|fmi|imf|opec|opep|wto|omc)\b/i;
+const POL = /\b(elections?|elecci[oó]n|elecciones|congress|senate|senado|white house|casa blanca|president|presidente|government|gobierno|governo|gouvernement|parliament|parlamento|minister|ministro|ministra|law|ley|legge|bill|regulation|regulaci[oó]n|supreme court|tribunal supremo|policy|summit|cumbre|treaty|tratado|g7|g20|nato|otan|eu|ue)\b/i;
+const NOISE = /\b(shooting|shot dead|killed|kills|murder\w*|stabb\w*|arrest\w*|police|tiroteo|asesin\w*|detenid\w*|polic[ií]a|crime|crimen|football|soccer|tennis|rugby|cricket|golf|nba|nfl|mlb|nhl|championship|olympic\w*|f[uú]tbol|liga|tenis|calcio|campeonato|davis cup|grand prix|f[oó]rmula 1|recipe|receta|horoscope|celebrity|famos[oa]s|movie|pel[ií]cula|weather|snow|nieve|met office|comer|m[uú]sculos|dieta|nutrici\w*|ejercicio f[ií]sico|workout|recipes?)\b/i;
+// ¿Es una noticia de economía o política económica? (los titulares de una sola empresa buscada por símbolo no pasan por aquí)
+export function isRelevant(t) { return (FIN.test(t) || POL.test(t)) && !NOISE.test(t) && t.trim().split(/\s+/).length >= 5; }
 export const JUNK_PATH = /\/(opinion|opinions|opinión|commentary|commentisfree|columnists?|columns?|editorials?|blogs?|sponsored|partner-content|brandstudio|brand-studio|paid-content|press-releases?|comunicados?|patrocinado|publicidad|podcasts?|quizz?e?s?|shopping|deals|select|cnbc-select)\//i;
 export function isJunk(t, url) { if (JUNK.some(r => r.test(t))) return true; try { return JUNK_PATH.test(new URL(url).pathname); } catch { return false; } }
 
@@ -100,6 +108,7 @@ export function normalize(raw, feed, list, now = Date.now(), trusted = null) {
     if (feed.allow && !isPaywalled([isGN ? r.sourceUrl : r.link], feed.allow.map(a => a.replace(/^\./, '')))) continue; // fuera de los dominios permitidos
     let p = Date.parse(r.date); if (!Number.isFinite(p)) p = now; if (p > now + H) p = now;
     if (t.length < 12 || isJunk(t, isGN ? '' : r.link)) continue;
+    if (!feed.symbol && !isRelevant(t)) continue; // fuera deportes, sucesos, secciones y temas sin relación con la economía
     items.push({ t, u: r.link, s: source, d, p: new Date(p).toISOString() });
   }
   return items;
@@ -156,10 +165,10 @@ export function sameStory(A, B) { // A, B: Set de palabras
 }
 const HI = /\b(Fed|Federal Reserve|FOMC|Powell|ECB|BCE|Lagarde|Bank of England|Bank of Japan|BoJ|PBOC|Banxico|Banco de España|Banco Central|central banks?|bancos? centrales?|interest rates?|tipos de inter[eé]s|tasas? de inter[eé]s|rate (cut|hike|decision)s?|(recorte|subida|bajada) de tipos|inflation|inflaci[oó]n|CPI|IPC|PCE|jobs report|nonfarm|payrolls?|unemployment rate|tasa de (paro|desempleo)|GDP|PIB|recession|recesi[oó]n|tariffs?|aranceles?|trade (war|deal)|guerra comercial|sanctions?|sanciones|shutdown|debt ceiling|techo de deuda|default|impago|bankrupt\w*|bankruptcy|quiebra|concurso de acreedores|bailout|rescate|crash|meltdown|crisis)\b/i;
 const MID = /\b(record (high|low|close)|all-time high|m[aá]ximos? hist[oó]ricos?|plunge[sd]?|plummet\w*|tumble[sd]?|soar(s|ed|ing)?|surge[sd]?|sell-?off|rout|se desploma\w*|se hunde\w*|se dispara\w*|desplome|earnings|resultados|profit warning|guidance|merger|acquisition|acquires?|acquired|takeover|buyout|fusi[oó]n|adquisici[oó]n|OPA|IPO|salida a bolsa|layoffs?|despidos|ERE|SEC|CNMV|antitrust|fined|multa|downgrade[sd]?|oil prices?|OPEC\+?|OPEP|petr[oó]leo|treasury yields?|bond yields?|prima de riesgo|\$\d+(\.\d+)?\s?(billion|trillion|bn|tn)|\d+([.,]\d+)? (mil millones|billones))\b/i;
-// Impacto 0–3: tema (política monetaria, inflación, empleo, aranceles, crisis… = 2; grandes movimientos, resultados, fusiones… = 1) + cuántos medios la cuentan
+// Impacto 0–3: tema (política monetaria, inflación, empleo, aranceles, crisis… = 2; grandes movimientos, resultados, fusiones… = 1) + cuántos medios la cuentan (3+ = 1; 5+ = 2)
 export function impact(titles, n) {
   const k = titles.some(t => HI.test(t)) ? 2 : titles.some(t => MID.test(t)) ? 1 : 0;
-  return Math.min(3, k + (n >= 4 ? 2 : n >= 2 ? 1 : 0));
+  return Math.min(3, k + (n >= 5 ? 2 : n >= 3 ? 1 : 0)); // con 2 medios no basta: muchos reproducen la misma nota de agencia
 }
 export function cluster(items, trusted = {}, windowH = 36) {
   const tk = items.map(it => new Set(tokens(it.t))); const P = items.map((_, i) => i);
@@ -229,7 +238,7 @@ async function main() {
   let tOk = 0, tFail = 0, stopped = '';
   for (const u of todo) {
     try {
-      const items = normalize(parseFeed(await get(gnURL(tickerQuery(u), SRC.editions, '7d'))), {}, BLOCK, now, SRC.trusted).map(x => ({ ...x, k: [u.s] }));
+      const items = normalize(parseFeed(await get(gnURL(tickerQuery(u), SRC.editions, '7d'))), { symbol: u.s }, BLOCK, now, SRC.trusted).map(x => ({ ...x, k: [u.s] }));
       got.push(items); tOk++;
     } catch (e) {
       tFail++;
@@ -240,7 +249,7 @@ async function main() {
 
   // 3) Unir con lo anterior, quitar duplicados y recortar
   const regions = SRC.regions;
-  const prevItems = (prev.items || []).filter(x => !isPaywalled(['https://' + x.d + '/'], BLOCK) && trustTier(x.d, SRC.trusted) && !isJunk(x.t, x.u)).map(x => ({ ...x, r: x.r || [], k: x.k || [] }));
+  const prevItems = (prev.items || []).filter(x => !isPaywalled(['https://' + x.d + '/'], BLOCK) && trustTier(x.d, SRC.trusted) && !isJunk(x.t, x.u) && ((x.k && x.k.length && !(x.r && x.r.length)) || isRelevant(x.t))).map(x => ({ ...x, r: x.r || [], k: x.k || [] }));
   const items = trim(cluster(merge([prevItems, ...got]), SRC.trusted), regions, now);
   const out = {
     v: FORMAT, updated: new Date(now).toISOString(), regions,

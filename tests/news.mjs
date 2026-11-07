@@ -1,7 +1,7 @@
 // Pruebas del recolector de noticias (sin red): lectura de RSS/Atom, medios de confianza, filtro de pago y de no-noticias, agrupación, impacto, unión y recorte.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseFeed, normalize, merge, trim, isPaywalled, gnURL, tickerQuery, clean, trustTier, isJunk, cluster, impact, host } from '../news/build.mjs';
+import { parseFeed, normalize, merge, trim, isPaywalled, gnURL, tickerQuery, clean, trustTier, isJunk, isRelevant, cluster, impact, host } from '../news/build.mjs';
 
 const SRC = JSON.parse(fs.readFileSync(new URL('../news/sources.json', import.meta.url)));
 const UNI = JSON.parse(fs.readFileSync(new URL('../news/universe.json', import.meta.url)));
@@ -71,6 +71,13 @@ t('descarta opinión, listas promocionales y contenido patrocinado', () => {
   assert.ok(isJunk('Markets today', 'https://www.cnbc.com/select/best-credit-cards/')); assert.ok(isJunk('Rates', 'https://www.theguardian.com/commentisfree/opinion/2026/x'));
   for (const x of ['Stocks fall as Fed signals fewer rate cuts', 'El BCE mantiene los tipos de interés', 'Nvidia shares soar after record earnings', "Here's why the Dow fell 500 points today"]) assert.ok(!isJunk(x, 'https://www.cnbc.com/2026/10/31/x.html'), x);
 });
+t('solo economía, mercados, empresas y política económica', () => {
+  for (const x of ['Stocks fall as Fed signals fewer rate cuts', 'El Banco Mundial rebaja su previsión de crecimiento', 'Five European leaders call for closer EU-UK ties ahead of summit', 'Il governo approva la legge di bilancio e i tassi scendono', 'Peso mexicano avanza frente al dólar por segunda semana']) assert.ok(isRelevant(x), x);
+  for (const x of ['Adams double guides Wales past Japan in Nations Championship', 'At least six people killed in shooting in Polish city of Krakow, police say', 'Business + Economics', 'Consumer affairs', 'Qué comer después de los 60 para sostener músculos y energía', 'Is it going to snow in London? What the Met Office forecast says']) assert.ok(!isRelevant(x), x);
+  assert.ok(isJunk('Precio del dólar HOY sábado 7 de noviembre de 2026 en México', '')); assert.ok(isJunk('Business Today (newsletter signup)', ''));
+  const r = normalize(parseFeed(`<rss><channel><item><title>Apple unveils a new iPhone with longer battery</title><link>https://apnews.com/a</link><pubDate>Sat, 31 Oct 2026 17:00:00 GMT</pubDate></item></channel></rss>`), { symbol: 'AAPL' }, SRC.paywall, now, SRC.trusted);
+  assert.equal(r.length, 1, 'lo buscado por símbolo no necesita palabras de economía');
+});
 t('agrupa la misma noticia de varios medios e indica el impacto', () => {
   const P = h => new Date(now - h * 3600e3).toISOString();
   const it = (t, d, h, r = ['us']) => ({ t, u: 'https://' + d + '/' + t.length, s: d, d, p: P(h), r, k: [] });
@@ -79,7 +86,7 @@ t('agrupa la misma noticia de varios medios e indica el impacto', () => {
     it('Starbucks names new head of its China business', 'cnbc.com', 4), it('Stocks rise as investors weigh earnings', 'cnbc.com', 5), it('Stocks fall as investors weigh jobs data', 'cbsnews.com', 5)];
   const c = cluster(items, SRC.trusted); const fed = c.find(x => /Fed/.test(x.t));
   assert.equal(c.length, 4); assert.equal(fed.n, 4); assert.equal(fed.d, 'apnews.com', 'el representante es el medio de nivel 1 más antiguo'); assert.equal(fed.o.length, 3); assert.deepEqual(fed.r.sort(), ['global', 'us']);
-  assert.equal(fed.i, 3); assert.equal(c.find(x => /Starbucks/.test(x.t)).i, 0); assert.equal(impact(['Nvidia shares soar after record earnings'], 1), 1); assert.equal(impact(['Algo sin más'], 2), 1);
+  assert.equal(fed.i, 3); assert.equal(c.find(x => /Starbucks/.test(x.t)).i, 0); assert.equal(impact(['Nvidia shares soar after record earnings'], 1), 1); assert.equal(impact(['Algo sin más'], 2), 0, 'dos medios no bastan'); assert.equal(impact(['Algo sin más'], 3), 1);
   const out = trim(c, SRC.regions, now); const f2 = out.find(x => /Fed/.test(x.t)); assert.ok(f2.n === 4 && f2.o.length === 3 && f2.i === 3); assert.ok(!('n' in out.find(x => /Starbucks/.test(x.t))));
   const again = cluster(merge([out.map(x => ({ ...x, r: x.r || [], k: x.k || [] })), [it('Fed cuts interest rates by a quarter point, signals pause', 'pbs.org', 1)]]), SRC.trusted);
   assert.equal(again.find(x => /Fed/.test(x.t)).n, 5, 'al volver a pasar se suman los medios nuevos sin perder los anteriores');
