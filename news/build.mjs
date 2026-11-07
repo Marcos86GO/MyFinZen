@@ -84,6 +84,7 @@ export function isJunk(t, url) { if (JUNK.some(r => r.test(t))) return true; try
 export function titleKey(t) {
   return t.toLowerCase().replace(/&/g, ' and ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').slice(0, 14).join(' ');
 }
+export const REJECTED = new Map(); // dominios descartados por no estar en 'trusted' (solo para el registro de la tarea)
 export function normalize(raw, feed, list, now = Date.now(), trusted = null) {
   const items = [];
   for (const r of raw) {
@@ -95,7 +96,7 @@ export function normalize(raw, feed, list, now = Date.now(), trusted = null) {
     const d = isGN ? host(r.sourceUrl) : host(r.link);
     if (!source) source = d;
     if (isPaywalled([r.link, r.sourceUrl], list)) continue;
-    if (trusted && !trustTier(d, trusted)) continue; // solo medios reconocidos y de acceso libre
+    if (trusted && !trustTier(d, trusted)) { if (d) REJECTED.set(d, (REJECTED.get(d) || 0) + 1); continue; } // solo medios reconocidos y de acceso libre
     if (feed.allow && !isPaywalled([isGN ? r.sourceUrl : r.link], feed.allow.map(a => a.replace(/^\./, '')))) continue; // fuera de los dominios permitidos
     let p = Date.parse(r.date); if (!Number.isFinite(p)) p = now; if (p > now + H) p = now;
     if (t.length < 12 || isJunk(t, isGN ? '' : r.link)) continue;
@@ -253,6 +254,8 @@ async function main() {
   const okF = status.filter(s => s.ok).length;
   console.log(`Fuentes: ${okF}/${status.length} con titulares · símbolos: ${tOk}/${todo.length}${stopped ? ' · ' + stopped : ''} · ${items.length} noticias (${items.filter(x => x.i >= 2).length} de alto impacto, ${items.filter(x => x.n > 1).length} en varios medios)`);
   for (const s of out.feeds) console.log(`${s.ok ? '✓' : '✗'} ${s.id.padEnd(24)} ${String(s.n).padStart(3)} ${s.err || ''}`);
+  const rej = [...REJECTED].sort((a, b) => b[1] - a[1]).slice(0, 60);
+  if (rej.length) console.log('Descartados por no estar en trusted (revisar de vez en cuando): ' + rej.map(([d, c]) => d + ' ' + c).join(', '));
   if (!okF) process.exitCode = 1;
 }
 
