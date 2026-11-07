@@ -124,6 +124,12 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); await pg.click('#alertBox summary'); await pg.waitForTimeout(100);
   await pg.locator('#alertBox .ab',{hasText:'sin categoría'}).click(); await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>location.hash==='#flujo'&&flujoFilter.cat==='__none'&&document.querySelectorAll('#txList .txr').length>=2&&[...document.querySelectorAll('#txList .txr')].every(r=>r.classList.contains('unc'))),'aviso de movimientos sin categoría lleva a revisarlos');
+  const order=()=>pg.evaluate(()=>[...document.querySelectorAll('#txList .txr')].map(b=>S.tx.find(t=>t.id===b.dataset.tx)).map(t=>({d:t.date,a:Math.abs(t.amount)})));
+  await pg.selectOption('#fSort','amt_desc'); await pg.waitForTimeout(250); let o=await order();
+  ok(o.length>=2&&o.every((x,i)=>!i||o[i-1].a>=x.a)&&!(await pg.$('#txList .txday-h'))&&await pg.evaluate(()=>flujoFilter.cat==='__none'&&/\d{4}/.test(document.querySelector('#txList .txr .lm span').innerText)),'sin categoría: ordenar por importe (con fecha en cada fila)');
+  await pg.selectOption('#fSort','amt_asc'); await pg.waitForTimeout(250); o=await order(); ok(o.every((x,i)=>!i||o[i-1].a<=x.a),'ordenar por importe de menor a mayor');
+  await pg.selectOption('#fSort','date_asc'); await pg.waitForTimeout(250); o=await order(); ok(o.every((x,i)=>!i||o[i-1].d<=x.d)&&!!(await pg.$('#txList .txday-h')),'ordenar por fecha, más antigua primero');
+  await pg.selectOption('#fSort','date_desc'); await pg.waitForTimeout(250);
   await pg.click('#txList .txr >> nth=0'); await pg.selectOption('#tsCat','Compras'); await pg.waitForTimeout(150); if(await pg.$('#rNo')) await pg.click('#rNo'); await pg.waitForTimeout(200);
   ok(await pg.evaluate(()=>S.tx.filter(isUncat).length>=1&&S.tx.some(t=>t.cat==='Compras'&&t.manual&&/UNKNOWN|MYSTERY/.test(t.desc))),'asignar la categoría a mano');
   ok(await pg.evaluate(()=>{ const keep=S.rules.slice(), cv=S.settings.catVer; S.settings.catVer=0; S.rules=[{pattern:OLD_DEFAULT_PATTERNS[8],cat:'Gasolina'},{pattern:'MIREGLA',cat:'Ocio'}]; const t={id:'migr1',date:'2026-10-01',desc:'ZELLE TO PEDRO TARCOS',amount:-5,cat:'Gasolina',acc:null,src:'csv'}; S.tx.push(t);

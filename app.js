@@ -520,7 +520,7 @@ function computeAlerts(){
     if(prev.length>=2){ const cats=Object.keys(c.cats); cats.forEach(k=>{ const avg=prev.reduce((s,m)=>s+(cf[m].cats[k]||0),0)/prev.length; if(avg>150 && c.cats[k]>avg*1.35 && c.cats[k]-avg>150) A.push({lvl:'warn',key:'spike:'+last+':'+k,go:{h:'flujo',month:last,cat:k},t:L(`<b>${esc(catL(k))} subió</b> a ${fmt(c.cats[k])} en ${ymLabel(last)}, frente a una media de ${fmt(avg)}.`,`<b>${esc(catL(k))} went up</b> to ${fmt(c.cats[k])} in ${ymLabel(last)}, against an average of ${fmt(avg)}.`)}); }); }
   }
   // movimientos que la app no supo clasificar
-  const unc=S.tx.filter(isUncat); if(unc.length) A.push({lvl:'warn',key:'uncat:'+unc.length,go:{h:'flujo',cat:'__none',el:'txList'},t:L(`<b>${unc.length} ${unc.length>1?'movimientos':'movimiento'} sin categoría.</b> Toca para revisarlos y asignarles una.`,`<b>${unc.length} uncategorized transaction${unc.length>1?'s':''}.</b> Tap to review them and assign one.`)});
+  const unc=S.tx.filter(isUncat); if(unc.length) A.push({lvl:'warn',key:'uncat:'+unc.length,go:{h:'flujo',cat:'__none',el:'txHead'},t:L(`<b>${unc.length} ${unc.length>1?'movimientos':'movimiento'} sin categoría.</b> Toca para revisarlos y asignarles una.`,`<b>${unc.length} uncategorized transaction${unc.length>1?'s':''}.</b> Tap to review them and assign one.`)});
   // emergency fund
   const cash=S.accounts.filter(a=>a.kind==='cash').reduce((s,a)=>s+(balanceOf(a)||0),0);
   const lastN=complete.slice(-3); const avgExp=lastN.length?lastN.reduce((s,m)=>s+cf[m].expense,0)/lastN.length:0;
@@ -537,7 +537,7 @@ function computeAlerts(){
 function alertsHTML(A){ const IC={good:'✓',warn:'!',crit:'!',info:'i'}; return A.map((a,i)=>`<div class="alert ${a.lvl}${a.go?' act':''}"><span class="ic">${IC[a.lvl]}</span>${a.go?`<button class="ab" data-ago="${i}"><span>${a.t.replace(/<\/?a\b[^>]*>/g,'')}</span>${ic('right','chev')}</button>`:`<div style="flex:1">${a.t}</div>`}${a.key?`<button class="ax" data-aign="${esc(a.key)}" title="${L('Ignorar','Ignore')}" aria-label="${L('Ignorar este aviso','Ignore this alert')}">${ic('close')}</button>`:''}</div>`).join(''); }
 function goAlert(go){ if(!go) return;
   if(go.h==='flujo'){ flujoFilter.month=go.month||'all'; flujoFilter.cat=go.cat||'all'; flujoFilter.q=''; flujoFilter.limit=200; }
-  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.el){ const e=document.getElementById(go.el); if(e) e.scrollIntoView({block:'start'}); } };
+  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.el){ const e=document.getElementById(go.el); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); } };
   if(location.hash==='#'+go.h) route(); else { location.hash='#'+go.h; } setTimeout(after,60); }
 function wireAlerts(root,A,refresh){
   root.querySelectorAll('[data-ago]').forEach(b=>b.onclick=()=>goAlert(A[+b.dataset.ago].go));
@@ -610,14 +610,16 @@ VIEWS.resumen=(el)=>{
 };
 
 /* ---------- Movimientos ---------- */
-let flujoFilter={month:'all', cat:'all', q:'', limit:200};
+// sort: date_desc | date_asc | amt_desc | amt_asc (por importe absoluto: lo más grande primero)
+let flujoFilter={month:'all', cat:'all', q:'', limit:200, sort:'date_desc'};
+const TX_SORTS={date_desc:(a,b)=>b.date.localeCompare(a.date),date_asc:(a,b)=>a.date.localeCompare(b.date),amt_desc:(a,b)=>Math.abs(b.amount)-Math.abs(a.amount)||b.date.localeCompare(a.date),amt_asc:(a,b)=>Math.abs(a.amount)-Math.abs(b.amount)||b.date.localeCompare(a.date)};
 // Avatar de categoría: inicial y color estable por categoría (las neutras, en gris)
 const CAT_HUES=[215,262,190,36,320,18,240,170,280,200];
 function catAv(c){ const n=catL(c||''); let h=0; for(const ch of String(c)) h=(h*31+ch.charCodeAt(0))%9973; const ty=catType(c);
   return `<span class="av round" style="${ty==='neutral'?'background:var(--muted)':`--h:${ty==='income'?145:CAT_HUES[h%CAT_HUES.length]}`}">${esc((n.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/)||['·'])[0].toUpperCase())}</span>`; }
 function dayLabel(d){ const t=today(); if(d===t) return L('Hoy','Today'); const y=new Date(); y.setDate(y.getDate()-1); if(d===isoDate(y.getFullYear()+'-'+(y.getMonth()+1)+'-'+y.getDate())) return L('Ayer','Yesterday');
   const x=new Date(d+'T12:00:00'); const s=x.toLocaleDateString(LANG==='en'?'en-US':'es-ES',{weekday:'long',day:'numeric',month:'long',...(d.slice(0,4)!==t.slice(0,4)?{year:'numeric'}:{})}); return s.charAt(0).toUpperCase()+s.slice(1); }
-function txRow(t){ const u=isUncat(t); return `<button class="lrow txr${u?' unc':''}" data-tx="${esc(t.id)}">${u?`<span class="av round" style="background:var(--warn);color:#1a1a19">?</span>`:catAv(t.cat)}<span class="lm"><b>${esc(t.desc)}</b><span>${u?`<span class="uncl">${L('Sin categoría · toca para elegir','Uncategorized · tap to choose')}</span>`:esc(catL(t.cat))}${t.acc?' · '+esc(accName(t.acc)):''}${t.rec?` · <span class="rec">${esc(recLabel(t))}</span>`:''}</span></span><span class="lr"><b class="${t.amount>0?'pos':''}">${t.amount>0?'+':''}${fmt(t.amount,2)}</b></span></button>`; }
+function txRow(t,withDate){ const u=isUncat(t); return `<button class="lrow txr${u?' unc':''}" data-tx="${esc(t.id)}">${u?`<span class="av round" style="background:var(--warn);color:#1a1a19">?</span>`:catAv(t.cat)}<span class="lm"><b>${esc(t.desc)}</b><span>${withDate?esc(dLabel(t.date))+' · ':''}${u?`<span class="uncl">${L('Sin categoría · toca para elegir','Uncategorized · tap to choose')}</span>`:esc(catL(t.cat))}${t.acc?' · '+esc(accName(t.acc)):''}${t.rec?` · <span class="rec">${esc(recLabel(t))}</span>`:''}</span></span><span class="lr"><b class="${t.amount>0?'pos':''}">${t.amount>0?'+':''}${fmt(t.amount,2)}</b></span></button>`; }
 VIEWS.flujo=(el)=>{
   const cf=cashflowByMonth(); const months=monthsRange(12);
   const inc=months.map(m=>cf[m]?cf[m].income:0), exp=months.map(m=>cf[m]?cf[m].expense:0), net=months.map((m,i)=>inc[i]-exp[i]);
@@ -627,7 +629,8 @@ VIEWS.flujo=(el)=>{
   const catTot={}; scope.forEach(m=>{ if(!cf[m])return; for(const[k,v] of Object.entries(cf[m].cats)) catTot[k]=(catTot[k]||0)+v; });
   const div=sel?1:Math.max(1,scope.length);
   const catItems=Object.entries(catTot).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({k:catL(k),v:v/div}));
-  let list=S.tx.slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if(!TX_SORTS[flujoFilter.sort]) flujoFilter.sort='date_desc'; const byDate=flujoFilter.sort.startsWith('date');
+  let list=S.tx.slice().sort(TX_SORTS[flujoFilter.sort]);
   if(sel) list=list.filter(t=>ym(t.date)===sel);
   if(flujoFilter.cat!=='all') list=list.filter(t=>flujoFilter.cat==='__none'?isUncat(t):t.cat===flujoFilter.cat);
   if(flujoFilter.q) { const q=flujoFilter.q.toLowerCase(); list=list.filter(t=>t.desc.toLowerCase().includes(q)); }
@@ -651,10 +654,12 @@ VIEWS.flujo=(el)=>{
     <div class="card">${helpBtn('cf_chart')}<h2>${L('Ingresos, gastos y ahorro','Income, expenses and savings')}</h2><p class="sub">${L('Últimos 12 meses','Last 12 months')}</p>${legend([{n:nI,c:'var(--s3)'},{n:nG,c:'var(--s2)'},{n:nN,c:'var(--s1)'}])}<div id="cCF"></div></div>
     ${S.tx.length?`<div class="card" id="recBox">${helpBtn('rec')}<h2>${L('Conciliación entre cuentas','Reconciliation between accounts')}</h2>${recHTML(R)}</div>`:''}
   </div>
-  <h3 class="sec">${L('Movimientos','Transactions')}${helpBtn('tx_list',true)}<span class="tot">${list.length}</span></h3>
+  <h3 class="sec" id="txHead">${L('Movimientos','Transactions')}${helpBtn('tx_list',true)}<span class="tot">${list.length}</span></h3>
   ${nUnc&&flujoFilter.cat!=='__none'?`<div class="alert warn act" style="margin-bottom:4px"><span class="ic">!</span><button class="ab" id="uncGo"><span>${L(`<b>${nUnc} ${nUnc>1?'movimientos':'movimiento'} sin categoría.</b> Revísalos y elige una.`,`<b>${nUnc} uncategorized transaction${nUnc>1?'s':''}.</b> Review them and choose one.`)}</span>${ic('right','chev')}</button></div>`:''}
-  ${flujoFilter.cat==='__none'?`<div class="alert info" style="margin-bottom:4px"><span class="ic">i</span><div style="flex:1">${L('Mostrando solo los movimientos sin categoría. Toca uno para elegirla.','Showing only uncategorized transactions. Tap one to choose it.')} <button class="sm" id="uncAll">${L('Ver todos','Show all')}</button></div></div>`:''}
-  <div id="txList">${shown.length?days.map(d=>`<div class="txday"><div class="txday-h"><span>${esc(dayLabel(d.date))}</span><span>${fmt(r2(d.tx.reduce((s,t)=>s+t.amount,0)),2)}</span></div><div class="card list">${d.tx.map(txRow).join('')}</div></div>`).join('')
+  ${flujoFilter.cat==='__none'?`<div class="alert info" style="margin-bottom:4px"><span class="ic">i</span><div style="flex:1">${(()=>{ const out=r2(-list.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0)), inn=r2(list.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0)); const tot=[out?L('gastos ','expenses ')+fmt(out,2):'',inn?L('ingresos ','income ')+fmt(inn,2):''].filter(Boolean).join(' · ');
+      return L(`Mostrando solo los movimientos sin categoría (${list.length}${tot?': '+tot:''}). Toca uno para elegirla; la app te ofrece aplicarla a los parecidos.`,`Showing only uncategorized transactions (${list.length}${tot?': '+tot:''}). Tap one to choose it; the app offers to apply it to similar ones.`); })()} <button class="sm" id="uncAll">${L('Ver todos','Show all')}</button></div></div>`:''}
+  ${list.length>1?`<div class="listbar"><label for="fSort" class="muted">${L('Ordenar por','Sort by')}</label><select id="fSort">${[['date_desc',L('Fecha: más reciente primero','Date: newest first')],['date_asc',L('Fecha: más antigua primero','Date: oldest first')],['amt_desc',L('Importe: de mayor a menor','Amount: largest first')],['amt_asc',L('Importe: de menor a mayor','Amount: smallest first')]].map(([v,t])=>`<option value="${v}" ${v===flujoFilter.sort?'selected':''}>${t}</option>`).join('')}</select></div>`:''}
+  <div id="txList">${shown.length?(byDate?days.map(d=>`<div class="txday"><div class="txday-h"><span>${esc(dayLabel(d.date))}</span><span>${fmt(r2(d.tx.reduce((s,t)=>s+t.amount,0)),2)}</span></div><div class="card list">${d.tx.map(t=>txRow(t)).join('')}</div></div>`).join(''):`<div class="card list" style="margin-top:8px">${shown.map(t=>txRow(t,true)).join('')}</div>`)
     +(list.length>shown.length?`<div class="row" style="justify-content:center;margin-top:12px"><button id="txMore">${L(`Ver más (${list.length-shown.length})`,`Show more (${list.length-shown.length})`)}</button></div>`:'')
     :`<div class="card empty"><div class="ei">${ic('flow')}</div><p>${S.tx.length?L('Ningún movimiento coincide con el filtro.','No transaction matches the filter.'):L('Aún no hay movimientos. Importa los extractos de tus bancos y tarjetas.','No transactions yet. Import your bank and card statements.')}</p>${S.tx.length?'':`<a class="btn pri" href="#importar">${ic('upload')}${L('Importar extractos','Import statements')}</a>`}</div>`}</div>
   </div>`;
@@ -664,7 +669,8 @@ VIEWS.flujo=(el)=>{
   $('#fCat').onchange=e=>{flujoFilter.cat=e.target.value;flujoFilter.limit=200;route();};
   $('#fQ').onchange=e=>{flujoFilter.q=e.target.value;flujoFilter.limit=200;route();};
   $('#catMgr').onclick=()=>manageCats();
-  if($('#uncGo')) $('#uncGo').onclick=()=>{ flujoFilter.cat='__none'; flujoFilter.month='all'; flujoFilter.limit=200; route(); setTimeout(()=>{ const e=$('#txList'); if(e) e.scrollIntoView({block:'start'}); },30); };
+  if($('#uncGo')) $('#uncGo').onclick=()=>{ flujoFilter.cat='__none'; flujoFilter.month='all'; flujoFilter.limit=200; route(); setTimeout(()=>{ const e=$('#txHead'); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); },30); };
+  if($('#fSort')) $('#fSort').onchange=e=>{ flujoFilter.sort=e.target.value; flujoFilter.limit=200; route(); setTimeout(()=>{ const x=$('#fSort'); if(x) x.scrollIntoView({block:'center'}); },30); };
   if($('#uncAll')) $('#uncAll').onclick=()=>{ flujoFilter.cat='all'; route(); };
   if($('#txMore')) $('#txMore').onclick=()=>{ const y=window.scrollY; flujoFilter.limit+=300; route(); window.scrollTo(0,y); };
   $('#txList').addEventListener('click',e=>{ const b=e.target.closest('[data-tx]'); if(b) txSheet(b.dataset.tx); });
@@ -1010,7 +1016,7 @@ function accountSheet(id){ const a=acc(id); if(!a) return; const s=lastSnap(a.id
   openModal(`<div class="sheet-head">${accAv(a)}<div style="min-width:0"><h2 style="overflow-wrap:anywhere">${esc(a.name)}</h2><div class="muted">${KINDS[a.kind].label}${a.institution?' · '+esc(a.institution):''}${a.last4?' · ···'+esc(a.last4):''}</div></div></div>
     <div class="sheet-big">${s?fmt(s.value,2):'—'}</div><div class="muted">${s?L('Saldo del ','Balance on ')+dLabel(s.date):L('Sin saldo todavía','No balance yet')}</div>
     <div class="actgrid">${a.kind==='property'?'':`<button data-imp="${esc(a.id)}">${ic('upload')}${L('Importar','Import')}</button>`}<button data-snap="${esc(a.id)}">${ic('refresh')}${L('Actualizar saldo','Update balance')}</button><button data-edit="${esc(a.id)}">${ic('edit')}${L('Editar','Edit')}</button><button data-hist="${esc(a.id)}">${ic('clock')}${L('Historial','History')}</button></div>
-    ${recent.length?`<h3 class="sec" style="margin-top:4px">${L('Últimos movimientos','Latest transactions')}</h3><div class="list" style="margin:0 -20px">${recent.map(txRow).join('')}</div>`:''}
+    ${recent.length?`<h3 class="sec" style="margin-top:4px">${L('Últimos movimientos','Latest transactions')}</h3><div class="list" style="margin:0 -20px">${recent.map(t=>txRow(t,true)).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button id="mc">${L('Cerrar','Close')}</button></div>`);
   $('#mc').onclick=closeModal;
   const m=$('#modal');
