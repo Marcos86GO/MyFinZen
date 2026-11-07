@@ -164,7 +164,14 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.setInputFiles('#fAll',[mem('Checking6789_activity_2026-11-15.csv','Posting Date,Description,Amount\n11/03/2026,TRADER JOES #12,-45.10\n11/05/2026,ACME CORP PAYROLL,8000.00\n'),fx('bank.pdf'),fx('mortgage.pdf'),fx('w2.pdf'),mem('MyBankDownload.csv','Date,Description,Amount\n11/02/2026,SOMETHING,-5\n'),fx('Holdings-Oct-30-2026.csv')]);
   await pg.waitForFunction(()=>BATCH&&!BATCH.running,null,{timeout:30000}); await pg.waitForTimeout(200);
   const bt=await pg.evaluate(()=>Object.fromEntries(BATCH.res.map(r=>[r.name,r.status+(r.acc?':'+acc(r.acc).name:'')+(r.added!=null?':'+r.added:'')])));
-  ok(bt['Checking6789_activity_2026-11-15.csv']==='ok:checking:2'&&/^ok:checking/.test(bt['bank.pdf'])&&/^ok:.*Hipoteca/.test(bt['mortgage.pdf'])&&bt['w2.pdf']==='skip'&&bt['MyBankDownload.csv']==='review'&&/^ok:CuentaSecretaXYZ/.test(bt['Holdings-Oct-30-2026.csv']),'importación por lotes: cada archivo a su cuenta ('+JSON.stringify(bt)+')');
+  ok(bt['Checking6789_activity_2026-11-15.csv']==='ok:checking:2'&&/^ok:checking/.test(bt['bank.pdf'])&&bt['mortgage.pdf']==='skip'&&bt['w2.pdf']==='skip'&&bt['MyBankDownload.csv']==='review'&&bt['Holdings-Oct-30-2026.csv']==='skip','importación por lotes: cada archivo a su cuenta; lo ya importado se salta ('+JSON.stringify(bt)+')');
+  // Extractos repetidos: se detectan aunque se suban otro día; "Importar de nuevo" reemplaza sin duplicar
+  const dupInfo=await pg.evaluate(()=>{ const r=BATCH.res.find(x=>x.name==='mortgage.pdf'); return {msg:r.msg,btn:!!document.querySelector('[data-bforce]'),imports:S.imports.length,snaps:S.snapshots.length,docs:Object.values(S.tax).reduce((n,t)=>n+t.docs.length,0)}; });
+  ok(/Ya importado el/.test(dupInfo.msg)&&dupInfo.btn,'extracto ya importado: aviso y botón para importarlo de nuevo');
+  await pg.click(`[data-bforce="${await pg.evaluate(()=>BATCH.res.findIndex(x=>x.name==='mortgage.pdf'))}"]`); await pg.waitForTimeout(800);
+  ok(await pg.evaluate(d=>{ const r=BATCH.res.find(x=>x.name==='mortgage.pdf'); return r.status==='ok'&&S.imports.length===d.imports&&S.snapshots.length===d.snaps; },dupInfo),'importar de nuevo reemplaza la importación anterior sin duplicar saldos');
+  await pg.click(`[data-bforce="${await pg.evaluate(()=>BATCH.res.findIndex(x=>x.name==='w2.pdf'))}"]`).catch(()=>{}); await pg.waitForTimeout(800);
+  ok(await pg.evaluate(d=>Object.values(S.tax).reduce((n,t)=>n+t.docs.length,0)===d.docs,dupInfo),'un formulario fiscal importado de nuevo no se duplica');
   if(process.env.SHOTS){ await pg.$eval('#batchOut',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/lote-movil.png'}); }
   await pg.click('#batchOut [data-brev]'); await pg.waitForTimeout(400); ok(/MyBankDownload/.test(await pg.$eval('#impOut h2',e=>e.innerText)),'revisar un archivo del lote');
   await pg.selectOption('#mAcc',{label:'savings'}); await pg.click('#mGo'); await pg.waitForTimeout(200);
@@ -209,6 +216,20 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>/Antes de los 59½/.test($('#rTips').innerText)),'aviso de penalización antes de los 59½');
   await pg.evaluate(()=>{ S.settings.retire={}; save(); });
   await pg.goto(U+'#importar'); await pg.waitForTimeout(300);
+  // El mismo extracto con otro nombre y otros bytes (descargado otro día) se detecta por su contenido
+  await pg.goto(U+'#importar'); await pg.waitForTimeout(300);
+  await pg.setInputFiles('#fAll',[{name:'eStmt_copia.pdf',mimeType:'application/pdf',buffer:Buffer.concat([fs.readFileSync(path.join(FX,'bofa_savings.pdf')),Buffer.from('\n% otra descarga\n')])}]);
+  await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='eStmt_copia.pdf',null,{timeout:20000});
+  ok(await pg.evaluate(()=>BATCH.res[0].status==='skip'&&!!BATCH.res[0].dupOf),'extracto repetido con otro nombre: no se vuelve a sumar');
+  // Borrar una cuenta borra todo lo que vino de ella
+  const sv=await pg.evaluate(()=>{ const a=S.accounts.find(x=>x.last4==='5555'); return {id:a.id,tx:S.tx.filter(t=>t.acc===a.id).length,imp:S.imports.filter(e=>e.acc===a.id).length,xferRec:S.tx.some(t=>t.rec&&t.rec.type==='xfer'&&t.rec.acc===a.id)}; });
+  await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300); await pg.click(`[data-acc="${sv.id}"]`); await pg.click('#modal [data-edit]'); await pg.click('#eDel'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>/movimientos/.test($('#modal').innerText)&&/extractos registrados/.test($('#modal').innerText)),'aviso de todo lo que se borra con la cuenta');
+  await pg.click('#dOk'); await pg.waitForTimeout(300);
+  ok(sv.tx>0&&sv.imp>0&&await pg.evaluate(id=>!acc(id)&&!S.tx.some(t=>t.acc===id||(t.rec&&t.rec.acc===id))&&!S.snapshots.some(x=>x.acc===id)&&!S.imports.some(e=>e.acc===id),sv.id),'borrar una cuenta: sin movimientos, saldos, emparejamientos ni registro');
+  await pg.goto(U+'#importar'); await pg.waitForTimeout(300); await pg.setInputFiles('#fAll',[fx('bofa_savings.pdf')]);
+  await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='bofa_savings.pdf',null,{timeout:20000});
+  ok(await pg.evaluate(()=>BATCH.res[0].status==='ok'&&BATCH.res[0].created&&acc(BATCH.res[0].acc).last4==='5555'),'tras borrarla, el extracto se puede importar como nuevo');
   // Botón "Importar" de una cuenta: el archivo va a esa cuenta aunque el nombre no diga nada
   await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
   const svId=await pg.evaluate(()=>S.accounts.find(a=>a.name==='savings').id);

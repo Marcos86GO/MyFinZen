@@ -223,6 +223,8 @@ function sanitizeState(st){
     const tt={}; for(const [k,v] of Object.entries(obj(t.ttDone))) if(/^\d{1,3}$/.test(k)) tt[k]=!!v;
     tax[y]={filing:t.filing==='S'?'S':'MFJ',kids:Math.max(0,Math.round(nn('kids'))),docs,profile:prof,rental,ttDone:tt,charity:nn('charity'),estFed:nn('estFed'),estCA:nn('estCA'),otherIncome:nn('otherIncome'),childcareNoted:!!t.childcareNoted}; }
   o.tax=tax;
+  o.imports=arr(o.imports).map(e=>{ e=obj(e); const x={id:cleanId(e.id)||uid(),acc:e.acc?cleanId(e.acc):null,kind:str(e.kind,12),fp:str(e.fp,300),hash:str(e.hash,64),name:str(e.name,160),date:isoDate(e.date),added:isoDate(e.added)||today()};
+    if(e.doc) x.doc=cleanId(e.doc); const c=numStrict(e.contrib); if(c) x.contrib=c; return x; }).filter(e=>e.fp||e.hash).slice(-2000);
   o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,40),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
   o.secret=o.secret&&typeof o.secret.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(o.secret.apiKey)?{apiKey:o.secret.apiKey}:{};
   o.v=1; o.created=typeof o.created==='string'?o.created:new Date().toISOString();
@@ -1102,7 +1104,12 @@ function editAccount(id, kind='cash', preset={}){
     if(['brokerage','retirement','kids'].includes(kk)) h=`<label class="f">${L('Total aportado de tu bolsillo (opcional, para ver la ganancia)','Total contributed out of pocket (optional, to see your gain)')}<input id="xC" inputmode="decimal" value="${a.contributed??''}"></label>`;
     $('#eExtra').innerHTML=h; };
   extra(); $('#eK').onchange=extra; $('#mc').onclick=closeModal;
-  if(id) $('#eDel').onclick=()=>{ openModal(`<h2>${L('¿Borrar','Delete')} ${esc(a.name)}?</h2><p>${L('Se borrarán también su historial de saldos. Los movimientos se quedan, sin cuenta asignada.','Its balance history will be deleted too. Transactions stay, with no account assigned.')}</p><div class="row"><button id="mc">${L('Cancelar','Cancel')}</button><button class="dan" id="dOk">${L('Borrar','Delete')}</button></div>`); $('#mc').onclick=closeModal; $('#dOk').onclick=()=>{ S.accounts=S.accounts.filter(x=>x.id!==id); S.snapshots=S.snapshots.filter(s=>s.acc!==id); S.tx.forEach(t=>{if(t.acc===id)t.acc=null}); save(); closeModal(); route(); }; };
+  if(id) $('#eDel').onclick=()=>{ const n=accountFootprint(id);
+    openModal(`<h2>${L('¿Borrar','Delete')} ${esc(a.name)}?</h2><p>${L('Se borra todo lo que viene de esta cuenta, como si nunca la hubieras importado:','Everything that comes from this account is deleted, as if you had never imported it:')}</p>
+      <ul>${[[n.tx,L('movimientos','transactions')],[n.snap,L('saldos','balances')],[n.hold,L('fotos de posiciones','position snapshots')],[n.docs,L('documentos fiscales vinculados','linked tax documents')],[n.imp,L('extractos registrados','registered statements')]].filter(x=>x[0]).map(([k,t])=>`<li><b>${k}</b> ${t}</li>`).join('')}${n.contrib?`<li>${L('aportaciones y fondos de la cuenta','the account\'s contributions and funds')}</li>`:''}</ul>
+      <p class="muted">${L('Los pagos y transferencias de otras cuentas que se emparejaban con ella vuelven a su categoría. No se puede deshacer, salvo restaurando una copia.','Payments and transfers in other accounts that were matched with it go back to their category. This can\'t be undone, except by restoring a backup.')}</p>
+      <div class="row"><button id="mc">${L('Cancelar','Cancel')}</button><button class="dan" id="dOk">${L('Borrar todo','Delete everything')}</button></div>`);
+    $('#mc').onclick=closeModal; $('#dOk').onclick=()=>{ deleteAccount(id); save(); closeModal(); toast(L('Cuenta borrada con todos sus datos','Account deleted with all its data')); route(); }; };
   $('#eOk').onclick=()=>{
     const v=x=>{const e=$(x); if(!e)return undefined; const n=num(e.value); return isNaN(n)?null:n;};
     const o=id?a:{id:uid()}; o.kind=$('#eK').value; o.name=$('#eN').value.trim()||KINDS[o.kind].label; o.institution=$('#eI').value.trim(); o.last4=$('#eL').value.replace(/\D/g,'').slice(-4);
@@ -1171,6 +1178,7 @@ function parseCSV(text){
   return rows.filter(r=>r.some(x=>x.trim()));
 }
 async function handleCSV(file){
+  startImport(file.name,await fileHash(file),true);
   let text; try{ text=await file.text(); }catch(e){ toast(L('No pude leer el archivo','I couldn\'t read the file')); return; }
   const rows=parseCSV(text); if(!rows.length){ toast(L('El archivo está vacío','The file is empty')); return; }
   if(isHoldingsCSV(rows)){ renderHoldingsPreview(file.name,rows); return; }
@@ -1201,10 +1209,10 @@ function csvRowsToTx(p){
   return out;
 }
 function renderCSVPreview(){
-  const p=pendingCSV; const out=$('#impOut'); const tx=csvRowsToTx(p);
+  const p=pendingCSV; const out=$('#impOut'); const tx=csvRowsToTx(p); dupCheck('csv|'+fpTx(tx));
   const opts=(sel)=>p.head.map((h,i)=>`<option value="${i}" ${i===sel?'selected':''}>${esc(h||'col '+(i+1))}</option>`).join('');
   const accs=S.accounts.filter(a=>['cash','credit'].includes(a.kind));
-  out.innerHTML=`<div class="card"><h2>${esc(p.file)}</h2><p class="sub">${L(`${tx.length} movimientos detectados. Revisa las columnas y el signo: los gastos deben salir en negativo.`,`${tx.length} transactions detected. Check the columns and the sign: expenses must be negative.`)}</p>
+  out.innerHTML=dupBanner()+`<div class="card"><h2>${esc(p.file)}</h2><p class="sub">${L(`${tx.length} movimientos detectados. Revisa las columnas y el signo: los gastos deben salir en negativo.`,`${tx.length} transactions detected. Check the columns and the sign: expenses must be negative.`)}</p>
    <div class="row"><label class="f">${L('Fecha','Date')}<select id="mD">${opts(p.cDate)}</select></label><label class="f">${L('Descripción','Description')}<select id="mS">${opts(p.cDesc)}</select></label>
    ${p.cAmt>=0?`<label class="f">${L('Importe','Amount')}<select id="mA">${opts(p.cAmt)}</select></label>`:`<label class="f">${L('Cargo','Debit')}<select id="mDe">${opts(p.cDeb)}</select></label><label class="f">${L('Abono','Credit')}<select id="mCr">${opts(p.cCred)}</select></label>`}</div>
    <div class="row"><label class="f">${L('Cuenta','Account')}<select id="mAcc">${accs.map(a=>`<option value="${a.id}" ${p.guess===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!p.guess&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Crear cuenta nueva…','+ Create a new account…')}</option></select></label>
@@ -1217,7 +1225,7 @@ function renderCSVPreview(){
   $('#mGo').onclick=()=>{
     let accId=$('#mAcc').value;
     if(accId==='__new'){ const n={id:uid(),kind:/card|credit|amex|visa/i.test(p.file)?'credit':'cash',name:p.file.replace(/\.csv$/i,''),institution:''}; S.accounts.push(n); accId=n.id; }
-    const {added,dup}=importTxInto(accId,tx,'csv'); learnKey(acc(accId),fileKey(p.file));
+    const {added,dup}=importTxInto(accId,tx,'csv'); learnKey(acc(accId),fileKey(p.file)); regImport({acc:accId,kind:'csv',date:tx.map(t=>t.date).sort().pop()});
     save(); pendingCSV=null; toast(L(`${added} importados${dup?` · ${dup} duplicados ignorados`:''}`,`${added} imported${dup?` · ${dup} duplicates skipped`:''}`)); const R=reconcile(); if(R.changed) save(); const nIss=R.issues.filter(i=>i.lvl!=='info').length;
     out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${added} movimientos importados</b>${dup?` (${dup} ya estaban)`:''}. Revisa las categorías en <a href="#flujo">Movimientos</a>: si cambias una, puedo aplicarla a todos los parecidos. Actualiza también el saldo de la cuenta en <a href="#cuentas">Cuentas</a>.<br>Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados entre cuentas, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b>`:''}.`,`<b>${added} transactions imported</b>${dup?` (${dup} were already there)`:''}. Review the categories in <a href="#flujo">Transactions</a>: if you change one, I can apply it to all similar ones. Also update the account balance in <a href="#cuentas">Accounts</a>.<br>Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched between accounts, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b>`:''}.`)}</div></div>`;
   };
@@ -1464,6 +1472,7 @@ function sanitizeExtract(res){ res=obj(res); const kinds=['cash','credit','broke
     tax_forms:arr(res.tax_forms).map(f=>{ f=obj(f); const fields={}; for(const [k,v] of Object.entries(obj(f.fields))){ const n=numStrict(v); if(/^\w{1,30}$/.test(k)&&n!=null) fields[k]=n; } const y=parseInt(f.tax_year); return {form:Object.prototype.hasOwnProperty.call(FORM_FIELDS_,f.form)?f.form:'OTHER',tax_year:y>2000&&y<2100?y:null,payer:str(f.payer,120),fields}; }).slice(0,20)}; }
 /* ---- Main PDF handler ---- */
 async function handlePDF(file){
+  startImport(file.name,await fileHash(file),true);
   const out=$('#impOut'); out.innerHTML=`<div class="card">${L('Leyendo el PDF en tu dispositivo…','Reading the PDF on your device…')}</div>`;
   let text; try{ text=await pdfText(file); }catch(e){ pdfDone(`<div class="alert crit"><span class="ic">!</span><div>${L('No pude leer','I couldn\'t read')} ${esc(file.name)}: ${esc(e.message)}</div></div>`); return; }
   if(text.replace(/\s/g,'').length<40){ pdfDone('<div class="alert warn"><span class="ic">!</span><div>'+esc(file.name)+L(' parece una imagen escaneada y no tiene texto. Añade los datos a mano.',' looks like a scanned image and has no text. Add the data by hand.')+'</div></div>'); return; }
@@ -1476,9 +1485,9 @@ async function handlePDF(file){
   if(S.settings.autoClaude && (!r.cands.length || !r.tx.length)) $('#gAI')&&$('#gAI').click();
 }
 function renderMortgagePDF(r,name,text){
-  const out=$('#impOut'); const ms=S.accounts.filter(a=>a.kind==='mortgage'); const match=ms.find(a=>r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage')||null;
+  dupCheck('mort|'+fpOf(r.institution,r.last4,r.date,r.balance)); const out=$('#impOut'); const ms=S.accounts.filter(a=>a.kind==='mortgage'); const match=ms.find(a=>r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage')||null;
   const props=S.accounts.filter(a=>a.kind==='property');
-  out.innerHTML=`<div class="card"><h2>${L('Hipoteca detectada','Mortgage detected')} · ${esc(r.institution)}</h2><p class="sub">${esc(name)} · ${L('extracto del','statement of')} ${r.date?dLabel(r.date):'—'}. ${L('Revisa los datos antes de guardar.','Check the data before saving.')}</p>
+  out.innerHTML=dupBanner()+`<div class="card"><h2>${L('Hipoteca detectada','Mortgage detected')} · ${esc(r.institution)}</h2><p class="sub">${esc(name)} · ${L('extracto del','statement of')} ${r.date?dLabel(r.date):'—'}. ${L('Revisa los datos antes de guardar.','Check the data before saving.')}</p>
    <div class="row"><label class="f">${L('Saldo pendiente','Outstanding balance')}<input id="pB" value="${isNaN(r.balance)?'':r.balance}"></label><label class="f">${L('Tipo %','Rate %')}<input id="pR" value="${isNaN(r.rate)?'':r.rate}"></label></div>
    <div class="row"><label class="f">${L('Cuota capital+intereses','Principal + interest payment')}<input id="pP" value="${r.pi||''}"></label><label class="f">${L('Principal extra mensual','Monthly extra principal')}<input id="pE" value="${r.extra||0}"></label></div>
    <div class="row"><label class="f">${L('Escrow mensual','Monthly escrow')}<input id="pS" value="${r.escrow||0}"></label><label class="f">${L('Fecha del saldo','Balance date')}<input type="date" id="pD" value="${r.date||today()}"></label></div>
@@ -1490,14 +1499,14 @@ function renderMortgagePDF(r,name,text){
   $('#pOk').onclick=()=>{ const bal=num($('#pB').value); if(isNaN(bal)) return toast(L('Pon el saldo pendiente','Enter the outstanding balance')); let id=$('#pAcc').value; let m;
     if(id==='__new'){ m={id:uid(),kind:'mortgage',name:$('#pN').value.trim()||L('Hipoteca','Mortgage'),institution:r.institution,last4:r.last4}; S.accounts.push(m); } else m=acc(id);
     if($('#pPr').value) m.propertyId=$('#pPr').value;
-    saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull($('#pR').value),pi:finOrNull($('#pP').value),extra:finOrNull($('#pE').value)||0,escrow:finOrNull($('#pS').value)||0}),bal,isoDate($('#pD').value)||today()); save();
+    saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull($('#pR').value),pi:finOrNull($('#pP').value),extra:finOrNull($('#pE').value)||0,escrow:finOrNull($('#pS').value)||0}),bal,isoDate($('#pD').value)||today()); regImport({acc:m.id,kind:'mortgage',date:isoDate($('#pD').value)||today()}); save();
     const R=reconcile(); const mr=R.mort[m.id]; const LP=mr&&mr.last;
     pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Hipoteca guardada.</b> Cuota mensual total ${fmt(mortMonthly(m),2)}${LP?`; último pago encontrado en tus cuentas: ${fmt(-LP.amount,2)} el ${dLabel(LP.date)}`:''}. Mírala en <a href="#hipotecas">Hipotecas</a>.`,`<b>Mortgage saved.</b> Total monthly payment ${fmt(mortMonthly(m),2)}${LP?`; last payment found in your accounts: ${fmt(-LP.amount,2)} on ${dLabel(LP.date)}`:''}. See it in <a href="#hipotecas">Mortgages</a>.`)}</div></div>`); };
 }
 function renderGenericPDF(r,name,text){
-  const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage'); const {m:gm,key:gkey}=matchPDF(r,text); const gid=gm?gm.acc.id:null;
+  dupCheck(fpPDF(r)); const out=$('#impOut'); const accs=S.accounts.filter(a=>a.kind!=='mortgage'); const {m:gm,key:gkey}=matchPDF(r,text); const gid=gm?gm.acc.id:null;
   const tx=r.tx||[];
-  out.innerHTML=`<div class="card"><h2>${esc(r.institution||'Statement')}</h2><p class="sub">${esc(name)} · ${KINDS[r.kind]?KINDS[r.kind].label:''}. ${L('Revisa antes de guardar.','Check before saving.')}</p>
+  out.innerHTML=dupBanner()+`<div class="card"><h2>${esc(r.institution||'Statement')}</h2><p class="sub">${esc(name)} · ${KINDS[r.kind]?KINDS[r.kind].label:''}. ${L('Revisa antes de guardar.','Check before saving.')}</p>
    <div class="row"><label class="f">${L('Cuenta','Account')}<select id="gAcc">${accs.map(a=>`<option value="${a.id}" ${gid===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${!gid&&(IMPORT_NEW||!accs.length)?'selected':''}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="gK">${Object.entries(KINDS).filter(([k])=>k!=='mortgage').map(([k,v])=>`<option value="${k}" ${k===r.kind?'selected':''}>${v.label}</option>`).join('')}</select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="gN" value="${esc(stmtAccName(r))}"></label></div>
    <h3 class="sec" style="margin-top:8px">${L('Saldo','Balance')}</h3>
    ${r.cands.length?`<div style="margin-bottom:6px">${r.cands.slice(0,5).map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0"><input type="radio" name="cand" value="${c.v}" style="width:auto;margin-top:3px" ${i===0?'checked':''}><span><b>${fmt(c.v,2)}</b> <span class="muted">${esc(c.line)}</span></span></label>`).join('')}</div>`:`<p class="muted">${L('No encontré el saldo automáticamente.','I couldn\'t find the balance automatically.')}</p>`}
@@ -1516,6 +1525,7 @@ function renderGenericPDF(r,name,text){
     const v=num($('#gV').value); if(!isNaN(v)) upsertSnap(id,isoDate($('#gD').value)||today(),v);
     const c=num($('#gC').value); if(!isNaN(c)&&c) { const a=acc(id); a.contributed=(a.contributed||0)+c; }
     const nf=saveFunds(acc(id),Object.assign({},r,{date:isoDate($('#gD').value)||r.date,dateFound:true}));
+    regImport({acc:id,kind:'pdf',date:isoDate($('#gD').value)||r.date,contrib:!isNaN(c)&&c?c:undefined});
     let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; ({added,dup}=importTxInto(id,tx.map(t=>flip?Object.assign({},t,{amount:-t.amount}):t),'pdf')); }
     learnKey(acc(id),gkey); save(); const RR=reconcile(); if(RR.changed) save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Guardado.</b> ${!isNaN(v)?`Saldo ${fmt(v,2)}. `:''}${added?`${added} movimientos importados${dup?` (${dup} ya estaban)`:''}. `:''}Revisa en <a href="#cuentas">Cuentas</a>${added?' e <a href="#flujo">Movimientos</a>':''}.`,`<b>Saved.</b> ${!isNaN(v)?`Balance ${fmt(v,2)}. `:''}${added?`${added} transactions imported${dup?` (${dup} were already there)`:''}. `:''}Check in <a href="#cuentas">Accounts</a>${added?' and <a href="#flujo">Transactions</a>':''}.`)}</div></div>`); };
   $('#gAI').onclick=async()=>{ const box=$('#gAIout'); box.innerHTML=`<p class="muted">${L('Pidiendo a Claude…','Asking Claude…')}</p>`;
@@ -1533,9 +1543,10 @@ function renderTaxImport(name,text,type,claudeForms){
   const out=$('#impOut');
   const yr=taxYearOf(text);
   const forms=claudeForms|| (type==='C1099'?[{form:'C1099',tax_year:yr,payer:'',fields:localTaxFields('C1099',text)}]:[{form:type,tax_year:yr,payer:'',fields:localTaxFields(type,text)}]);
+  { const f0=forms[0]||{}; dupCheck(fpTax(f0.form||type,f0.tax_year||yr,f0.payer||payerOf(text),f0.fields||{})); }
   const payerGuess=payerOf(text);
   const accOpts=S.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
-  out.innerHTML=`<div class="card"><h2>${L('Documento fiscal detectado','Tax document detected')}</h2><p class="sub">${esc(name)}. ${L('Se guarda en <a href="#impuestos">Impuestos</a>. Revisa las cifras: los formularios fiscales tienen formatos muy distintos.','It is saved in <a href="#impuestos">Taxes</a>. Check the figures: tax forms come in very different layouts.')}</p>
+  out.innerHTML=dupBanner()+`<div class="card"><h2>${L('Documento fiscal detectado','Tax document detected')}</h2><p class="sub">${esc(name)}. ${L('Se guarda en <a href="#impuestos">Impuestos</a>. Revisa las cifras: los formularios fiscales tienen formatos muy distintos.','It is saved in <a href="#impuestos">Taxes</a>. Check the figures: tax forms come in very different layouts.')}</p>
    ${forms.map((f,i)=>{ const t=FORM_FIELDS[f.form]?f.form:'OTHER'; return `<div class="card" style="background:var(--surface-2);margin-bottom:10px" data-form="${i}">
      <div class="row"><label class="f">${L('Tipo','Type')}<select class="tType">${Object.entries(FORM_LABEL).map(([k,v])=>`<option value="${k}" ${k===t?'selected':''}>${v}</option>`).join('')}</select></label><label class="f">${L('Año fiscal','Tax year')}<input class="tYear" inputmode="numeric" value="${f.tax_year||yr}"></label><label class="f">${L('Emisor','Payer')}<input class="tPayer" value="${esc(f.payer||payerGuess)}"></label></div>
      <label class="f">${L('Cuenta relacionada','Related account')}<select class="tAcc"><option value="">—</option>${accOpts}</select></label>
@@ -1548,7 +1559,8 @@ function renderTaxImport(name,text,type,claudeForms){
   $('#tCancel').onclick=()=>pdfDone('');
   if($('#tAI')) $('#tAI').onclick=async()=>{ const box=$('#tAIout'); box.innerHTML=`<p class="muted">${L('Pidiendo a Claude…','Asking Claude…')}</p>`; try{ const res=await claudeExtract(text); if(!res){box.innerHTML='';return;} if(res.tax_forms&&res.tax_forms.length) renderTaxImport(name,text,res.tax_forms[0].form,res.tax_forms); else box.innerHTML=`<p class="muted">${L('Claude no encontró formularios fiscales.','Claude found no tax forms.')}</p>`; }catch(e){ box.innerHTML=`<p class="muted">${esc(e.message||'Error')}</p>`; } };
   $('#tOk').onclick=()=>{ let n=0; out.querySelectorAll('[data-form]').forEach(b=>{ const type=b.querySelector('.tType').value; const year=+b.querySelector('.tYear').value||yr; const fields={}; b.querySelectorAll('[data-k]').forEach(i=>{ const v=num(i.value); if(!isNaN(v)) fields[i.dataset.k]=v; });
-      taxYear(year).docs.push({id:uid(),type,payer:b.querySelector('.tPayer').value.trim(),acc:b.querySelector('.tAcc').value||null,fields,src:name,added:today()}); n++; taxSel.year=year; });
+      const did=uid(), payer=b.querySelector('.tPayer').value.trim(), pacc=b.querySelector('.tAcc').value||null; if(!n) dupCheck(fpTax(type,year,payer,fields));
+      taxYear(year).docs.push({id:did,type,payer,acc:pacc,fields,src:name,added:today()}); if(!n) regImport({acc:pacc,kind:'tax',date:year+'-12-31',doc:did}); n++; taxSel.year=year; });
     save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${n} documento${n>1?'s':''} guardado${n>1?'s':''}.</b> Míralo en <a href="#impuestos">Impuestos</a>.`,`<b>${n} document${n>1?'s':''} saved.</b> See it in <a href="#impuestos">Taxes</a>.`)}</div></div>`); };
 }
 /* ============================================================
@@ -1559,7 +1571,7 @@ function renderTaxImport(name,text,type,claudeForms){
 const isPdfFile=f=>/\.pdf$/i.test(f.name)||f.type==='application/pdf';
 // Guardado común (importación individual y por lotes)
 // st: identifica el extracto; dos movimientos iguales del mismo extracto no se marcan como duplicados.
-function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0; const st=uid();
+function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0; const st=(IMP_CTX&&IMP_CTX.id)||uid();
   // Solo cuenta como repetido lo que ya estaba guardado: dos cargos iguales el mismo día en un extracto son dos cargos.
   for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;}
     S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc,t.amount)||otherCat(t.amount),acc:accId,src,st}); added++; }
@@ -1604,32 +1616,36 @@ async function autoCSV(file){
   if(isHoldingsCSV(rows)){ const H=parseHoldings(rows); const pool=S.accounts.filter(a=>['brokerage','kids','retirement'].includes(a.kind)); const fk=fileKey(file.name);
     const a=forAcc(x=>pool.includes(x))||(pool.find(x=>fk&&(x.keys||[]).includes(fk)))||(pool.filter(x=>/m1/i.test(x.name+' '+(x.institution||''))).length===1?pool.find(x=>/m1/i.test(x.name+' '+(x.institution||''))):null);
     if(!a) return {status:'review',kind:'holdings',msg:pool.length?L('El CSV de posiciones no dice de qué cuenta es. Usa el botón "Importar" de esa cuenta en Mis cuentas y la próxima vez irá solo.','The positions CSV doesn\'t say which account it is from. Use that account\'s "Import" button in My accounts and next time it will go there on its own.'):L('Aún no tienes la cuenta de inversión: pulsa "Revisar" para crearla con estas posiciones.','You don\'t have the investment account yet: tap "Review" to create it with these positions.')};
-    saveHoldings(a.id,H,dateFromFilename(file.name),true,true); learnKey(a,fk); return {status:'ok',kind:'holdings',acc:a.id,msg:L(`${H.length} posiciones`,`${H.length} positions`)}; }
+    { const d=dupCheck(fpHold(H)); if(d) return Object.assign(d,{kind:'holdings'}); }
+    const hd=dateFromFilename(file.name); saveHoldings(a.id,H,hd,true,true); learnKey(a,fk); regImport({acc:a.id,kind:'holdings',date:hd}); return {status:'ok',kind:'holdings',acc:a.id,msg:L(`${H.length} posiciones`,`${H.length} positions`)}; }
   const p=csvPrepare(file.name,rows);
   if(p.cDate<0||(p.cAmt<0&&p.cDeb<0&&p.cCred<0)) return {status:'review',kind:'csv',msg:L('No reconozco las columnas de fecha e importe','I can\'t recognize the date and amount columns')};
+  { const d=dupCheck('csv|'+fpTx(csvRowsToTx(p))); if(d) return Object.assign(d,{kind:'csv'}); }
   const mm=matchCSV(file.name); if(!mm) return {status:'review',kind:'csv',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')};
   const a=mm.acc; p.flip=false;
   if(p.cAmt>=0){ const vals=p.data.map(r=>num(r[p.cAmt])).filter(v=>!isNaN(v)); const pos=vals.filter(v=>v>0).length; p.flip=a.kind==='credit'&&pos>vals.length*0.7; }
   const tx=csvRowsToTx(p); if(!tx.length) return {status:'review',kind:'csv',msg:L('No encontré movimientos','I found no transactions')};
-  const r=importTxInto(a.id,tx,'csv'); learnKey(a,fileKey(file.name));
+  const r=importTxInto(a.id,tx,'csv'); learnKey(a,fileKey(file.name)); regImport({acc:a.id,kind:'csv',date:tx.map(t=>t.date).sort().pop()});
   return {status:r.added?'ok':'skip',kind:'csv',acc:a.id,added:r.added,dup:r.dup,flip:p.flip}; }
 
 async function autoPDF(file){
   const text=await pdfText(file); if(text.replace(/\s/g,'').length<40) return {status:'review',kind:'pdf',msg:L('Parece una imagen escaneada, sin texto','It looks like a scanned image, with no text')};
   const r=parseStatement(text); const is1098=/Form\s*1098\b|Mortgage Interest Statement/i.test(text);
-  if(r.type==='mortgage'&&!is1098){ let m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage'&&!(r.last4&&a.last4&&a.last4!==r.last4));
+  if(r.type==='mortgage'&&!is1098){ { const d=dupCheck('mort|'+fpOf(r.institution,r.last4,r.date,r.balance)); if(d) return Object.assign(d,{kind:'mortgage'}); }
+    let m=S.accounts.find(a=>a.kind==='mortgage'&&r.last4&&a.last4===r.last4)||forAcc(a=>a.kind==='mortgage'&&!(r.last4&&a.last4&&a.last4!==r.last4));
     let created=false;
     if(!m&&r.last4&&!isNaN(r.balance)&&r.pi>0){ m=newAccFrom({institution:r.institution,last4:r.last4,product:L('Hipoteca','Mortgage')},'mortgage'); created=true; }
     if(!m) return {status:'review',kind:'mortgage',msg:L('Hipoteca sin número de préstamo: revísala y elige la cuenta','A mortgage without a loan number: review it and choose the account')+' ('+esc(r.institution||'?')+')'};
     if(isNaN(r.balance)||!r.pi) return {status:'review',kind:'mortgage',msg:L('No encontré el saldo o la cuota','I couldn\'t find the balance or the payment')};
-    saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull(r.rate)}),r.balance,r.date||today());
+    saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull(r.rate)}),r.balance,r.date||today()); regImport({acc:m.id,kind:'mortgage',date:r.date||today()});
     return {status:'ok',kind:'mortgage',acc:m.id,bal:r.balance,date:r.date,created}; }
   const tf=detectTaxForm(text);
   if(tf){ const yr=taxYearOf(text), ty=taxYear(yr); if(ty.docs.some(d=>d.src===file.name&&d.type===tf)) return {status:'skip',kind:'tax',msg:L('Ya estaba guardado','Already saved')};
     const fields=localTaxFields(tf,text); if(!Object.keys(fields).length) return {status:'review',kind:'tax',msg:L('No encontré las cifras del formulario','I couldn\'t find the form\'s figures')};
-    const payer=payerOf(text), pa=payerAccount(payer); ty.docs.push({id:uid(),type:tf,payer,acc:pa?pa.id:null,fields,src:file.name,added:today()});
+    const payer=payerOf(text), pa=payerAccount(payer); { const d=dupCheck(fpTax(tf,yr,payer,fields)); if(d) return Object.assign(d,{kind:'tax'}); }
+    const did=uid(); ty.docs.push({id:did,type:tf,payer,acc:pa?pa.id:null,fields,src:file.name,added:today()}); regImport({acc:pa?pa.id:null,kind:'tax',date:yr+'-12-31',doc:did});
     return {status:'ok',kind:'tax',msg:`${FORM_LABEL[tf]} · ${yr} · ${L('revisa las cifras en Impuestos','check the figures in Taxes')}`}; }
-  if(!r.known) r.tx=parseTxLines(text,r.date); stmtCheck(r,text); const {m:mm,key}=matchPDF(r,text);
+  if(!r.known) r.tx=parseTxLines(text,r.date); stmtCheck(r,text); { const d=dupCheck(fpPDF(r)); if(d) return Object.assign(d,{kind:'pdf'}); } const {m:mm,key}=matchPDF(r,text);
   let a=mm&&mm.acc, created=false;
   if(!a){ const enough=(r.known||(r.institution&&r.last4))&&((r.dateFound&&r.cands.length)||r.tx.length);
     if(!enough) return {status:'review',kind:'pdf',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')+' — '+L('detectado','detected')+': '+esc(seenAs(r))};
@@ -1639,7 +1655,7 @@ async function autoPDF(file){
   if(!useBal&&!txOk) return {status:'review',kind:'pdf',acc:a.id,msg:L('No encontré el saldo con su fecha ni movimientos','I couldn\'t find a dated balance or transactions')};
   if(r.last4&&!a.last4) a.last4=r.last4;
   if(useBal) upsertSnap(a.id,r.date,bal); const res=txOk?importTxInto(a.id,r.tx,'pdf'):{added:0,dup:0}; learnKey(a,key);
-  const nf=saveFunds(a,r);
+  const nf=saveFunds(a,r); regImport({acc:a.id,kind:'pdf',date:r.dateFound?r.date:null});
   return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,created,funds:nf,check:r.check}; }
 // Fondos del plan (401(k), IRA…): se guardan como posiciones de la cuenta para ver su distribución
 function saveFunds(a,r){ if(r.contrib&&a.kind==='retirement'&&r.dateFound&&!(a.contrib401&&a.contrib401.date>r.date)) a.contrib401=Object.assign({date:r.date},r.contrib);
@@ -1652,7 +1668,34 @@ function stmtAccName(r){ return ([INST_SHORT[r.institution]||r.institution,r.pro
 function newAccFrom(r,kind){
   const a={id:uid(),kind,name:stmtAccName(r)||L('Cuenta','Account'),institution:r.institution||'',last4:r.last4||''}; S.accounts.push(a); return a; }
 function seenAs(r){ return [r.institution||L('entidad desconocida','unknown institution'),KINDS[r.kind]?KINDS[r.kind].label:'',r.last4?'···'+r.last4:L('sin número de cuenta','no account number')].filter(Boolean).join(' · '); }
+/* Registro de extractos importados (S.imports): huella del archivo (SHA-256) y huella del contenido (entidad, cuenta,
+   fecha, saldo, número y suma de movimientos…) para detectar un extracto repetido aunque se suba otro día o con otro
+   nombre. IMP_CTX es la importación en curso: su id marca los movimientos (t.st) y, al guardar, se registra. Si se
+   importa de nuevo a propósito, se reemplaza la anterior (sin duplicar documentos fiscales ni aportaciones). */
+let IMP_CTX=null;
+async function fileHash(f){ try{ return b64(await crypto.subtle.digest('SHA-256',await f.arrayBuffer())); }catch(e){ return ''; } }
+const fpOf=(...p)=>p.map(x=>x==null||(typeof x==='number'&&isNaN(x))?'':typeof x==='number'?r2(x):String(x).toLowerCase().trim()).join('|');
+function fpTx(tx){ if(!tx||!tx.length) return ''; const d=tx.map(t=>t.date).sort(); return fpOf(tx.length,d[0],d[d.length-1],r2(tx.reduce((s,t)=>s+Math.abs(t.amount),0))); }
+function fpPDF(r){ const tx=fpTx(r.tx), bal=r.cands&&r.cands.length?r.cands[0].v:null; if(!r.dateFound&&bal==null&&!tx) return ''; return 'pdf|'+fpOf(r.institution,r.last4,r.kind,r.dateFound?r.date:'',bal)+'|'+tx; }
+function fpHold(H){ return 'hold|'+fpOf(H.length,r2(H.reduce((s,x)=>s+x.value,0)),H.map(x=>x.sym).sort().join(',')); }
+function fpTax(type,year,payer,fields){ return 'tax|'+fpOf(type,year,payer)+'|'+Object.keys(fields).sort().map(k=>k+':'+r2(fields[k])).join(','); }
+function findImport(hash,fp){ const L_=S.imports||[]; return (hash&&L_.find(e=>e.hash===hash))||(fp&&L_.find(e=>e.fp===fp))||null; }
+function startImport(name,hash,force){ IMP_CTX={id:uid(),name,hash:hash||'',fp:'',force:!!force,prev:hash?findImport(hash,null):null}; return IMP_CTX; }
+// Comprueba la huella del contenido. Lote: devuelve un resultado "ya importado" (o null). Revisión: solo la anota.
+function dupCheck(fp){ const C=IMP_CTX; if(!C) return null; C.fp=fp||''; if(!C.prev&&fp) C.prev=findImport(null,fp); if(C.prev&&!C.force) return {status:'skip',dupOf:C.prev.id,msg:dupMsg(C.prev)}; return null; }
+function dupMsg(e){ return L(`Ya importado el ${dLabel(e.added)}${e.name?` (${e.name})`:''}${e.acc&&acc(e.acc)?` en ${acc(e.acc).name}`:''}: no se ha vuelto a sumar nada.`,`Already imported on ${dLabel(e.added)}${e.name?` (${e.name})`:''}${e.acc&&acc(e.acc)?` into ${acc(e.acc).name}`:''}: nothing was added again.`); }
+function dupBanner(){ const e=IMP_CTX&&IMP_CTX.prev; return e?`<div class="alert warn"><span class="ic">!</span><div>${L(`<b>Este extracto ya se importó el ${dLabel(e.added)}</b>${e.name?` (${esc(e.name)})`:''}. Si lo guardas otra vez, reemplaza la importación anterior: no se duplican movimientos, saldos, documentos fiscales ni aportaciones.`,`<b>This statement was already imported on ${dLabel(e.added)}</b>${e.name?` (${esc(e.name)})`:''}. Saving it again replaces the previous import: transactions, balances, tax documents and contributions are not duplicated.`)}</div></div>`:''; }
+function regImport(o){ const C=IMP_CTX; if(!C) return; const prev=C.prev;
+  if(prev){ if(prev.doc&&prev.doc!==o.doc) Object.values(S.tax||{}).forEach(ty=>{ ty.docs=(ty.docs||[]).filter(d=>d.id!==prev.doc); });
+    if(prev.contrib&&prev.acc&&acc(prev.acc)) acc(prev.acc).contributed=r2((acc(prev.acc).contributed||0)-prev.contrib);
+    S.imports=(S.imports||[]).filter(e=>e.id!==prev.id); }
+  S.imports=(S.imports||[]).filter(e=>!(C.hash&&e.hash===C.hash)&&!(C.fp&&e.fp===C.fp));
+  S.imports.push(Object.assign({id:C.id,name:C.name.slice(0,160),hash:C.hash,fp:C.fp,added:today()},o)); if(S.imports.length>2000) S.imports=S.imports.slice(-2000);
+  C.prev=null; }
 let BATCH=null;
+async function importOne(f,force){ const h=await fileHash(f); startImport(f.name,h,force);
+  if(IMP_CTX.prev&&!force){ const r={status:'skip',dupOf:IMP_CTX.prev.id,msg:dupMsg(IMP_CTX.prev)}; IMP_CTX=null; return r; }
+  try{ return isPdfFile(f)?await autoPDF(f):await autoCSV(f); } finally{ IMP_CTX=null; } }
 async function importBatch(files){
   const list=[...files].filter(f=>isPdfFile(f)||/\.(csv|txt)$/i.test(f.name)||/csv|text\/plain|vnd\.ms-excel/.test(f.type));
   const box=$('#batchOut'); if(!box) return; if(!list.length){ toast(L('Elige archivos PDF o CSV','Choose PDF or CSV files')); return; }
@@ -1661,7 +1704,7 @@ async function importBatch(files){
   for(let i=0;i<list.length;i++){ const f=list[i]; const pr=box.querySelector('.bprog'); if(pr) pr.textContent=L(`Procesando ${i+1} de ${list.length}: ${f.name}`,`Processing ${i+1} of ${list.length}: ${f.name}`);
     let r; try{ const h=b64(await crypto.subtle.digest('SHA-256',await f.arrayBuffer()));
       if(seen.has(h)) r={status:'skip',msg:L('Es el mismo archivo que otro de este lote','It is the same file as another one in this batch')};
-      else { seen.add(h); r=isPdfFile(f)?await autoPDF(f):await autoCSV(f); } }catch(e){ r={status:'error',msg:String(e&&e.message||e)}; }
+      else { seen.add(h); r=await importOne(f,false); } }catch(e){ IMP_CTX=null; r={status:'error',msg:String(e&&e.message||e)}; }
     r.file=f; r.name=f.name; BATCH.res.push(r); }
   BATCH.running=false; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch();
 }
@@ -1677,8 +1720,10 @@ function renderBatch(){
     if(r.msg) parts.push(esc(r.msg)); return parts.join(' · '); };
   const R=BATCH.rec; const nIss=R?R.issues.filter(i=>i.lvl!=='info').length:0;
   box.innerHTML=`<div style="margin-top:12px"><p><b>${L(`${res.length} archivos`,`${res.length} files`)}:</b> ${n('ok')} ${L('guardados','saved')} · ${n('review')} ${L('para revisar','to review')} · ${n('skip')} ${L('sin cambios','unchanged')}${n('error')?` · ${n('error')} ${L('con error','with errors')}`:''}</p>
-    ${res.map((r,i)=>{ const [c,s]=ic[r.status]||ic.error; return `<div class="alert ${c}" style="margin-bottom:6px"><span class="ic">${s}</span><div style="flex:1;min-width:0"><div style="overflow-wrap:anywhere"><b>${esc(r.name)}</b></div><div class="muted">${detail(r)}</div>${r.status==='review'?`<button class="sm" style="margin-top:6px" data-brev="${i}">${r.opened?L('Abierto abajo ↓','Opened below ↓'):L('Revisar','Review')}</button>`:''}</div></div>`; }).join('')}
+    ${res.map((r,i)=>{ const [c,s]=ic[r.status]||ic.error; return `<div class="alert ${c}" style="margin-bottom:6px"><span class="ic">${s}</span><div style="flex:1;min-width:0"><div style="overflow-wrap:anywhere"><b>${esc(r.name)}</b></div><div class="muted">${detail(r)}</div>${r.dupOf?`<button class="sm" style="margin-top:6px" data-bforce="${i}">${L('Importar de nuevo (reemplaza el anterior)','Import again (replaces the previous one)')}</button>`:''}${r.status==='review'?`<button class="sm" style="margin-top:6px" data-brev="${i}">${r.opened?L('Abierto abajo ↓','Opened below ↓'):L('Revisar','Review')}</button>`:''}</div></div>`; }).join('')}
     ${R?`<p class="muted">${L(`Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b> en <a href="#flujo">Movimientos</a>`:''}.`,`Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b> in <a href="#flujo">Transactions</a>`:''}.`)}</p>`:''}</div>`;
+  box.querySelectorAll('[data-bforce]').forEach(b=>b.onclick=async()=>{ const i=+b.dataset.bforce, f=res[i].file; b.disabled=true; let r;
+    try{ r=await importOne(f,true); }catch(e){ IMP_CTX=null; r={status:'error',msg:String(e&&e.message||e)}; } r.file=f; r.name=f.name; res[i]=r; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch(); });
   box.querySelectorAll('[data-brev]').forEach(b=>b.onclick=()=>{ const r=res[+b.dataset.brev]; r.opened=true; renderBatch(); if(isPdfFile(r.file)){ pdfBusy=false; pdfQueue.length=0; queuePDF(r.file); } else handleCSV(r.file); setTimeout(()=>{ const o=$('#impOut'); if(o) o.scrollIntoView({behavior:'smooth'}); },300); });
 }
 
@@ -1695,11 +1740,11 @@ function parseHoldings(rows){
 }
 function dateFromFilename(n){ const m=n.match(/([A-Za-z]{3})[-_ ](\d{1,2})[-_ ](\d{4})/); if(m){ const i=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(m[1].toLowerCase()); if(i>=0) return `${m[3]}-${String(i+1).padStart(2,'0')}-${m[2].padStart(2,'0')}`; } const d=n.match(/(\d{4})-(\d{2})-(\d{2})/); return d?d[0]:today(); }
 function renderHoldingsPreview(fileName,rows){
-  const H=parseHoldings(rows); const out=$('#impOut'); const date=dateFromFilename(fileName);
+  const H=parseHoldings(rows); dupCheck(fpHold(H)); const out=$('#impOut'); const date=dateFromFilename(fileName);
   const total=H.reduce((s,x)=>s+x.value,0), cost=H.reduce((s,x)=>s+(x.cost||0),0);
   const accs=S.accounts.filter(a=>['brokerage','kids','retirement'].includes(a.kind));
   const guess=forAcc(a=>accs.includes(a))||accs.find(a=>/m1/i.test(a.name+' '+(a.institution||'')))||(IMPORT_NEW?null:accs[0]);
-  out.innerHTML=`<div class="card"><h2>${L('Posiciones','Positions')} · ${esc(fileName)}</h2><p class="sub">${L(`${H.length} posiciones · valor ${fmt(total,2)} · coste ${fmt(cost,2)} · ganancia no realizada`,`${H.length} positions · value ${fmt(total,2)} · cost ${fmt(cost,2)} · unrealized gain`)} <span class="${total-cost>=0?'pos':'neg'}">${fmt(total-cost,2)}</span></p>
+  out.innerHTML=dupBanner()+`<div class="card"><h2>${L('Posiciones','Positions')} · ${esc(fileName)}</h2><p class="sub">${L(`${H.length} posiciones · valor ${fmt(total,2)} · coste ${fmt(cost,2)} · ganancia no realizada`,`${H.length} positions · value ${fmt(total,2)} · cost ${fmt(cost,2)} · unrealized gain`)} <span class="${total-cost>=0?'pos':'neg'}">${fmt(total-cost,2)}</span></p>
    <div class="row"><label class="f">${L('Cuenta','Account')}<select id="hAcc">${accs.map(a=>`<option value="${a.id}" ${guess&&guess.id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${guess?'':'selected'}>${L('+ Cuenta nueva','+ New account')}</option></select></label><label class="f">${L('Fecha','Date')}<input type="date" id="hD" value="${date}"></label><label class="f">${L('Tipo (si es nueva)','Type (if new)')}<select id="hK"><option value="brokerage">${KINDS.brokerage.label}</option><option value="kids">${KINDS.kids.label}</option><option value="retirement">${KINDS.retirement.label}</option></select></label></div>
    <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="hBal" checked style="width:auto"> ${L('Actualizar el saldo de la cuenta a','Update the account balance to')} ${fmt(total,2)}</label>
    <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="hCost" checked style="width:auto"> ${L(`Usar el coste (${fmt(cost)}) como "total aportado" para calcular la ganancia`,`Use the cost (${fmt(cost)}) as "total contributed" to compute the gain`)}</label>
@@ -1707,7 +1752,7 @@ function renderHoldingsPreview(fileName,rows){
    <div class="row" style="margin-top:10px"><button id="hCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="hOk">${L('Guardar posiciones','Save positions')}</button></div></div>`;
   $('#hCancel').onclick=()=>out.innerHTML='';
   $('#hOk').onclick=()=>{ let id=$('#hAcc').value; if(id==='__new'){ const a={id:uid(),kind:$('#hK').value,name:/m1/i.test(fileName)?'M1':L('Cuenta de inversión','Investment account'),institution:'M1 Finance'}; S.accounts.push(a); id=a.id; }
-    const d=isoDate($('#hD').value)||today(); const a=saveHoldings(id,H,d,$('#hBal').checked,$('#hCost').checked); learnKey(a,fileKey(fileName));
+    const d=isoDate($('#hD').value)||today(); const a=saveHoldings(id,H,d,$('#hBal').checked,$('#hCost').checked); learnKey(a,fileKey(fileName)); regImport({acc:id,kind:'holdings',date:d});
     save(); out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${H.length} posiciones guardadas en ${esc(a.name)}.</b> Míralas en <a href="#inversiones">Inversiones</a>.`,`<b>${H.length} positions saved in ${esc(a.name)}.</b> See them in <a href="#inversiones">Investments</a>.`)}</div></div>`; };
 }
 const ASSET_CLASS={VOO:'EE. UU. grandes',IVV:'EE. UU. grandes',SPY:'EE. UU. grandes',VTI:'EE. UU. total',ITOT:'EE. UU. total',QQQ:'EE. UU. tecnología',QQQM:'EE. UU. tecnología',VOOG:'EE. UU. crecimiento',VUG:'EE. UU. crecimiento',SCHD:'EE. UU. dividendos',VYM:'EE. UU. dividendos',VXUS:'Internacional',VEA:'Internacional',VWO:'Emergentes',IXUS:'Internacional',AVUV:'EE. UU. pequeñas',VB:'EE. UU. pequeñas',IJR:'EE. UU. pequeñas',SMH:'EE. UU. tecnología',SOXX:'EE. UU. tecnología',ARKK:'EE. UU. tecnología',PDBC:'Materias primas',COMT:'Materias primas',DBC:'Materias primas',GLD:'Oro',IAU:'Oro',BND:'Bonos',AGG:'Bonos',BNDX:'Bonos',VGIT:'Bonos',SGOV:'Liquidez',BIL:'Liquidez',ESGV:'EE. UU. ESG',ESGU:'EE. UU. ESG',VSGX:'Internacional ESG',ESGD:'Internacional ESG'};
@@ -1749,6 +1794,17 @@ function holdingsHTML(a){
    <details style="margin-top:8px"><summary>${L(`Ver ${ret?'los':'las'} ${H.length} ${ret?'fondos':'posiciones'}`,`See the ${H.length} ${ret?'funds':'positions'}`)}</summary><div class="tbl"><table><thead><tr><th>${ret?L('Fondo','Fund'):L('Símbolo','Symbol')}</th><th class="n">${L('Cantidad','Quantity')}</th><th class="n">${L('Coste','Cost')}</th><th class="n">${L('Valor','Value')}</th><th class="n">${L('Ganancia','Gain')}</th><th class="n">${L('% cuenta','% of account')}</th></tr></thead><tbody>${top.map(x=>`<tr><td><b>${esc(x.fund?x.name:x.sym)}</b><div class="muted">${esc(x.fund?acL(assetClass(x)):x.name)}</div></td><td class="n">${isNaN(x.qty)?'—':x.qty.toLocaleString('en-US',{maximumFractionDigits:4})}</td><td class="n">${x.cost!=null?fmt(x.cost):'—'}</td><td class="n">${fmt(x.value)}</td><td class="n ${x.gain>=0?'pos':'neg'}">${x.gain!=null?fmt(x.gain)+(x.cost?` <span class="muted">${Math.round(x.gain/x.cost*100)}%</span>`:''):'—'}</td><td class="n">${(x.value/total*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div></details></div>`;
 }
 
+// Borrar una cuenta: desaparece todo lo que vino de ella (movimientos, saldos, posiciones, aportaciones, documentos
+// fiscales vinculados y su registro de extractos). Los emparejamientos se recalculan en la siguiente conciliación.
+function accountFootprint(id){ const a=acc(id)||{}; return {tx:S.tx.filter(t=>t.acc===id).length,snap:S.snapshots.filter(x=>x.acc===id).length,hold:(S.holdingsHist||[]).filter(h=>h.acc===id).length,
+  docs:Object.values(S.tax||{}).reduce((n,ty)=>n+(ty.docs||[]).filter(d=>d.acc===id).length,0),imp:(S.imports||[]).filter(e=>e.acc===id).length,contrib:!!(a.contributed||a.contrib401||a.holdings)}; }
+function deleteAccount(id){
+  S.accounts=S.accounts.filter(x=>x.id!==id); S.snapshots=S.snapshots.filter(x=>x.acc!==id); S.tx=S.tx.filter(t=>t.acc!==id);
+  S.holdingsHist=(S.holdingsHist||[]).filter(h=>h.acc!==id); S.imports=(S.imports||[]).filter(e=>e.acc!==id);
+  Object.values(S.tax||{}).forEach(ty=>{ ty.docs=(ty.docs||[]).filter(d=>d.acc!==id); });
+  S.accounts.forEach(x=>{ if(x.propertyId===id) x.propertyId=null; });
+  S.settings.recIgnore=(S.settings.recIgnore||[]).filter(k=>!String(k).includes(id)); S.settings.alertIgnore=(S.settings.alertIgnore||[]).filter(k=>!String(k).includes(id));
+  if(IMPORT_FOR===id) IMPORT_FOR=null; reconcile(); }
 /* ---------- Jubilación (pestaña de Inversiones) ----------
    Proyección en dólares de hoy: saldo actual de las cuentas de jubilación + aportación anual (tú + empresa, leída del
    extracto) con una rentabilidad real (ya descontada la inflación). Ingreso: regla del 4 % + Seguridad Social
