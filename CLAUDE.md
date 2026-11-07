@@ -74,7 +74,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 9 pruebas del recolector de noticias + 100 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
+npm test           # 9 pruebas del recolector de noticias + 101 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).

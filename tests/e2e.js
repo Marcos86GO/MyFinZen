@@ -206,6 +206,9 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.click('.tabs-inline a[href="#jubilacion"]'); await pg.waitForTimeout(300);
   ok(await pg.evaluate(()=>location.hash==='#jubilacion'&&document.querySelector('nav a.on').getAttribute('href')==='#inversiones'&&/Pon tu año de nacimiento/.test(document.querySelector('#rOut').innerText)),'pestaña Jubilación pide el año de nacimiento');
   await pg.fill('#rBy','1986'); await pg.waitForTimeout(150);
+  { const vp=pg.viewportSize(); await pg.focus('#rC'); await pg.setViewportSize({width:vp.width,height:Math.round(vp.height*0.55)}); await pg.waitForTimeout(400);
+    ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.id==='rC'),'al abrir el teclado (cambia solo la altura) la casilla no pierde el foco');
+    await pg.setViewportSize(vp); await pg.waitForTimeout(400); await pg.evaluate(()=>document.activeElement.blur()); }
   const jb=await pg.evaluate(()=>{ const d=retireData(); const p=retireAt(d,65); let B=d.bal; for(let i=0;i<d.ra-d.age;i++) B=B*1.05+d.contrib;
     return {age:d.age,contrib:d.contrib,bal:d.bal,ok:Math.abs(p.B-B)<0.01,shown:document.querySelector('#rB').innerText,exp:fmt(B),rows:document.querySelectorAll('#rOut tbody tr').length,tips:document.querySelector('#rTips').innerText}; });
   ok(jb.age===2026-1986&&jb.contrib===24000&&jb.ok&&jb.shown===jb.exp&&jb.rows===6,'estimación a los 65 en dólares de hoy ('+jb.shown+', aportación '+jb.contrib+')');

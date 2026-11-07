@@ -568,7 +568,8 @@ function route(){ if(!S) return; const h=(location.hash||'#resumen').slice(1); c
   catch(e){ console.warn('vista',v,e); $('#app').innerHTML=`<div class="alert crit"><span class="ic">!</span><div><b>${L('Algo ha fallado al mostrar esta pantalla.','Something went wrong showing this screen.')}</b> ${L('Tus datos no se han tocado. Prueba otra pestaña o recarga la app; si se repite, haz una copia cifrada y avísame.','Your data hasn\'t been touched. Try another tab or reload the app; if it keeps happening, make an encrypted backup and report it.')}<div class="muted" style="margin-top:4px">${esc(String(e&&e.message||e))}</div></div></div>`; }
   window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
-let resizeT; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
+/* Solo se repinta si cambia el ancho: al abrir el teclado del móvil cambia la altura y repintar quitaba el foco de la casilla */
+let resizeT, lastW=window.innerWidth; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return; if(window.innerWidth===lastW) return; lastW=window.innerWidth; const ae=document.activeElement; if(ae&&ae.matches&&ae.matches('input,textarea,select')&&$('#app').contains(ae)) return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
 
 /* ---------- Resumen ---------- */
 // Avisos plegados en una línea: "N cosas por revisar" o "Todo en orden"
