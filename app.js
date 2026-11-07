@@ -183,7 +183,7 @@ const str=(v,max=300)=>v==null?'':String(v).slice(0,max);
 const arr=v=>Array.isArray(v)?v:[];
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
 const ACC_NUM=['rate','payment','extra','escrow','rent','hoa','taxYear','insYear','maint','otherMonthly','mortgagePay','buildingBasis','inService','apr','contributed'];
-function sanitizeHoldingRow(x){ x=obj(x); const n=k=>numStrict(x[k]); return {sym:str(x.sym,16).trim(),name:str(x.name,120),qty:n('qty')??NaN,avg:n('avg')??NaN,cost:n('cost'),value:n('value')||0,gain:n('gain')}; }
+function sanitizeHoldingRow(x){ x=obj(x); const n=k=>numStrict(x[k]); const r={sym:str(x.sym,40).trim(),name:str(x.name,120),qty:n('qty')??NaN,avg:n('avg')??NaN,cost:n('cost'),value:n('value')||0,gain:n('gain')}; if(x.fund) r.fund=true; if(x.cls) r.cls=str(x.cls,40); return r; }
 function sanitizeState(st){
   if(!st||typeof st!=='object'||Array.isArray(st)) throw Object.assign(new Error(L('Datos no válidos','Invalid data')),{code:'notbackup'});
   const o=Object.assign(blankState(),st);
@@ -220,7 +220,7 @@ function sanitizeState(st){
     const tt={}; for(const [k,v] of Object.entries(obj(t.ttDone))) if(/^\d{1,3}$/.test(k)) tt[k]=!!v;
     tax[y]={filing:t.filing==='S'?'S':'MFJ',kids:Math.max(0,Math.round(nn('kids'))),docs,profile:prof,rental,ttDone:tt,charity:nn('charity'),estFed:nn('estFed'),estCA:nn('estCA'),otherIncome:nn('otherIncome'),childcareNoted:!!t.childcareNoted}; }
   o.tax=tax;
-  o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,16),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
+  o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,40),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
   o.secret=o.secret&&typeof o.secret.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(o.secret.apiKey)?{apiKey:o.secret.apiKey}:{};
   o.v=1; o.created=typeof o.created==='string'?o.created:new Date().toISOString();
   return o;
@@ -809,12 +809,10 @@ VIEWS.inversiones=(el)=>{
    <div class="spacer"></div>
    <div class="card">${helpBtn('inv_chart')}<h2>${L('Evolución de tus inversiones','How your investments evolve')}</h2><p class="sub">${L('Saldo a fin de cada mes','Balance at the end of each month')}${first!=null&&tot12[12]!=null?` · ${tot12[12]-first>=0?'+':''}${fmt(tot12[12]-first)} ${L('en el periodo (incluye aportaciones)','in the period (includes contributions)')}`:''}</p>${legend(inv.map((a,i)=>({n:a.name,c:pal[i%8]})))}<div id="cInv"></div></div>
    <h3 class="sec">${L('Cuentas','Accounts')}</h3>
-   <div class="card tbl"><table><thead><tr><th>${L('Cuenta','Account')}</th><th>${L('Tipo','Type')}</th><th class="n">${L('Saldo','Balance')}</th><th class="n">${L('Actualizado','Updated')}</th><th></th></tr></thead><tbody>
-   ${inv.map(a=>{const s=lastSnap(a.id);return `<tr><td>${esc(a.name)}<div class="muted">${esc(a.institution||'')}</div></td><td>${KINDS[a.kind].label}</td><td class="n">${s?fmt(s.value):'—'}</td><td class="n">${s?dLabel(s.date):'—'}</td><td><button class="sm" data-snap="${a.id}">${L('Actualizar saldo','Update balance')}</button></td></tr>`}).join('')}
-   </tbody></table></div>`;
-  el.insertAdjacentHTML('beforeend',inv.map(holdingsHTML).join('')+`<p class="muted" style="margin-top:10px">${L('Para ver las posiciones, descarga en M1 el CSV de Holdings y súbelo en <a href="#importar">Cuentas → Importar</a>.','To see your positions, download the Holdings CSV from M1 and upload it in <a href="#importar">Accounts → Import</a>.')}</p>`);
+   <div class="card list">${inv.map(a=>{const s=lastSnap(a.id);return `<button class="lrow" data-acc="${esc(a.id)}">${accAv(a)}<span class="lm"><b>${esc(a.last4?a.name.replace(/\s*···\d{4}$/,''):a.name)}</b><span>${KINDS[a.kind].label}${a.institution?' · '+esc(a.institution):''}</span></span><span class="lr"><b>${s?fmt(s.value):'—'}</b><span>${s?dLabel(s.date):L('sin saldo','no balance')}</span></span>${ic('right','chev')}</button>`}).join('')}</div>`;
+  el.insertAdjacentHTML('beforeend',inv.map(holdingsHTML).join('')+`<p class="muted" style="margin-top:10px">${L('Para ver las posiciones, sube en <a href="#importar">Cuentas → Importar</a> el CSV de Holdings de M1 o el extracto trimestral de tu 401(k).','To see your positions, upload the M1 Holdings CSV or your 401(k) quarterly statement in <a href="#importar">Accounts → Import</a>.')}</p>`);
   lineChart($('#cInv'),{labels:months.map(ymLabel),series:inv.map((a,i)=>({name:a.name,color:pal[i%8],values:months.map(m=>balanceOf(a,monthEnd(m)))}))});
-  el.querySelectorAll('[data-snap]').forEach(b=>b.onclick=()=>addSnapshot(b.dataset.snap));
+  el.querySelectorAll('[data-acc]').forEach(b=>b.onclick=()=>accountSheet(b.dataset.acc));
 };
 
 /* ---------- Noticias (terminal) ----------
@@ -881,7 +879,7 @@ function sanitizeNews(d){ const S_=(v,n)=>typeof v==='string'?v.slice(0,n):''; c
       .map(x=>({t:x.t.slice(0,400),u:x.u.slice(0,2000),s:S_(x.s,80),d:S_(x.d,100),p:new Date(Date.parse(x.p)).toISOString(),r:ids(x.r),k:ids(x.k)}))}; }
 function newsSettings(){ const st=S.settings; st.newsTab=st.newsTab||'cartera'; st.newsCountries=Array.isArray(st.newsCountries)?st.newsCountries:['gb','de','mx','jp']; st.newsHide=Array.isArray(st.newsHide)?st.newsHide:[]; return st; }
 function myPositions(){ const m=new Map();
-  S.accounts.filter(a=>a.holdings&&a.holdings.rows).forEach(a=>a.holdings.rows.forEach(x=>{ const s=String(x.sym||'').toUpperCase().trim(); if(!s) return; const o=m.get(s)||{s,name:x.name||'',value:0}; o.value+=x.value||0; if(!o.name&&x.name) o.name=x.name; m.set(s,o); }));
+  S.accounts.filter(a=>a.holdings&&a.holdings.rows).forEach(a=>a.holdings.rows.forEach(x=>{ if(x.fund) return; const s=String(x.sym||'').toUpperCase().trim(); if(!s) return; const o=m.get(s)||{s,name:x.name||'',value:0}; o.value+=x.value||0; if(!o.name&&x.name) o.name=x.name; m.set(s,o); }));
   return [...m.values()].sort((a,b)=>b.value-a.value); }
 function newsMatcher(pos,uni){ const U=new Map((uni||[]).map(u=>[u.s,u]));
   return pos.map(p=>{ const u=U.get(p.s)||U.get(p.s.replace('-','.')); const rx=[]; const escR=t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -1217,14 +1215,20 @@ function renderCSVPreview(){
     out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${added} movimientos importados</b>${dup?` (${dup} ya estaban)`:''}. Revisa las categorías en <a href="#flujo">Movimientos</a>: si cambias una, puedo aplicarla a todos los parecidos. Actualiza también el saldo de la cuenta en <a href="#cuentas">Cuentas</a>.<br>Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados entre cuentas, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b>`:''}.`,`<b>${added} transactions imported</b>${dup?` (${dup} were already there)`:''}. Review the categories in <a href="#flujo">Transactions</a>: if you change one, I can apply it to all similar ones. Also update the account balance in <a href="#cuentas">Accounts</a>.<br>Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched between accounts, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b>`:''}.`)}</div></div>`;
   };
 }
+// Texto de un PDF por líneas. Agrupa por altura con una tolerancia proporcional al tamaño de letra (no por tramos
+// fijos, que partían líneas cuyo texto cae justo en el borde de un tramo) y lee las páginas de 4 en 4 en paralelo.
 async function pdfText(file){
   if(!window.pdfjsLib) throw new Error(L('No se pudo cargar el lector de PDF','The PDF reader could not be loaded'));
-  const buf=await file.arrayBuffer(); const doc=await pdfjsLib.getDocument({data:buf, isEvalSupported:false}).promise; let lines=[];
-  for(let p=1;p<=Math.min(doc.numPages,60);p++){ const page=await doc.getPage(p); const tc=await page.getTextContent(); const rows={};
-    tc.items.forEach(it=>{ if(!it.str.trim())return; const y=Math.round(it.transform[5]/3)*3; (rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str}); });
-    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>lines.push(rows[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' '))); page.cleanup(); }
+  const buf=await file.arrayBuffer(); const doc=await pdfjsLib.getDocument({data:buf, isEvalSupported:false}).promise;
+  const N=Math.min(doc.numPages,60), pages=new Array(N);
+  const one=async p=>{ const page=await doc.getPage(p); const tc=await page.getTextContent(); page.cleanup();
+    const it=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>({x:i.transform[4],y:i.transform[5],h:Math.abs(i.transform[3])||i.height||8,s:i.str}));
+    it.sort((a,b)=>b.y-a.y||a.x-b.x); const rows=[];
+    for(const i of it){ const r=rows[rows.length-1]; if(r&&Math.abs(r.y-i.y)<=Math.max(1,Math.min(3,0.45*Math.min(r.h,i.h)))) r.items.push(i); else rows.push({y:i.y,h:i.h,items:[i]}); }
+    return rows.map(r=>r.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim()); };
+  for(let p=1;p<=N;p+=4){ const q=[]; for(let k=p;k<Math.min(p+4,N+1);k++) q.push(one(k).then(l=>{ pages[k-1]=l; })); await Promise.all(q); }
   try{ await doc.destroy(); }catch(e){}
-  return lines.join('\n');
+  return pages.flat().join('\n');
 }
 const money=s=>{ const m=String(s).match(/-?\$?\s?\(?[\d,]+\.\d{2}\)?/); return m?num(m[0]):NaN; };
 function grab(text, re){ const m=text.match(re); return m?m[1]:null; }
@@ -1233,18 +1237,25 @@ function grab(text, re){ const m=text.match(re); return m?m[1]:null; }
    Si el formato no encaja, devuelven null y se usa el lector genérico. ---- */
 const MON_RE='(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s+\\d{1,2},?\\s+\\d{4}';
 function l4of(s){ const d=String(s||'').replace(/\D/g,''); return d.length>=4?d.slice(-4):''; }
-function knownStmt(o){ o.type='generic'; o.known=true; o.balance=finOrNull(o.balance); o.cands=o.balance==null?[]:[{v:o.balance,line:o.balLabel||''}]; o.dateFound=!!o.date; o.date=o.date||today(); o.tx=o.tx||[]; return o; }
+// Comprobación de exactitud: la suma de los movimientos leídos debe ser igual a lo que dice el propio extracto
+function txCheck(tx,expected){ if(expected==null||isNaN(expected)||!tx||!tx.length) return null; const sum=r2(tx.reduce((s,t)=>s+t.amount,0)); return {ok:Math.abs(sum-expected)<0.015,diff:r2(sum-expected)}; }
+function stmtCheck(r,T){ if(r.check!==undefined||r.type!=='generic') return r.check;
+  const b=num(grab(T,/(?:beginning|previous|opening|starting|prior)\s+(?:statement\s+)?balance[^\n$\d-]*\$?\s*(-?[\d,]+\.\d{2})/i)), e=r.cands&&r.cands.length?r.cands[0].v:NaN;
+  r.check=isNaN(b)||isNaN(e)?null:txCheck(r.tx,r.kind==='credit'?b-e:e-b); return r.check; }
+function knownStmt(o){ o.type='generic'; o.known=true; o.balance=finOrNull(o.balance); o.cands=o.balance==null?[]:[{v:o.balance,line:o.balLabel||''}]; o.dateFound=!!o.date; o.date=o.date||today(); o.tx=o.tx||[]; if(o.check===undefined) o.check=null; return o; }
 function readBofA(T){
   if(!/bankofamerica\.com/i.test(T)) return null; const H=T.slice(0,2500);
   if(/New Balance Total/i.test(H)&&/Statement Closing Date/i.test(T)){ // tarjeta de crédito
     const cd=grab(T,/Statement Closing Date\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i), date=cd&&parseDate(cd);
     const tx=parseTxLines(T,date,true).map(t=>Object.assign(t,{desc:t.desc.replace(/(\s+\d{4}){2}$/,'').trim()}));
     return knownStmt({institution:'Bank of America',kind:'credit',product:((H.match(/^\s*((?:Visa|Mastercard|World Mastercard|BankAmericard|Customized Cash|Unlimited Cash|Travel Rewards|Premium Rewards|Alaska|Free Spirit)[^\n]{0,30})$/im)||[])[1]||'').replace(/[®™]/g,'').trim()||L('Tarjeta','Card'),
-      last4:l4of(grab(H,/Account\s*(?:#|Number:?)\s*([\d ]{8,24}\d)/i)),date,balance:num(grab(H,/New Balance Total\s*\$?\s*([\d,]+\.\d{2})/i)),balLabel:'New Balance Total',tx}); }
+      last4:l4of(grab(H,/Account\s*(?:#|Number:?)\s*([\d ]{8,24}\d)/i)),date,balance:num(grab(H,/New Balance Total\s*\$?\s*([\d,]+\.\d{2})/i)),balLabel:'New Balance Total',tx,
+      check:txCheck(tx,r2(num(grab(H,/Previous Balance\s*\$?\s*(-?[\d,]+\.\d{2})/i))-num(grab(H,/New Balance Total\s*\$?\s*([\d,]+\.\d{2})/i))))}); }
   const an=grab(H,/Account number:\s*([\d ]{8,24}\d)/i), eb=T.match(new RegExp('Ending balance on\\s+('+MON_RE+')\\s*\\$?\\s*(-?[\\d,]+\\.\\d{2})','i'));
   if(!an||!eb) return null; const date=parseDate(eb[1].replace('.',''));
+  const btx=parseTxLines(T,date), beg=num(grab(T,new RegExp('Beginning balance on\\s+'+MON_RE+'\\s*\\$?\\s*(-?[\\d,]+\\.\\d{2})','i')));
   return knownStmt({institution:'Bank of America',kind:'cash',product:((H.match(/^\s*Your\s+(?:Bank of America\s+)?([A-Za-z][^\n]{2,45})$/m)||[])[1]||'').replace(/[®™]/g,'').trim(),
-    last4:l4of(an),date,balance:num(eb[2]),balLabel:'Ending balance',tx:parseTxLines(T,date)}); }
+    last4:l4of(an),date,balance:num(eb[2]),balLabel:'Ending balance',tx:btx,check:txCheck(btx,r2(num(eb[2])-beg))}); }
 function readM1(T){
   if(!/M1 Finance|M1: The Finance Super App|M1 Cash Account|M1 Invest/i.test(T)) return null;
   const sp=T.match(/Statement period:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*to\s*(\d{1,2}\/\d{1,2}\/\d{4})/i), an=grab(T,/Account number:\s*[X*•x]*\s*(\d{4,})/i);
@@ -1252,13 +1263,43 @@ function readM1(T){
   const prod=(grab(T,/Account:\s*(M1 [^\n]{2,40})/i)||'').trim(); const date=parseDate(sp[2]); const tx=[];
   for(const line of T.split('\n')) for(const m of line.matchAll(/(\d{4}-\d{2}-\d{2})\s+(.+?)\s+(\$?\(\$?[\d,]+\.\d{2}\)|\$?-?[\d,]+\.\d{2})(?=\s+\d{4}-\d{2}-\d{2}|\s*$)/g)){
     const v=num(m[3].replace(/\$/g,'')); if(isNaN(v)||!v) continue; tx.push({date:m[1],desc:m[2].trim(),amount:/\(/.test(m[3])?-Math.abs(v):v}); }
-  return knownStmt({institution:'M1 Finance',kind:/cash/i.test(prod)?'cash':'brokerage',product:prod.replace(/^M1\s*/,'')||'',last4:l4of(an),date,balance:bal,balLabel:'Closing balance',tx}); }
-function readEmpower(T){
+  return knownStmt({institution:'M1 Finance',kind:/cash/i.test(prod)?'cash':'brokerage',product:prod.replace(/^M1\s*/,'')||'',last4:l4of(an),date,balance:bal,balLabel:'Closing balance',tx,
+    check:txCheck(tx,r2(bal-num(grab(T,/Opening balance\s*\$?\s*([\d,]+\.\d{2})/i))))}); }
+/* Fondos de un plan de jubilación (Empower, "How is my account invested?"): categoría (Large Cap Funds…), nombre del
+   fondo (puede seguir en la línea siguiente), saldo final y participaciones (3-4 decimales). Las columnas vacías no
+   salen en el texto, así que se usan las dos últimas cifras. Comprueba que la suma coincide con "Totals". */
+function readFundTable(T){
+  const lines=T.split('\n'); const i0=lines.findIndex(l=>/^\s*How is my account invested\?\s*$/i.test(l)); if(i0<0) return null;
+  const pct=l=>(l.match(/^\s*\d{1,3}(?:\.\d+)?%\s+(.+?)\s*$/)||[])[1];
+  const cats=new Set(); for(let i=i0+1;i<lines.length;i++){ const c=pct(lines[i]); if(c) cats.add(c); else if(cats.size) break; }
+  const j0=lines.findIndex(l=>/How will my future contributions be invested/i.test(l)); const full=[];
+  if(j0>=0) for(let i=j0+1;i<i0;i++){ const c=pct(lines[i]); if(c&&!cats.has(c)) full.push(c); }
+  const rows=[]; let cls='', cur=null, pause=false, total=null;
+  for(let i=i0+1;i<lines.length;i++){ const l=lines[i].trim(); if(!l) continue;
+    if(/^How is my account (being funded|invested\?\s*\(continued\))/i.test(l)){ if(/funded/i.test(l)) break; pause=false; cur=null; continue; }
+    if(/\bPage \d+ of \d+/i.test(l)){ pause=true; cur=null; continue; } if(pause) continue;
+    if(/^Totals?\b/i.test(l)){ const n=l.match(/-?[\d,]+\.\d{2}(?!\d)/g); if(n) total=num(n[n.length-1]); break; }
+    if(cats.has(l)){ cls=l; cur=null; continue; }
+    if(pct(l)||/^(Ending|Beginning\b|Balance\b)/i.test(l)) continue;
+    const m=l.match(/^(.*?[A-Za-z].*?)\s+((?:-?\$?[\d,]+\.\d{2,4}\s*){2,})$/);
+    if(m){ const t=m[2].trim().split(/\s+/).map(x=>x.replace('$','')); const units=/\.\d{3,4}$/.test(t[t.length-1])?num(t.pop()):NaN; if(!t.length){ cur=null; continue; }
+      cur={name:m[1].trim(),value:num(t[t.length-1]),qty:units,cls,lines:1}; rows.push(cur); continue; }
+    if(cur&&cur.lines<3&&/^[A-Za-z][\w&().,'\/+ -]*$/.test(l)&&!/\d{3,}/.test(l)){ cur.name+=' '+l; cur.lines++; continue; }
+    cur=null; }
+  if(!rows.length) return null;
+  const out=rows.filter(r=>!isNaN(r.value)).map(r=>{ const f=full.find(x=>x===r.name)||full.find(x=>x.startsWith(r.name))||r.name;
+    const short=f.replace(/\s+(Admiral|Adm|Institutional|Instl|Inst|Investor|Inv|Class [A-Z0-9]+|R\d|[A-Z]|CIT|Trust)$/,'').trim();
+    return {sym:short.slice(0,40),name:f.slice(0,120),qty:r.qty,avg:NaN,cost:null,value:r2(r.value),gain:null,fund:true,cls:r.cls}; });
+  const sum=r2(out.reduce((s,x)=>s+x.value,0));
+  return {rows:out,total,ok:total!=null&&Math.abs(sum-total)<0.02,sum}; }
+function readEmpower(T){ const o=readEmpower0(T); if(o&&o.funds){ const bal=o.balance; o.check={ok:o.funds.ok&&Math.abs(o.funds.sum-bal)<0.02,diff:r2(o.funds.sum-bal),what:'funds'}; } return o; }
+function readEmpower0(T){
   if(!/Empower/i.test(T.slice(0,600))||!/Balance as of/i.test(T)) return null;
   const all=[...T.matchAll(new RegExp('Balance as of\\s+('+MON_RE+')((?:\\s+\\$?[\\d,]+\\.\\d{2})+)','gi'))]; if(!all.length) return null;
   const last=all[all.length-1], v=last[2].match(/[\d,]+\.\d{2}/g);
   return knownStmt({institution:'Empower',kind:'retirement',product:/403\(?b/i.test(T.slice(0,800))?'403(b)':/457/.test(T.slice(0,800))?'457':'401(k)',
-    last4:l4of(grab(T,/Plan:\s*([\d-]{4,})/i)),date:parseDate(last[1].replace('.','')),balance:num(v[v.length-1]),balLabel:'Balance as of'}); }
+    last4:l4of(grab(T,/Plan:\s*([\d-]{4,})/i)),date:parseDate(last[1].replace('.','')),balance:num(v[v.length-1]),balLabel:'Balance as of',funds:readFundTable(T)}); }
+// (la comprobación de Empower va en readEmpower: la suma de los fondos debe dar el total y el saldo)
 function parseStatement(text){
   const T=text;
   // Pennymac / generic mortgage
@@ -1418,7 +1459,7 @@ async function handlePDF(file){
   if(r.type==='mortgage'&&!/Form\s*1098\b|Mortgage Interest Statement/i.test(text)){ renderMortgagePDF(r,file.name,text); return; }
   const tf=detectTaxForm(text);
   if(tf){ renderTaxImport(file.name,text,tf); return; }
-  if(!r.known) r.tx=parseTxLines(text,r.date);
+  if(!r.known) r.tx=parseTxLines(text,r.date); stmtCheck(r,text);
   renderGenericPDF(r,file.name,text);
   if(S.settings.autoClaude && (!r.cands.length || !r.tx.length)) $('#gAI')&&$('#gAI').click();
 }
@@ -1449,6 +1490,8 @@ function renderGenericPDF(r,name,text){
    <h3 class="sec" style="margin-top:8px">${L('Saldo','Balance')}</h3>
    ${r.cands.length?`<div style="margin-bottom:6px">${r.cands.slice(0,5).map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:5px 0"><input type="radio" name="cand" value="${c.v}" style="width:auto;margin-top:3px" ${i===0?'checked':''}><span><b>${fmt(c.v,2)}</b> <span class="muted">${esc(c.line)}</span></span></label>`).join('')}</div>`:`<p class="muted">${L('No encontré el saldo automáticamente.','I couldn\'t find the balance automatically.')}</p>`}
    <div class="row"><label class="f">${L('Saldo','Balance')}${r.kind==='credit'?L(' (lo que debes)',' (what you owe)'):''}<input id="gV" value="${r.cands[0]?r.cands[0].v:''}"></label><label class="f">${L('Fecha','Date')}<input type="date" id="gD" value="${r.date||today()}"></label><label class="f">${L('Aportado este periodo (inversión)','Contributed this period (investments)')}<input id="gC" inputmode="decimal" value="${r.contrib??''}"></label></div>
+   ${r.check?(r.check.ok?`<div class="alert good"><span class="ic">✓</span><div>${L('Lo leído cuadra con el propio extracto (saldos y movimientos).','What was read matches the statement itself (balances and transactions).')}</div></div>`:`<div class="alert warn"><span class="ic">!</span><div>${L(`<b>No cuadra:</b> los movimientos leídos difieren en ${fmt(r.check.diff,2)} de lo que dice el extracto. Revísalos o prueba "Leer con Claude".`,`<b>Doesn't match:</b> the transactions read differ by ${fmt(r.check.diff,2)} from what the statement says. Review them or try "Read with Claude".`)}</div></div>`):''}
+   ${r.funds&&r.funds.rows.length?`<h3 class="sec" style="margin-top:8px">${L('Fondos','Funds')} (${r.funds.rows.length})</h3><div class="tbl"><table><tbody>${r.funds.rows.map(f=>`<tr><td>${esc(f.name)}<div class="muted">${esc(f.cls||'')}</div></td><td class="n">${fmt(f.value,2)}</td></tr>`).join('')}</tbody></table></div>${r.funds.ok?`<p class="muted pos">✓ ${L('La suma de los fondos coincide con el total del extracto.','The funds add up to the statement total.')}</p>`:''}`:''}
    <h3 class="sec" style="margin-top:8px">${L('Movimientos','Transactions')} (${tx.length})</h3>
    ${tx.length?`<label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="gTx" checked style="width:auto"> ${L('Importar estos movimientos a "Movimientos"','Import these transactions into "Transactions"')}</label><div class="tbl" style="max-height:260px;overflow:auto"><table><tbody>${tx.slice(0,200).map(t=>`<tr><td style="white-space:nowrap">${t.date}</td><td>${esc(t.desc)}</td><td>${esc(catL(categorize(t.desc,t.amount)||otherCat(t.amount)))}</td><td class="n ${t.amount>=0?'pos':''}">${fmt(t.amount,2)}</td></tr>`).join('')}</tbody></table></div><label class="f" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="gFlip" style="width:auto"> ${L('Invertir signo de todos','Flip the sign of all')}</label>`:`<p class="muted">${L('No encontré movimientos con formato reconocible. Prueba "Leer con Claude" o importa el CSV del banco.','I found no transactions in a recognizable format. Try "Read with Claude" or import the bank CSV.')}</p>`}
    <div class="row" style="margin-top:10px"><button id="gCancel">${L('Cancelar','Cancel')}</button><button id="gAI">${L('Leer con Claude','Read with Claude')}</button><button class="pri" id="gOk">${L('Guardar','Save')}</button></div>
@@ -1460,13 +1503,14 @@ function renderGenericPDF(r,name,text){
     let id=$('#gAcc').value; if(id==='__new'){ const a={id:uid(),kind:$('#gK').value,name:$('#gN').value.trim()||L('Cuenta','Account'),institution:r.institution,last4:r.last4||''}; S.accounts.push(a); id=a.id; }
     const v=num($('#gV').value); if(!isNaN(v)) upsertSnap(id,isoDate($('#gD').value)||today(),v);
     const c=num($('#gC').value); if(!isNaN(c)&&c) { const a=acc(id); a.contributed=(a.contributed||0)+c; }
+    const nf=saveFunds(acc(id),Object.assign({},r,{date:isoDate($('#gD').value)||r.date,dateFound:true}));
     let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; ({added,dup}=importTxInto(id,tx.map(t=>flip?Object.assign({},t,{amount:-t.amount}):t),'pdf')); }
     learnKey(acc(id),gkey); save(); const RR=reconcile(); if(RR.changed) save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Guardado.</b> ${!isNaN(v)?`Saldo ${fmt(v,2)}. `:''}${added?`${added} movimientos importados${dup?` (${dup} ya estaban)`:''}. `:''}Revisa en <a href="#cuentas">Cuentas</a>${added?' e <a href="#flujo">Movimientos</a>':''}.`,`<b>Saved.</b> ${!isNaN(v)?`Balance ${fmt(v,2)}. `:''}${added?`${added} transactions imported${dup?` (${dup} were already there)`:''}. `:''}Check in <a href="#cuentas">Accounts</a>${added?' and <a href="#flujo">Transactions</a>':''}.`)}</div></div>`); };
   $('#gAI').onclick=async()=>{ const box=$('#gAIout'); box.innerHTML=`<p class="muted">${L('Pidiendo a Claude…','Asking Claude…')}</p>`;
     try{ const res=await claudeExtract(text); if(!res){box.innerHTML='';return;}
       if(res.tax_forms.length&&!res.transactions.length&&res.ending_balance==null){ renderTaxImport(name,text,res.tax_forms[0].form,res.tax_forms); return; }
       const nr=Object.assign({},r,{institution:res.institution||r.institution,kind:KINDS[res.account_kind]?res.account_kind:r.kind,date:res.period_end||r.date,
-        cands:res.ending_balance!=null?[{v:res.ending_balance,line:L('Leído por Claude','Read by Claude')}]:r.cands, contrib:res.contributions_this_period,
+        cands:res.ending_balance!=null?[{v:res.ending_balance,line:L('Leído por Claude','Read by Claude')}]:r.cands, contrib:res.contributions_this_period, check:null,
         tx:res.transactions.map(t=>({date:t.date,desc:t.description.trim(),amount:Math.round(t.amount*100)/100}))});
       if(res.account_kind==='mortgage'&&res.mortgage){ renderMortgagePDF({institution:nr.institution,balance:res.ending_balance??NaN,rate:res.mortgage.rate??NaN,pi:res.mortgage.principal_and_interest||'',extra:res.mortgage.extra_principal,escrow:res.mortgage.escrow,date:nr.date,last4:''},name,text); return; }
       renderGenericPDF(nr,name,text); $('#gAIout').innerHTML=`<p class="pos">${L(`Leído por Claude: ${nr.cands[0]?'saldo '+fmt(nr.cands[0].v,2)+', ':''}${nr.tx.length} movimientos. Revisa y guarda.`,`Read by Claude: ${nr.cands[0]?'balance '+fmt(nr.cands[0].v,2)+', ':''}${nr.tx.length} transactions. Check and save.`)}</p>`;
@@ -1573,7 +1617,7 @@ async function autoPDF(file){
     const fields=localTaxFields(tf,text); if(!Object.keys(fields).length) return {status:'review',kind:'tax',msg:L('No encontré las cifras del formulario','I couldn\'t find the form\'s figures')};
     const payer=payerOf(text), pa=payerAccount(payer); ty.docs.push({id:uid(),type:tf,payer,acc:pa?pa.id:null,fields,src:file.name,added:today()});
     return {status:'ok',kind:'tax',msg:`${FORM_LABEL[tf]} · ${yr} · ${L('revisa las cifras en Impuestos','check the figures in Taxes')}`}; }
-  if(!r.known) r.tx=parseTxLines(text,r.date); const {m:mm,key}=matchPDF(r,text);
+  if(!r.known) r.tx=parseTxLines(text,r.date); stmtCheck(r,text); const {m:mm,key}=matchPDF(r,text);
   let a=mm&&mm.acc, created=false;
   if(!a){ const enough=(r.known||(r.institution&&r.last4))&&((r.dateFound&&r.cands.length)||r.tx.length);
     if(!enough) return {status:'review',kind:'pdf',msg:L('No sé a qué cuenta pertenece','I don\'t know which account it belongs to')+' — '+L('detectado','detected')+': '+esc(seenAs(r))};
@@ -1583,7 +1627,11 @@ async function autoPDF(file){
   if(!useBal&&!txOk) return {status:'review',kind:'pdf',acc:a.id,msg:L('No encontré el saldo con su fecha ni movimientos','I couldn\'t find a dated balance or transactions')};
   if(r.last4&&!a.last4) a.last4=r.last4;
   if(useBal) upsertSnap(a.id,r.date,bal); const res=txOk?importTxInto(a.id,r.tx,'pdf'):{added:0,dup:0}; learnKey(a,key);
-  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,created}; }
+  const nf=saveFunds(a,r);
+  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,created,funds:nf,check:r.check}; }
+// Fondos del plan (401(k), IRA…): se guardan como posiciones de la cuenta para ver su distribución
+function saveFunds(a,r){ const F=r.funds; if(!F||!F.rows.length||!['retirement','brokerage','kids'].includes(a.kind)||!r.dateFound) return 0;
+  const cur=a.holdings&&a.holdings.date; if(cur&&cur>r.date) return 0; saveHoldings(a.id,F.rows,r.date,false,false); return F.rows.length; }
 
 // Cuenta nueva a partir de un extracto reconocido (lote). El nombre lleva entidad, producto y últimos 4 dígitos.
 const INST_SHORT={'Bank of America':'BofA','M1 Finance':'M1','American Express':'Amex'};
@@ -1611,6 +1659,8 @@ function renderBatch(){
   const detail=r=>{ const parts=[]; if(r.created) parts.push(`<b>${L('cuenta nueva','new account')}</b>`); if(r.kind) parts.push(KL[r.kind]||r.kind); if(r.acc&&acc(r.acc)) parts.push(esc(acc(r.acc).name));
     if(r.added!=null) parts.push(L(`${r.added} movimientos nuevos${r.dup?` (${r.dup} ya estaban)`:''}`,`${r.added} new transactions${r.dup?` (${r.dup} already there)`:''}`));
     if(r.bal!=null) parts.push(`${L('saldo','balance')} ${fmt(r.bal,2)}${r.date?' · '+dLabel(r.date):''}`); if(r.flip) parts.push(L('signo invertido (tarjeta)','sign flipped (card)'));
+    if(r.funds) parts.push(L(`${r.funds} fondos`,`${r.funds} funds`));
+    if(r.check) parts.push(r.check.ok?`<span class="pos">✓ ${L('cuadra con el extracto','matches the statement')}</span>`:`<b class="neg">⚠ ${L('no cuadra con el extracto','doesn\'t match the statement')} (${L('diferencia','difference')} ${fmt(r.check.diff,2)})</b>`);
     if(r.msg) parts.push(esc(r.msg)); return parts.join(' · '); };
   const R=BATCH.rec; const nIss=R?R.issues.filter(i=>i.lvl!=='info').length:0;
   box.innerHTML=`<div style="margin-top:12px"><p><b>${L(`${res.length} archivos`,`${res.length} files`)}:</b> ${n('ok')} ${L('guardados','saved')} · ${n('review')} ${L('para revisar','to review')} · ${n('skip')} ${L('sin cambios','unchanged')}${n('error')?` · ${n('error')} ${L('con error','with errors')}`:''}</p>
@@ -1648,9 +1698,21 @@ function renderHoldingsPreview(fileName,rows){
     save(); out.innerHTML=`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>${H.length} posiciones guardadas en ${esc(a.name)}.</b> Míralas en <a href="#inversiones">Inversiones</a>.`,`<b>${H.length} positions saved in ${esc(a.name)}.</b> See them in <a href="#inversiones">Investments</a>.`)}</div></div>`; };
 }
 const ASSET_CLASS={VOO:'EE. UU. grandes',IVV:'EE. UU. grandes',SPY:'EE. UU. grandes',VTI:'EE. UU. total',ITOT:'EE. UU. total',QQQ:'EE. UU. tecnología',QQQM:'EE. UU. tecnología',VOOG:'EE. UU. crecimiento',VUG:'EE. UU. crecimiento',SCHD:'EE. UU. dividendos',VYM:'EE. UU. dividendos',VXUS:'Internacional',VEA:'Internacional',VWO:'Emergentes',IXUS:'Internacional',AVUV:'EE. UU. pequeñas',VB:'EE. UU. pequeñas',IJR:'EE. UU. pequeñas',SMH:'EE. UU. tecnología',SOXX:'EE. UU. tecnología',ARKK:'EE. UU. tecnología',PDBC:'Materias primas',COMT:'Materias primas',DBC:'Materias primas',GLD:'Oro',IAU:'Oro',BND:'Bonos',AGG:'Bonos',BNDX:'Bonos',VGIT:'Bonos',SGOV:'Liquidez',BIL:'Liquidez',ESGV:'EE. UU. ESG',ESGU:'EE. UU. ESG',VSGX:'Internacional ESG',ESGD:'Internacional ESG'};
-const AC_EN={'EE. UU. grandes':'US large cap','EE. UU. total':'US total market','EE. UU. tecnología':'US technology','EE. UU. crecimiento':'US growth','EE. UU. dividendos':'US dividends','Internacional':'International','Emergentes':'Emerging markets','EE. UU. pequeñas':'US small cap','Materias primas':'Commodities','Oro':'Gold','Bonos':'Bonds','Liquidez':'Cash','EE. UU. ESG':'US ESG','Internacional ESG':'International ESG','Otros fondos':'Other funds','Acciones individuales':'Individual stocks'};
+const AC_EN={'EE. UU. grandes':'US large cap','EE. UU. total':'US total market','EE. UU. tecnología':'US technology','EE. UU. crecimiento':'US growth','EE. UU. dividendos':'US dividends','Internacional':'International','Emergentes':'Emerging markets','EE. UU. pequeñas':'US small cap','Materias primas':'Commodities','Oro':'Gold','Bonos':'Bonds','Liquidez':'Cash','EE. UU. ESG':'US ESG','Internacional ESG':'International ESG','Otros fondos':'Other funds','EE. UU. medianas':'US mid cap','Fecha objetivo':'Target date','Inmobiliario':'Real estate','Acciones individuales':'Individual stocks'};
 const acL=k=>LANG==='en'&&AC_EN[k]?AC_EN[k]:k;
-function assetClass(x){ if(ASSET_CLASS[x.sym]) return ASSET_CLASS[x.sym]; if(/\b(ETF|Fund|Trust)\b/i.test(x.name)) return 'Otros fondos'; return 'Acciones individuales'; }
+function fundClass(s){ s=String(s||'');
+  if(/target|retirement 20\d\d|lifecycle|freedom 20\d\d|lifepath/i.test(s)) return 'Fecha objetivo';
+  if(/stable value|money market|cash|treasury money|government money/i.test(s)) return 'Liquidez';
+  if(/bond|fixed income|income fund|aggregate|treasur|TIPS|total return/i.test(s)) return 'Bonos';
+  if(/emerging/i.test(s)) return 'Emergentes';
+  if(/international|intl|developed|global|world|foreign|ex[- ]u\.?s|europe|pacific/i.test(s)) return 'Internacional';
+  if(/small/i.test(s)) return 'EE. UU. pequeñas';
+  if(/\bmid\b|mid-?cap/i.test(s)) return 'EE. UU. medianas';
+  if(/real estate|REIT/i.test(s)) return 'Inmobiliario';
+  if(/large|500|S&P|total stock|total market|equity|growth|value|blue chip|index/i.test(s)) return 'EE. UU. grandes';
+  return null; }
+function assetClass(x){ if(ASSET_CLASS[x.sym]) return ASSET_CLASS[x.sym]; if(x.fund) return fundClass(x.cls)||fundClass(x.name)||'Otros fondos';
+  if(/\b(ETF|Fund|Trust)\b/i.test(x.name)) return fundClass(x.name)||'Otros fondos'; return 'Acciones individuales'; }
 function holdingsHTML(a){
   const H=(a.holdings&&a.holdings.rows)||[]; if(!H.length) return '';
   const total=H.reduce((s,x)=>s+x.value,0), cost=H.reduce((s,x)=>s+(x.cost||0),0);
@@ -1660,15 +1722,18 @@ function holdingsHTML(a){
   const top=H.slice().sort((p,q)=>q.value-p.value);
   const losers=H.filter(x=>x.gain!=null&&x.gain<0);
   const single=H.filter(x=>assetClass(x)==='Acciones individuales').reduce((s,x)=>s+x.value,0);
-  return `<div class="card" style="margin-top:12px">${helpBtn('holdings')}<h2>${L('Posiciones','Positions')} · ${esc(a.name)}</h2><p class="sub">${L(`A ${dLabel(a.holdings.date)} · ${H.length} posiciones · ganancia no realizada`,`As of ${dLabel(a.holdings.date)} · ${H.length} positions · unrealized gain`)} <span class="${total-cost>=0?'pos':'neg'}">${fmt(total-cost)}</span> (${cost?Math.round((total-cost)/cost*100):0}%)</p>
+  const ret=a.kind==='retirement'||a.kind==='kids', noCost=!cost; const nm=x=>x.fund?x.name:x.sym;
+  const bonds=(byClass['Bonos']||0)+(byClass['Liquidez']||0);
+  return `<div class="card" style="margin-top:12px">${helpBtn('holdings')}<h2>${L(ret?'Fondos':'Posiciones',ret?'Funds':'Positions')} · ${esc(a.name)}</h2><p class="sub">${L(`A ${dLabel(a.holdings.date)} · ${H.length} ${ret?'fondos':'posiciones'} · ${fmt(total)}`,`As of ${dLabel(a.holdings.date)} · ${H.length} ${ret?'funds':'positions'} · ${fmt(total)}`)}${noCost?'':` · ${L('ganancia no realizada','unrealized gain')} <span class="${total-cost>=0?'pos':'neg'}">${fmt(total-cost)}</span> (${Math.round((total-cost)/cost*100)}%)`}</p>
    <div class="grid g2"><div><h3 class="sec" style="margin-top:4px">${L('Por tipo de activo','By asset class')}</h3>${hbars(classes.map(([k,v],i)=>({k:acL(k),v,c:pal[i%8],note:Math.round(v/total*100)+'%'})))}</div>
    <div><h3 class="sec" style="margin-top:4px">${L('Lo que conviene saber','Worth knowing')}</h3>
-     ${top[0]&&top[0].value/total>0.2?`<div class="alert info"><span class="ic">i</span><div>${L(`<b>${esc(top[0].sym)}</b> pesa el ${Math.round(top[0].value/total*100)}% de la cuenta.`,`<b>${esc(top[0].sym)}</b> is ${Math.round(top[0].value/total*100)}% of the account.`)}</div></div>`:''}
+     ${top[0]&&top[0].value/total>0.2?`<div class="alert info"><span class="ic">i</span><div>${L(`<b>${esc(nm(top[0]))}</b> pesa el ${Math.round(top[0].value/total*100)}% de la cuenta.`,`<b>${esc(nm(top[0]))}</b> is ${Math.round(top[0].value/total*100)}% of the account.`)}</div></div>`:''}
+     ${ret?`<div class="alert info"><span class="ic">i</span><div>${L(`Bonos y liquidez: <b>${Math.round(bonds/total*100)}%</b>; acciones y fondos de acciones: <b>${100-Math.round(bonds/total*100)}%</b>.`,`Bonds and cash: <b>${Math.round(bonds/total*100)}%</b>; stocks and stock funds: <b>${100-Math.round(bonds/total*100)}%</b>.`)}</div></div>`:''}
      ${single/total>0.15?`<div class="alert info"><span class="ic">i</span><div>${L(`Las acciones individuales suman el ${Math.round(single/total*100)}% (${fmt(single)}).`,`Individual stocks add up to ${Math.round(single/total*100)}% (${fmt(single)}).`)}</div></div>`:''}
-     ${losers.length?`<div class="alert warn"><span class="ic">!</span><div><b>${L('Candidatas a vender con pérdida (tax-loss harvesting):','Tax-loss harvesting candidates:')}</b> ${losers.map(x=>`${esc(x.sym)} ${fmt(x.gain)}`).join(', ')}. Total ${fmt(losers.reduce((s,x)=>s+x.gain,0))}.</div></div>`:`<div class="alert good"><span class="ic">✓</span><div>${L('Ninguna posición en pérdidas: no hay pérdidas que vender para compensar impuestos.','No positions at a loss: there are no losses to harvest to offset taxes.')}</div></div>`}
-     <div class="alert info"><span class="ic">i</span><div>${L('Al ser una cuenta normal, vender cualquier posición con ganancia paga impuestos. Para reequilibrar, dirige las aportaciones nuevas hacia lo que quieras aumentar.','Since this is a taxable account, selling any position at a gain triggers taxes. To rebalance, direct new contributions toward what you want to grow.')}</div></div>
+     ${ret?`<div class="alert info"><span class="ic">i</span><div>${L('En una cuenta de jubilación, cambiar de fondo no paga impuestos: puedes reequilibrar moviendo saldo entre fondos o cambiando el reparto de las aportaciones futuras en la web del plan.','In a retirement account, switching funds doesn\'t trigger taxes: you can rebalance by moving balance between funds or changing how future contributions are split on the plan\'s website.')}</div></div>`:`${losers.length?`<div class="alert warn"><span class="ic">!</span><div><b>${L('Candidatas a vender con pérdida (tax-loss harvesting):','Tax-loss harvesting candidates:')}</b> ${losers.map(x=>`${esc(x.sym)} ${fmt(x.gain)}`).join(', ')}. Total ${fmt(losers.reduce((s,x)=>s+x.gain,0))}.</div></div>`:`<div class="alert good"><span class="ic">✓</span><div>${L('Ninguna posición en pérdidas: no hay pérdidas que vender para compensar impuestos.','No positions at a loss: there are no losses to harvest to offset taxes.')}</div></div>`}
+     <div class="alert info"><span class="ic">i</span><div>${L('Al ser una cuenta normal, vender cualquier posición con ganancia paga impuestos. Para reequilibrar, dirige las aportaciones nuevas hacia lo que quieras aumentar.','Since this is a taxable account, selling any position at a gain triggers taxes. To rebalance, direct new contributions toward what you want to grow.')}</div></div>`}
    </div></div>
-   <details style="margin-top:8px"><summary>${L(`Ver las ${H.length} posiciones`,`See the ${H.length} positions`)}</summary><div class="tbl"><table><thead><tr><th>${L('Símbolo','Symbol')}</th><th class="n">${L('Cantidad','Quantity')}</th><th class="n">${L('Coste','Cost')}</th><th class="n">${L('Valor','Value')}</th><th class="n">${L('Ganancia','Gain')}</th><th class="n">${L('% cuenta','% of account')}</th></tr></thead><tbody>${top.map(x=>`<tr><td><b>${esc(x.sym)}</b><div class="muted">${esc(x.name)}</div></td><td class="n">${isNaN(x.qty)?'—':x.qty.toLocaleString('en-US',{maximumFractionDigits:4})}</td><td class="n">${x.cost!=null?fmt(x.cost):'—'}</td><td class="n">${fmt(x.value)}</td><td class="n ${x.gain>=0?'pos':'neg'}">${x.gain!=null?fmt(x.gain)+(x.cost?` <span class="muted">${Math.round(x.gain/x.cost*100)}%</span>`:''):'—'}</td><td class="n">${(x.value/total*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div></details></div>`;
+   <details style="margin-top:8px"><summary>${L(`Ver ${ret?'los':'las'} ${H.length} ${ret?'fondos':'posiciones'}`,`See the ${H.length} ${ret?'funds':'positions'}`)}</summary><div class="tbl"><table><thead><tr><th>${ret?L('Fondo','Fund'):L('Símbolo','Symbol')}</th><th class="n">${L('Cantidad','Quantity')}</th><th class="n">${L('Coste','Cost')}</th><th class="n">${L('Valor','Value')}</th><th class="n">${L('Ganancia','Gain')}</th><th class="n">${L('% cuenta','% of account')}</th></tr></thead><tbody>${top.map(x=>`<tr><td><b>${esc(x.fund?x.name:x.sym)}</b><div class="muted">${esc(x.fund?acL(assetClass(x)):x.name)}</div></td><td class="n">${isNaN(x.qty)?'—':x.qty.toLocaleString('en-US',{maximumFractionDigits:4})}</td><td class="n">${x.cost!=null?fmt(x.cost):'—'}</td><td class="n">${fmt(x.value)}</td><td class="n ${x.gain>=0?'pos':'neg'}">${x.gain!=null?fmt(x.gain)+(x.cost?` <span class="muted">${Math.round(x.gain/x.cost*100)}%</span>`:''):'—'}</td><td class="n">${(x.value/total*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div></details></div>`;
 }
 
 /* ---------- Claude ---------- */

@@ -6,7 +6,10 @@ from reportlab.pdfgen import canvas
 D=os.path.join(os.path.dirname(__file__),'fixtures'); os.makedirs(D,exist_ok=True)
 def mk(fn,lines):
     c=canvas.Canvas(os.path.join(D,fn),pagesize=letter); y=750
-    for l in lines: c.drawString(40,y,l); y-=16
+    for l in lines:
+        if l=='<PAGE>' or y<50: c.showPage(); y=750
+        if l=='<PAGE>': continue
+        c.drawString(40,y,l); y-=16
     c.save()
 mk('mortgage.pdf',["Pennymac Mortgage Activity Statement","Statement Date: October 6, 2026","Loan Number: 0000001234","Payment Due Date: November 1, 2026",
  "Principal: $1,000.00","Interest: $3,500.00","Escrow (Taxes and Insurance): $0.00","Regular Monthly Payment: $4,500.00",
@@ -51,7 +54,14 @@ mk('m1_cash.pdf',["Statement","Sophisticated wealth building, simplified.","123 
  "2026-09-10 Instant transfer to M1 Invest $(100.00) 2026-09-30 Interest application $50.00"])
 mk('empower_q3.pdf',["Empower","EXAMPLE CORP 401(K) PLAN","JANE Q SAMPLE Statement Period: 07/01/2026 - 09/30/2026","Plan: 000000-01",
  "Employee Employer Total","Balance as of June 30, 2026 $90,000.00 $10,000.00 $100,000.00","Payroll Contributions 5,000.00 1,000.00 6,000.00",
- "Balance as of September 30, 2026 $97,000.00 $11,500.00 $108,500.00"])
+ "Balance as of September 30, 2026 $97,000.00 $11,500.00 $108,500.00",
+ "How will my future contributions be invested?","60% Large Cap Funds","60% Vanguard 500 Index Admiral","30% International Funds","30% Vanguard Developed Markets Index Admiral","10% Bond Funds","10% Vanguard Total Bond Market Index Admiral",
+ "How is my account invested?","60.00% Large Cap Funds","30.00% International Funds","10.00% Bond Funds","Ending","Beginning Change Withdrawals Ending Units/","Balance Deposits in Value Transfers /Expenses Balance Shares",
+ "Large Cap Funds","Vanguard 500 Index 60,000.00 3,600.00 1,560.00 -60.00 65,100.00 120.556","Admiral",
+ "International Funds","Vanguard Developed 30,000.00 1,800.00 780.00 -30.00 32,550.00 1,800.250","Markets Index Admiral","ADDR-Y 0000000000 Page 1 of 2","<PAGE>",
+ "EXAMPLE CORP 401(K) PLAN","JANE Q SAMPLE","12345678","How is my account invested? (continued)","Ending","Beginning Change Withdrawals Ending Units/","Balance Deposits in Value Transfers /Expenses Balance Shares",
+ "Bond Funds","Vanguard Total Bond 10,000.00 600.00 280.00 -30.00 10,850.00 1,000.000","Market Index Admiral",
+ "Totals 100,000.00 6,000.00 2,620.00 -120.00 108,500.00","How is my account being funded?","Employee 90,000.00 5,000.00 2,000.00 97,000.00"])
 mk('wf_mortgage.pdf',["Wells Fargo Home Mortgage","Statement date 10/09/26","Loan number 0000005678","Payment due date 11/01/26","Total amount due $3,000.00",
  "Explanation of amount due Balance summary Past payments breakdown","Principal $500.00 Unpaid principal balance $400,000.00 Since last statement Year-to-date",
  "Interest $2,000.00 Call Customer Service for a payoff amount","Escrow $500.00 Principal $500.00 $4,000.00",

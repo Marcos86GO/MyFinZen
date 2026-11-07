@@ -186,6 +186,15 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
     'tipo, nombre y últimos 4 dígitos de cada cuenta ('+[rb.card.name,rb.chk.name,rb.sav.name,rb.m1.name,rb.emp.name,rb.wf.name].join(' | ')+')');
   ok(rb.cardTx==='2026-07-21 -2000,2026-08-06 -250,2026-08-11 -1000,2026-08-20 2000'&&rb.cardBal===1250&&rb.bal===0,'tarjeta: fecha de anotación, importe en la línea siguiente y saldo que cuadra ('+rb.cardTx+')');
   ok(rb.payRec&&rb.xfer&&rb.mort,'concilia pago de tarjeta, transferencia y cuota de Wells Fargo');
+  // 401(k): los fondos del extracto se guardan como posiciones, con su tipo de activo, y todo cuadra
+  const ek=await pg.evaluate(()=>{ const r=BATCH.res.find(x=>x.name==='empower_q3.pdf'); const a=acc(r.acc); const H=(a.holdings&&a.holdings.rows)||[];
+    return {n:H.length,names:H.map(x=>x.name).join('|'),cls:H.map(x=>assetClass(x)).join('|'),sum:r2(H.reduce((s,x)=>s+x.value,0)),date:a.holdings&&a.holdings.date,check:r.check&&r.check.ok,funds:r.funds,
+      cards:[...BATCH.res].filter(x=>x.check).map(x=>x.name+':'+x.check.ok).join(',')}; });
+  ok(ek.n===3&&ek.names==='Vanguard 500 Index Admiral|Vanguard Developed Markets Index Admiral|Vanguard Total Bond Market Index Admiral'&&ek.cls==='EE. UU. grandes|Internacional|Bonos'&&ek.sum===108500&&ek.date==='2026-09-30'&&ek.check&&ek.funds===3,'401(k): fondos del extracto con su tipo de activo ('+ek.names+' · '+ek.cls+')');
+  ok(/bofa_card_sep\.pdf:true/.test(ek.cards)&&/bofa_checking\.pdf:true/.test(ek.cards)&&/bofa_savings\.pdf:true/.test(ek.cards)&&/m1_cash\.pdf:true/.test(ek.cards)&&!/false/.test(ek.cards),'cada extracto se comprueba contra sus propios totales ('+ek.cards+')');
+  await pg.goto(U+'#inversiones'); await pg.waitForTimeout(300);
+  ok(await pg.evaluate(()=>{ const c=[...document.querySelectorAll('[data-help="holdings"]')].map(b=>b.closest('.card')).find(c=>/Empower/.test(c.innerText)); return c&&/Fondos/.test(c.innerText)&&/Bonos/.test(c.innerText)&&/cambiar de fondo no paga impuestos/.test(c.innerText)&&!/tax-loss/.test(c.innerText); }),'Inversiones muestra la distribución del 401(k)');
+  await pg.goto(U+'#importar'); await pg.waitForTimeout(300);
   // Botón "Importar" de una cuenta: el archivo va a esa cuenta aunque el nombre no diga nada
   await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
   const svId=await pg.evaluate(()=>S.accounts.find(a=>a.name==='savings').id);
