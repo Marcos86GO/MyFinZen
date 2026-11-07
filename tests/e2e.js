@@ -194,6 +194,20 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(/bofa_card_sep\.pdf:true/.test(ek.cards)&&/bofa_checking\.pdf:true/.test(ek.cards)&&/bofa_savings\.pdf:true/.test(ek.cards)&&/m1_cash\.pdf:true/.test(ek.cards)&&!/false/.test(ek.cards),'cada extracto se comprueba contra sus propios totales ('+ek.cards+')');
   await pg.goto(U+'#inversiones'); await pg.waitForTimeout(300);
   ok(await pg.evaluate(()=>{ const c=[...document.querySelectorAll('[data-help="holdings"]')].map(b=>b.closest('.card')).find(c=>/Empower/.test(c.innerText)); return c&&/Fondos/.test(c.innerText)&&/Bonos/.test(c.innerText)&&/cambiar de fondo no paga impuestos/.test(c.innerText)&&!/tax-loss/.test(c.innerText); }),'Inversiones muestra la distribución del 401(k)');
+  // Aportaciones leídas del extracto y estimación de la jubilación
+  ok(await pg.evaluate(()=>{ const a=S.accounts.find(x=>x.kind==='retirement'&&x.institution==='Empower'); const c=a&&a.contrib401; return c&&c.employee===5000&&c.employer===1000&&c.total===6000&&c.months===3; }),'aportaciones del 401(k) leídas del extracto (tú, empresa y meses)');
+  await pg.click('.tabs-inline a[href="#jubilacion"]'); await pg.waitForTimeout(300);
+  ok(await pg.evaluate(()=>location.hash==='#jubilacion'&&document.querySelector('nav a.on').getAttribute('href')==='#inversiones'&&/Pon tu año de nacimiento/.test(document.querySelector('#rOut').innerText)),'pestaña Jubilación pide el año de nacimiento');
+  await pg.fill('#rBy','1986'); await pg.waitForTimeout(150);
+  const jb=await pg.evaluate(()=>{ const d=retireData(); const p=retireAt(d,65); let B=d.bal; for(let i=0;i<d.ra-d.age;i++) B=B*1.05+d.contrib;
+    return {age:d.age,contrib:d.contrib,bal:d.bal,ok:Math.abs(p.B-B)<0.01,shown:document.querySelector('#rB').innerText,exp:fmt(B),rows:document.querySelectorAll('#rOut tbody tr').length,tips:document.querySelector('#rTips').innerText}; });
+  ok(jb.age===2026-1986&&jb.contrib===24000&&jb.ok&&jb.shown===jb.exp&&jb.rows===6,'estimación a los 65 en dólares de hoy ('+jb.shown+', aportación '+jb.contrib+')');
+  ok(/máximo de 2026 es \$24,500/.test(jb.tips)&&/empresa aporta unos \$4,000/.test(jb.tips)&&/Acciones: 90%/.test(jb.tips)&&/Antes de los 59½/.test(jb.tips)===false,'recomendaciones del 401(k): máximo del IRS, aportación de la empresa y reparto');
+  await pg.fill('#rG','9000'); await pg.evaluate(()=>{ const r=$('#rA'); r.value='60'; r.dispatchEvent(new Event('input')); }); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>/te faltarían unos/.test($('#rOut').innerText)&&/Antes de los 59½/.test($('#rTips').innerText)===false&&S.settings.retire.age===60),'objetivo de ingreso y cambio de edad');
+  await pg.evaluate(()=>{ const r=$('#rA'); r.value='57'; r.dispatchEvent(new Event('input')); }); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>/Antes de los 59½/.test($('#rTips').innerText)),'aviso de penalización antes de los 59½');
+  await pg.evaluate(()=>{ S.settings.retire={}; save(); });
   await pg.goto(U+'#importar'); await pg.waitForTimeout(300);
   // Botón "Importar" de una cuenta: el archivo va a esa cuenta aunque el nombre no diga nada
   await pg.goto(U+'#cuentas'); await pg.waitForTimeout(300);
@@ -207,7 +221,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>!!document.querySelector('#modal #fNew')&&!!document.querySelector('#modal #nNoDoc')),'añadir cuenta empieza por un extracto');
   await pg.click('#nNoDoc'); await pg.waitForTimeout(150); ok(await pg.evaluate(()=>/Nueva cuenta/.test(document.querySelector('#modal').innerText)&&!!document.querySelector('#modal input')),'crear cuenta sin documento'); await pg.evaluate(()=>closeModal());
   // Inglés en todas las pantallas
-  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
+  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
   for(const v of views){ await pg.goto(U+'#'+v); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push(v+': '+m[0]); }
   for(const tab of ['resumen','perfil','optimizar','turbotax']){ await pg.goto(U+'#impuestos'); await pg.evaluate(t=>{taxSel.tab=t;route();},tab); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push('impuestos/'+tab+': '+m[0]); }

@@ -41,7 +41,7 @@ const ic=(n,cls)=>`<svg class="ico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hi
 // Menú: orden pedido por el usuario. Lo que no cabe va en "Más".
 const NAV=[['resumen','Resumen','Overview','home'],['flujo','Movimientos','Transactions','flow'],['cuentas','Cuentas','Accounts','wallet'],['inversiones','Inversiones','Investments','trend'],['hipotecas','Hipotecas','Mortgages','house'],['impuestos','Impuestos','Taxes','receipt']];
 const NAV_MORE=[['alquiler','Casa en alquiler','Rental','building'],['claude','Claude','Claude','spark'],['ayuda','Manual','Manual','book'],['ajustes','Copia y ajustes','Backup & settings','sliders']];
-const NAV_PARENT={noticias:'inversiones',importar:'cuentas'};
+const NAV_PARENT={noticias:'inversiones',jubilacion:'inversiones',importar:'cuentas'};
 function navLabel(v){ const n=[...NAV,...NAV_MORE].find(x=>x[0]===(NAV_PARENT[v]||v)); return n?L(n[1],n[2]):'MyFinZen'; }
 function applyStatic(){
   document.documentElement.lang=LANG;
@@ -193,6 +193,7 @@ function sanitizeState(st){
     if('propertyId' in x) x.propertyId=x.propertyId?cleanId(x.propertyId):null; if('nextDue' in x) x.nextDue=isoDate(x.nextDue);
     ['rental','pre2017'].forEach(k=>{ if(k in x) x[k]=!!x[k]; });
     if('keys' in x) x.keys=arr(x.keys).filter(k=>typeof k==='string').map(k=>k.slice(0,80)).slice(0,20);
+    if('contrib401' in x){ const c=obj(x.contrib401); x.contrib401=isoDate(c.date)?{date:c.date,months:Math.max(1,Math.min(12,Math.round(numStrict(c.months)||3))),employee:numStrict(c.employee),employer:numStrict(c.employer),total:numStrict(c.total)}:undefined; if(!x.contrib401||x.contrib401.total==null) delete x.contrib401; }
     if(x.holdings){ const h=obj(x.holdings); x.holdings=isoDate(h.date)?{date:h.date,rows:arr(h.rows).map(sanitizeHoldingRow).filter(r=>r.sym)}:undefined; if(!x.holdings) delete x.holdings; }
     return x; });
   o.snapshots=arr(o.snapshots).map(s=>{ s=obj(s); const x={id:cleanId(s.id)||uid(),acc:cleanId(s.acc),date:isoDate(s.date),value:numStrict(s.value)}; ['rate','pi','extra','escrow'].forEach(k=>{ if(s[k]!=null) x[k]=numStrict(s[k]); }); return x; }).filter(s=>s.acc&&s.date&&s.value!=null);
@@ -206,6 +207,8 @@ function sanitizeState(st){
   S2.context=str(s.context,2000); S2.hideNames=str(s.hideNames,500); S2.autoClaude=!!s.autoClaude;
   S2.userCats=arr(s.userCats).map(c=>({name:str(obj(c).name,40).trim(),type:CAT_TYPES.includes(obj(c).type)?c.type:'expense'})).filter(c=>c.name);
   S2.onboardDone=!!s.onboardDone; S2.catVer=Math.max(0,Math.min(99,Math.round(numStrict(s.catVer)||0)));
+  { const r=obj(s.retire), n=(k,lo,hi)=>{ const v=numStrict(r[k]); return v==null?null:Math.max(lo,Math.min(hi,v)); };
+    S2.retire={by:n('by',1920,2030),age:n('age',45,80),ret:n('ret',0,12),contrib:n('contrib',0,200000),ss:n('ss',0,20000),goal:n('goal',0,100000)}; }
   S2.alertIgnore=arr(s.alertIgnore).filter(x=>typeof x==='string').map(x=>x.slice(0,120)).slice(-300);
   S2.recIgnore=arr(s.recIgnore).filter(x=>typeof x==='string').slice(-300);
   if(s.lastAI&&typeof s.lastAI==='object') S2.lastAI={date:isoDate(s.lastAI.date)||today(),q:str(s.lastAI.q,500),text:str(s.lastAI.text,60000)};
@@ -810,9 +813,13 @@ VIEWS.inversiones=(el)=>{
    <div class="card">${helpBtn('inv_chart')}<h2>${L('Evolución de tus inversiones','How your investments evolve')}</h2><p class="sub">${L('Saldo a fin de cada mes','Balance at the end of each month')}${first!=null&&tot12[12]!=null?` · ${tot12[12]-first>=0?'+':''}${fmt(tot12[12]-first)} ${L('en el periodo (incluye aportaciones)','in the period (includes contributions)')}`:''}</p>${legend(inv.map((a,i)=>({n:a.name,c:pal[i%8]})))}<div id="cInv"></div></div>
    <h3 class="sec">${L('Cuentas','Accounts')}</h3>
    <div class="card list">${inv.map(a=>{const s=lastSnap(a.id);return `<button class="lrow" data-acc="${esc(a.id)}">${accAv(a)}<span class="lm"><b>${esc(a.last4?a.name.replace(/\s*···\d{4}$/,''):a.name)}</b><span>${KINDS[a.kind].label}${a.institution?' · '+esc(a.institution):''}</span></span><span class="lr"><b>${s?fmt(s.value):'—'}</b><span>${s?dLabel(s.date):L('sin saldo','no balance')}</span></span>${ic('right','chev')}</button>`}).join('')}</div>`;
-  el.insertAdjacentHTML('beforeend',inv.map(holdingsHTML).join('')+`<p class="muted" style="margin-top:10px">${L('Para ver las posiciones, sube en <a href="#importar">Cuentas → Importar</a> el CSV de Holdings de M1 o el extracto trimestral de tu 401(k).','To see your positions, upload the M1 Holdings CSV or your 401(k) quarterly statement in <a href="#importar">Accounts → Import</a>.')}</p>`);
+  const noF=inv.filter(a=>a.kind==='retirement'&&!(a.holdings&&a.holdings.rows&&a.holdings.rows.length));
+  el.insertAdjacentHTML('beforeend',inv.map(holdingsHTML).join('')+noF.map(a=>`<div class="card" style="margin-top:12px">${helpBtn('retire_nofunds')}<h2>${L('Fondos','Funds')} · ${esc(a.name)}</h2><p class="sub">${L('Todavía no hay fondos guardados para esta cuenta. Importa su último extracto trimestral en PDF (o vuelve a importarlo si lo hiciste antes de esta versión) y verás aquí su distribución.','There are no funds saved for this account yet. Import its latest quarterly PDF statement (or import it again if you did it before this version) and you\'ll see its breakdown here.')}</p><button class="pri" data-impf="${esc(a.id)}">${ic('upload')}${L('Importar extracto','Import statement')}</button></div>`).join('')
+    +(inv.some(a=>a.kind==='retirement')?`<div class="card" style="margin-top:12px"><div class="row"><div><h2 style="margin:0">${L('¿Cómo quedaría tu jubilación?','How would your retirement look?')}</h2><p class="muted" style="margin:2px 0 0">${L('Estimación según la edad a la que te jubiles y recomendaciones para tu 401(k).','Estimate by the age you retire at and recommendations for your 401(k).')}</p></div><a class="btn pri" href="#jubilacion">${L('Ver estimación','See estimate')}</a></div></div>`:'')+`<input type="file" id="fInvF" accept="${PICK_ACCEPT}" hidden>`+`<p class="muted" style="margin-top:10px">${L('Para ver las posiciones, sube en <a href="#importar">Cuentas → Importar</a> el CSV de Holdings de M1 o el extracto trimestral de tu 401(k).','To see your positions, upload the M1 Holdings CSV or your 401(k) quarterly statement in <a href="#importar">Accounts → Import</a>.')}</p>`);
   lineChart($('#cInv'),{labels:months.map(ymLabel),series:inv.map((a,i)=>({name:a.name,color:pal[i%8],values:months.map(m=>balanceOf(a,monthEnd(m)))}))});
   el.querySelectorAll('[data-acc]').forEach(b=>b.onclick=()=>accountSheet(b.dataset.acc));
+  el.querySelectorAll('[data-impf]').forEach(b=>b.onclick=()=>{ const f=$('#fInvF'); f.dataset.target=b.dataset.impf; f.click(); });
+  if($('#fInvF')) $('#fInvF').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; const t=$('#fInvF').dataset.target; if(t&&acc(t)) importFiles(fs,{forId:t}); };
 };
 
 /* ---------- Noticias (terminal) ----------
@@ -925,7 +932,7 @@ function newsRowHTML(it,R){ const src=esc(it.s||it.d), tp=it.tp||newsTopic(it), 
 function newsDay(iso){ const d=new Date(iso), n=new Date(); const y=new Date(); y.setDate(n.getDate()-1);
   if(d.toDateString()===n.toDateString()) return L('Hoy','Today'); if(d.toDateString()===y.toDateString()) return L('Ayer','Yesterday');
   const s=d.toLocaleDateString(NEWS_LOC(),{weekday:'long',day:'numeric',month:'long'}); return s.charAt(0).toUpperCase()+s.slice(1); }
-function invTabs(cur){ return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cartera'?'pri':''}" href="#inversiones">${L('Cartera','Portfolio')}</a><a class="btn ${cur==='noticias'?'pri':''}" href="#noticias">${L('Noticias','News')}</a>${cur==='noticias'?helpBtn('news',true):''}</div>`; }
+function invTabs(cur){ return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cartera'?'pri':''}" href="#inversiones">${L('Cartera','Portfolio')}</a><a class="btn ${cur==='jubilacion'?'pri':''}" href="#jubilacion">${L('Jubilación','Retirement')}</a><a class="btn ${cur==='noticias'?'pri':''}" href="#noticias">${L('Noticias','News')}</a>${cur==='noticias'?helpBtn('news',true):''}</div>`; }
 VIEWS.noticias=(el)=>{
   const st=newsSettings(); if(!NEWS_TABS.some(t=>t[0]===st.newsTab)) st.newsTab='cartera';
   el.innerHTML=invTabs('noticias')+`<div class="card" id="newsTop">
@@ -1298,7 +1305,12 @@ function readEmpower0(T){
   const all=[...T.matchAll(new RegExp('Balance as of\\s+('+MON_RE+')((?:\\s+\\$?[\\d,]+\\.\\d{2})+)','gi'))]; if(!all.length) return null;
   const last=all[all.length-1], v=last[2].match(/[\d,]+\.\d{2}/g);
   return knownStmt({institution:'Empower',kind:'retirement',product:/403\(?b/i.test(T.slice(0,800))?'403(b)':/457/.test(T.slice(0,800))?'457':'401(k)',
-    last4:l4of(grab(T,/Plan:\s*([\d-]{4,})/i)),date:parseDate(last[1].replace('.','')),balance:num(v[v.length-1]),balLabel:'Balance as of',funds:readFundTable(T)}); }
+    last4:l4of(grab(T,/Plan:\s*([\d-]{4,})/i)),date:parseDate(last[1].replace('.','')),balance:num(v[v.length-1]),balLabel:'Balance as of',funds:readFundTable(T),contrib:empowerContrib(T)}); }
+// Aportaciones del periodo ("Payroll Contributions empleado empresa total") y su duración en meses
+function empowerContrib(T){ const m=T.match(/Payroll Contributions((?:\s+-?\$?[\d,]+\.\d{2})+)/i); if(!m) return null; const v=m[1].match(/-?[\d,]+\.\d{2}/g).map(num);
+  const p=T.match(/Statement Period:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i); let months=3;
+  if(p){ const a=new Date(parseDate(p[1])), b=new Date(parseDate(p[2])); months=Math.max(1,Math.min(12,Math.round((b-a)/(30.44*864e5)))); }
+  const total=v[v.length-1]; return v.length>=3?{employee:v[0],employer:v[1],total,months}:{employee:null,employer:null,total,months}; }
 // (la comprobación de Empower va en readEmpower: la suma de los fondos debe dar el total y el saldo)
 function parseStatement(text){
   const T=text;
@@ -1630,7 +1642,8 @@ async function autoPDF(file){
   const nf=saveFunds(a,r);
   return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,created,funds:nf,check:r.check}; }
 // Fondos del plan (401(k), IRA…): se guardan como posiciones de la cuenta para ver su distribución
-function saveFunds(a,r){ const F=r.funds; if(!F||!F.rows.length||!['retirement','brokerage','kids'].includes(a.kind)||!r.dateFound) return 0;
+function saveFunds(a,r){ if(r.contrib&&a.kind==='retirement'&&r.dateFound&&!(a.contrib401&&a.contrib401.date>r.date)) a.contrib401=Object.assign({date:r.date},r.contrib);
+  const F=r.funds; if(!F||!F.rows.length||!['retirement','brokerage','kids'].includes(a.kind)||!r.dateFound) return 0;
   const cur=a.holdings&&a.holdings.date; if(cur&&cur>r.date) return 0; saveHoldings(a.id,F.rows,r.date,false,false); return F.rows.length; }
 
 // Cuenta nueva a partir de un extracto reconocido (lote). El nombre lleva entidad, producto y últimos 4 dígitos.
@@ -1736,6 +1749,87 @@ function holdingsHTML(a){
    <details style="margin-top:8px"><summary>${L(`Ver ${ret?'los':'las'} ${H.length} ${ret?'fondos':'posiciones'}`,`See the ${H.length} ${ret?'funds':'positions'}`)}</summary><div class="tbl"><table><thead><tr><th>${ret?L('Fondo','Fund'):L('Símbolo','Symbol')}</th><th class="n">${L('Cantidad','Quantity')}</th><th class="n">${L('Coste','Cost')}</th><th class="n">${L('Valor','Value')}</th><th class="n">${L('Ganancia','Gain')}</th><th class="n">${L('% cuenta','% of account')}</th></tr></thead><tbody>${top.map(x=>`<tr><td><b>${esc(x.fund?x.name:x.sym)}</b><div class="muted">${esc(x.fund?acL(assetClass(x)):x.name)}</div></td><td class="n">${isNaN(x.qty)?'—':x.qty.toLocaleString('en-US',{maximumFractionDigits:4})}</td><td class="n">${x.cost!=null?fmt(x.cost):'—'}</td><td class="n">${fmt(x.value)}</td><td class="n ${x.gain>=0?'pos':'neg'}">${x.gain!=null?fmt(x.gain)+(x.cost?` <span class="muted">${Math.round(x.gain/x.cost*100)}%</span>`:''):'—'}</td><td class="n">${(x.value/total*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div></details></div>`;
 }
 
+/* ---------- Jubilación (pestaña de Inversiones) ----------
+   Proyección en dólares de hoy: saldo actual de las cuentas de jubilación + aportación anual (tú + empresa, leída del
+   extracto) con una rentabilidad real (ya descontada la inflación). Ingreso: regla del 4 % + Seguridad Social
+   (estimación del usuario a los 67, ajustada por la edad a la que la pide). Orientativo: no sustituye a un asesor. */
+const SS_F={62:.70,63:.75,64:.80,65:.8667,66:.9333,67:1,68:1.08,69:1.16,70:1.24};
+function retireData(){ const R=S.settings.retire||{}; const accs=S.accounts.filter(a=>a.kind==='retirement');
+  const bal=accs.reduce((t,a)=>t+(balanceOf(a)||0),0);
+  let emp=0, er=0, tot=0, known=false; accs.forEach(a=>{ const c=a.contrib401; if(!c) return; known=true; const k=12/c.months; tot+=c.total*k; if(c.employee!=null){ emp+=c.employee*k; er+=(c.employer||0)*k; } });
+  const year=+today().slice(0,4); const age=R.by?year-R.by:null;
+  return {accs,bal,emp:r2(emp),er:r2(er),contribRead:r2(tot),known,age,year,ra:R.age||65,ret:(R.ret??5)/100,contrib:R.contrib??r2(tot),ss:R.ss||0,goal:R.goal||0}; }
+function retireAt(d,ra,extra=0){ const n=Math.max(0,ra-d.age); let B=d.bal; for(let i=0;i<n;i++) B=B*(1+d.ret)+d.contrib+extra;
+  const claim=Math.min(70,Math.max(62,ra)), ss=d.ss*(SS_F[claim]||1);
+  return {ra,year:d.year+n,B,m4:B*0.04/12,ss,claim,tot:B*0.04/12+ss}; }
+// Aportación anual extra para llegar a un ingreso mensual (regla del 4 % + Seguridad Social)
+function needExtra(d,ra,goalMonthly){ const n=Math.max(1,ra-d.age), g=Math.pow(1+d.ret,n); const claim=Math.min(70,Math.max(62,ra));
+  const target=Math.max(0,goalMonthly-d.ss*(SS_F[claim]||1))*12/0.04; const fut=d.bal*g+d.contrib*(d.ret?(g-1)/d.ret:n);
+  return target<=fut?0:(target-fut)*(d.ret?d.ret/(g-1):1/n); }
+// Recomendaciones (reglas generales y educativas)
+function retireTips(d){ const T=[]; const lim=LIM[d.year]||LIM[Math.max(...Object.keys(LIM).map(Number))];
+  const cu=d.age==null?0:d.age>=60&&d.age<=63?lim.catch6063:d.age>=50?lim.catch50:0; const max=lim.k401+cu;
+  const yrs=d.age!=null?d.ra-d.age:null;
+  if(d.known&&d.emp){ const gap=max-d.emp;
+    if(gap>max*0.05){ const a=d.age!=null&&yrs>0?retireAt(d,d.ra):null, b=a?retireAt(d,d.ra,gap):null;
+      T.push({lvl:'warn',t:L(`<b>Aportas unos ${fmt(d.emp)} al año de tu sueldo; el máximo de ${d.year} es ${fmt(max)}${cu?' (con la aportación adicional por edad)':''}.</b> ${b?`Si aportaras el máximo, a los ${d.ra} tendrías unos ${fmtK(b.B-a.B)} más (≈ ${fmt((b.B-a.B)*0.04/12)}/mes de ingreso).`:''} Puedes subirlo en la web del plan; lo que aportes antes de impuestos también baja tu factura fiscal de este año.`,
+        `<b>You contribute about ${fmt(d.emp)} a year from your pay; the ${d.year} maximum is ${fmt(max)}${cu?' (with the age-based catch-up)':''}.</b> ${b?`If you contributed the maximum, at ${d.ra} you'd have about ${fmtK(b.B-a.B)} more (≈ ${fmt((b.B-a.B)*0.04/12)}/mo of income).`:''} You can raise it on the plan's website; pre-tax contributions also lower this year's tax bill.`)}); }
+    else T.push({lvl:'good',t:L(`<b>Aportas prácticamente el máximo (${fmt(max)} en ${d.year}).</b> Si te sobra ahorro, el siguiente paso suele ser una IRA (Roth o "backdoor") o la cuenta normal de inversión.`,`<b>You're contributing close to the maximum (${fmt(max)} in ${d.year}).</b> If you have more to save, the usual next step is an IRA (Roth or "backdoor") or a regular brokerage account.`)}); }
+  if(d.known&&d.er) T.push({lvl:'info',t:L(`<b>Tu empresa aporta unos ${fmt(d.er)} al año.</b> Comprueba en el plan la fórmula del "match" y aporta al menos lo necesario para no dejar nada sin cobrar: es la rentabilidad más alta que vas a encontrar.`,`<b>Your employer contributes about ${fmt(d.er)} a year.</b> Check the plan's match formula and contribute at least enough not to leave any of it on the table: it's the highest return you'll find.`)});
+  // Reparto entre acciones y bonos frente a una senda tipo fondo de fecha objetivo
+  const H=d.accs.flatMap(a=>(a.holdings&&a.holdings.rows)||[]); const tot=H.reduce((t,x)=>t+x.value,0);
+  if(tot>0&&yrs!=null&&yrs>0){ const cls=x=>assetClass(x); const sumC=list=>H.filter(x=>list.includes(cls(x))).reduce((t,x)=>t+x.value,0);
+    const bonds=sumC(['Bonos','Liquidez']), tdf=sumC(['Fecha objetivo']);
+    const tgt=yrs>=30?90:yrs>=20?85:yrs>=15?80:yrs>=10?70:yrs>=5?60:50; const stk=Math.round((tot-bonds-tdf)/tot*100);
+    if(tdf/tot>0.5) T.push({lvl:'good',t:L('<b>Tienes la mayor parte en un fondo de fecha objetivo</b>, que ajusta solo el reparto entre acciones y bonos según te acercas a la jubilación. Evita mezclarlo con muchos otros fondos.','<b>Most of it is in a target-date fund</b>, which adjusts the stock/bond split on its own as you approach retirement. Avoid mixing it with many other funds.')});
+    else if(Math.abs(stk-tgt)>=10) T.push({lvl:'warn',t:L(`<b>Acciones: ${stk}% · bonos y liquidez: ${100-stk}%.</b> A ${yrs} años de jubilarte, los fondos de fecha objetivo suelen tener alrededor de un ${tgt}% en acciones. ${stk>tgt?'Tu cartera es más arriesgada que eso: más rentabilidad esperada, pero caídas más fuertes.':'Tu cartera es más conservadora: menos sustos, pero menos crecimiento esperado.'} Es orientativo: depende de cuánto riesgo toleres.`,`<b>Stocks: ${stk}% · bonds and cash: ${100-stk}%.</b> With ${yrs} years to retirement, target-date funds usually hold around ${tgt}% in stocks. ${stk>tgt?'Yours is riskier than that: higher expected return, but deeper drops.':'Yours is more conservative: fewer scares, but less expected growth.'} It's a guideline: it depends on how much risk you're comfortable with.`)});
+    else T.push({lvl:'good',t:L(`<b>Acciones: ${stk}% · bonos y liquidez: ${100-stk}%</b>, en línea con lo habitual a ${yrs} años de jubilarte (≈ ${tgt}% en acciones).`,`<b>Stocks: ${stk}% · bonds and cash: ${100-stk}%</b>, in line with what's usual ${yrs} years from retirement (≈ ${tgt}% in stocks).`)});
+    const eq=tot-bonds-tdf, intl=sumC(['Internacional','Internacional ESG','Emergentes']);
+    if(eq>0&&intl/eq<0.2) T.push({lvl:'info',t:L(`<b>Internacional: ${Math.round(intl/eq*100)}% de la parte en acciones.</b> Muchos fondos de fecha objetivo ponen un 30–40% fuera de EE. UU. para diversificar; valora subirlo con el fondo internacional del plan.`,`<b>International: ${Math.round(intl/eq*100)}% of the stock portion.</b> Many target-date funds hold 30–40% outside the US to diversify; consider raising it with the plan's international fund.`)});
+    const act=H.filter(x=>x.fund&&!/index|idx|\b500\b|total (stock|bond|market)|target|retirement 20/i.test(x.name)), av=act.reduce((t,x)=>t+x.value,0);
+    if(av/tot>0.25) T.push({lvl:'info',t:L(`<b>El ${Math.round(av/tot*100)}% está en fondos de gestión activa</b> (${act.map(x=>esc(x.sym)).join(', ')}). Suelen cobrar comisiones bastante más altas que los indexados. Mira su "expense ratio" en la web del plan: una diferencia de 0,5% al año durante ${yrs} años se nota mucho.`,`<b>${Math.round(av/tot*100)}% is in actively managed funds</b> (${act.map(x=>esc(x.sym)).join(', ')}). They usually charge much higher fees than index funds. Check their expense ratio on the plan's website: a 0.5% yearly difference over ${yrs} years adds up.`)});
+    const big=H.filter(x=>cls(x)==='EE. UU. grandes'); if(big.length>=3) T.push({lvl:'info',t:L(`<b>Tienes ${big.length} fondos de grandes empresas de EE. UU.</b> Se solapan mucho (compran casi las mismas acciones): con uno indexado al S&P 500 suele bastar y es más barato.`,`<b>You have ${big.length} US large-cap funds.</b> They overlap a lot (they buy nearly the same stocks): one S&P 500 index fund is usually enough and cheaper.`)}); }
+  // Tradicional o Roth según el tipo marginal de la declaración
+  let mg=null; for(const y of [d.year,d.year-1]){ try{ const R=computeTaxes(y); if(R&&R.hasW2){ mg=R.marginal; break; } }catch(e){} }
+  if(mg!=null) T.push({lvl:'info',t:mg>=0.22?L(`<b>Tradicional (antes de impuestos) frente a Roth:</b> con un tipo marginal federal del ${Math.round(mg*100)}% (más el de California), aportar antes de impuestos suele salir mejor si de jubilado esperas tributar menos.`,`<b>Traditional (pre-tax) vs Roth:</b> with a ${Math.round(mg*100)}% federal marginal rate (plus California's), pre-tax contributions usually win if you expect a lower rate in retirement.`):L(`<b>Tradicional frente a Roth:</b> con un tipo marginal federal del ${Math.round(mg*100)}%, la opción Roth (pagas impuestos hoy y nada al retirar) suele ser buena idea si tu plan la ofrece.`,`<b>Traditional vs Roth:</b> with a ${Math.round(mg*100)}% federal marginal rate, the Roth option (pay tax now, nothing when you withdraw) is often a good idea if your plan offers it.`)});
+  if(d.age!=null&&d.ra<60) T.push({lvl:'warn',t:L('<b>Antes de los 59½ años</b>, sacar dinero del 401(k) tiene una penalización del 10% además de impuestos. Excepción habitual: si dejas la empresa en el año en que cumples 55 o después ("rule of 55"), puedes retirar de ese plan sin penalización.','<b>Before age 59½</b>, 401(k) withdrawals carry a 10% penalty on top of taxes. Common exception: if you leave the employer in or after the year you turn 55 (the "rule of 55"), you can withdraw from that plan penalty-free.')});
+  if(!T.length) T.push({lvl:'info',t:L('Importa el último extracto de tu 401(k) para ver recomendaciones sobre tus aportaciones y tus fondos.','Import your latest 401(k) statement to see recommendations on your contributions and funds.')});
+  return T; }
+VIEWS.jubilacion=(el)=>{ const d0=retireData(); const R=S.settings.retire||(S.settings.retire={});
+  if(!d0.accs.length){ el.innerHTML=invTabs('jubilacion')+`<div class="card empty">${helpBtn('retire')}<div class="ei">${ic('piggy')}</div><p>${L('Importa el extracto de tu 401(k) o tu IRA para ver cómo quedaría tu jubilación.','Import your 401(k) or IRA statement to see how your retirement would look.')}</p><a class="btn pri" href="#importar">${ic('upload')}${L('Importar extracto','Import statement')}</a></div>`; return; }
+  el.innerHTML=invTabs('jubilacion')+`<div class="stack">
+   <div class="card">${helpBtn('retire')}<h2>${L('Tu jubilación','Your retirement')}</h2><p class="sub">${L('Estimación en dólares de hoy con tus cuentas de jubilación','Estimate in today\'s dollars with your retirement accounts')} (${fmt(d0.bal)})</p>
+    <div class="row"><label class="f">${L('Año de nacimiento','Birth year')}<input id="rBy" inputmode="numeric" value="${R.by||''}" placeholder="${L('p. ej. 1986','e.g. 1986')}"></label>
+     <label class="f">${L('Aportación anual (tú + empresa)','Yearly contribution (you + employer)')}<input id="rC" inputmode="decimal" value="${d0.contrib||''}"></label></div>
+    <label class="f">${L('Edad de jubilación','Retirement age')}: <b id="rAv">${d0.ra}</b><div class="range"><input type="range" id="rA" min="50" max="75" step="1" value="${d0.ra}" aria-label="${L('Edad de jubilación','Retirement age')}"></div></label>
+    <label class="f">${L('Rentabilidad real anual (descontada la inflación)','Real yearly return (after inflation)')}: <b id="rRv">${(d0.ret*100).toFixed(1)}%</b><div class="range"><input type="range" id="rR" min="2" max="8" step="0.5" value="${d0.ret*100}" aria-label="${L('Rentabilidad','Return')}"></div></label>
+    <div class="row"><label class="f">${L('Seguridad Social a los 67 (al mes, opcional)','Social Security at 67 (monthly, optional)')}<input id="rSS" inputmode="decimal" value="${R.ss||''}" placeholder="ssa.gov"></label>
+     <label class="f">${L('Ingreso mensual que quieres (opcional)','Monthly income you want (optional)')}<input id="rG" inputmode="decimal" value="${R.goal||''}"></label></div>
+    ${d0.known?`<p class="muted" style="margin:0">${L(`Aportación leída del último extracto: ${fmt(d0.contribRead)} al año${d0.emp?` (tú ${fmt(d0.emp)} · empresa ${fmt(d0.er)})`:''}.`,`Contribution read from the latest statement: ${fmt(d0.contribRead)} a year${d0.emp?` (you ${fmt(d0.emp)} · employer ${fmt(d0.er)})`:''}.`)}</p>`:''}
+    <div id="rOut" style="margin-top:12px"></div></div>
+   <div class="card">${helpBtn('retire_tips')}<h2>${L('Recomendaciones para tu 401(k)','Recommendations for your 401(k)')}</h2><div id="rTips"></div>
+    <p class="muted" style="margin:8px 0 0">${L('Orientativo y educativo: no sustituye a un asesor financiero. Los límites son los publicados por el IRS para cada año.','Educational guidance only: not a substitute for a financial advisor. Limits are those published by the IRS for each year.')}</p></div></div>`;
+  const draw=()=>{ const d=retireData(); const out=$('#rOut');
+    $('#rTips').innerHTML=alertsHTML(retireTips(d));
+    if(d.age==null||d.age<18||d.age>=d.ra){ out.innerHTML=`<div class="alert info"><span class="ic">i</span><div>${d.age==null?L('Pon tu año de nacimiento para calcularlo.','Enter your birth year to calculate it.'):L('La edad de jubilación tiene que ser mayor que tu edad actual.','The retirement age must be higher than your current age.')}</div></div>`; return; }
+    const p=retireAt(d,d.ra); const ages=[55,60,62,65,67,70].filter(a=>a>d.age);
+    const path=[]; let B=d.bal; const W=p.B*0.04; for(let a=d.age;a<=95;a++){ path.push(Math.max(0,Math.round(B))); B=a<d.ra?B*(1+d.ret)+d.contrib:B*(1+d.ret)-W; }
+    const need=d.goal?needExtra(d,d.ra,d.goal):0;
+    out.innerHTML=`<div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      <div class="stat"><div class="note">${L(`A los ${d.ra} (en ${p.year})`,`At ${d.ra} (in ${p.year})`)}</div><div class="val" id="rB">${fmt(p.B)}</div></div>
+      <div class="stat"><div class="note">${L('Ingreso al mes (regla del 4%)','Monthly income (4% rule)')}</div><div class="val">${fmt(p.m4)}</div></div>
+      ${d.ss?`<div class="stat"><div class="note">${L(`+ Seguridad Social (desde los ${p.claim})`,`+ Social Security (from ${p.claim})`)}</div><div class="val">${fmt(p.ss)}</div></div><div class="stat"><div class="note">${L('Total al mes','Total per month')}</div><div class="val pos">${fmt(p.tot)}</div></div>`:''}</div>
+      ${d.goal?`<div class="alert ${need?'warn':'good'}" style="margin-top:10px"><span class="ic">${need?'!':'✓'}</span><div>${need?L(`Para llegar a ${fmt(d.goal)}/mes a los ${d.ra} te faltarían unos <b>${fmt(need)} más al año</b> de aportación (o jubilarte más tarde).`,`To reach ${fmt(d.goal)}/mo at ${d.ra} you'd need about <b>${fmt(need)} more a year</b> in contributions (or retire later).`):L(`Con lo que aportas llegarías a tu objetivo de ${fmt(d.goal)}/mes a los ${d.ra}.`,`With what you contribute you'd reach your goal of ${fmt(d.goal)}/mo at ${d.ra}.`)}</div></div>`:''}
+      <div id="rChart" style="margin-top:10px"></div>
+      <div class="tbl"><table><thead><tr><th>${L('Jubilación a los','Retiring at')}</th><th class="n">${L('Saldo','Balance')}</th><th class="n">${L('4% al mes','4% per month')}</th>${d.ss?`<th class="n">${L('Total al mes','Total/month')}</th>`:''}</tr></thead><tbody>
+      ${ages.map(a=>{ const q=retireAt(d,a); return `<tr${a===d.ra?' style="font-weight:650"':''}><td>${a}${a<60?' <span class="pill">&lt; 59½</span>':''}</td><td class="n">${fmt(q.B)}</td><td class="n">${fmt(q.m4)}</td>${d.ss?`<td class="n">${fmt(q.tot)}</td>`:''}</tr>`; }).join('')}</tbody></table></div>
+      <p class="muted" style="margin:6px 0 0">${L('En dólares de hoy: la rentabilidad ya descuenta la inflación y la aportación sube con ella. La regla del 4% es lo que podrías retirar el primer año (y luego ajustar por inflación) con poco riesgo de agotar el dinero en 30 años. Antes de impuestos.','In today\'s dollars: the return is net of inflation and the contribution rises with it. The 4% rule is what you could withdraw the first year (then adjust for inflation) with little risk of running out in 30 years. Before taxes.')}</p>`;
+    lineChart($('#rChart'),{labels:path.map((_,i)=>String(d.age+i)),series:[{name:L('Saldo estimado','Estimated balance'),color:'var(--s7)',values:path,area:true}],height:170}); };
+  let tm; const upd=()=>{ const n=id=>{ const v=num($(id).value); return isNaN(v)?null:v; };
+    R.by=n('#rBy'); R.age=+$('#rA').value; R.ret=+$('#rR').value; R.contrib=n('#rC'); R.ss=n('#rSS'); R.goal=n('#rG');
+    $('#rAv').textContent=R.age; $('#rRv').textContent=R.ret.toFixed(1)+'%'; clearTimeout(tm); tm=setTimeout(save,600); draw(); };
+  ['#rBy','#rC','#rSS','#rG','#rA','#rR'].forEach(id=>$(id).addEventListener('input',upd));
+  draw(); };
 /* ---------- Claude ---------- */
 function buildSummary(){
   const cf=cashflowByMonth(); const cur=ym(today()); const months=Object.keys(cf).filter(m=>m<cur).sort().slice(-6);
@@ -2024,8 +2118,9 @@ async function askClaudeTax(year,R,mode='review',outSel='#tyOut'){
 /* ============================================================
    Perfil familiar, optimizador y guía TurboTax
    ============================================================ */
-const LIM={2025:{k401:23500,ira:7000,hsaFam:8550,hsaSelf:4300,dcfsa:5000,iraCov:[126000,146000],iraSpouse:[236000,246000],roth:[236000,246000]},
-           2026:{k401:24500,ira:7500,hsaFam:8750,hsaSelf:4400,dcfsa:7500,iraCov:[129000,149000],iraSpouse:[242000,252000],roth:[242000,252000]}};
+// catch50: aportación adicional a partir de 50 años; catch6063: la de 60 a 63 (SECURE 2.0), en lugar de catch50
+const LIM={2025:{k401:23500,catch50:7500,catch6063:11250,ira:7000,hsaFam:8550,hsaSelf:4300,dcfsa:5000,iraCov:[126000,146000],iraSpouse:[236000,246000],roth:[236000,246000]},
+           2026:{k401:24500,catch50:8000,catch6063:11250,ira:7500,hsaFam:8750,hsaSelf:4400,dcfsa:7500,iraCov:[129000,149000],iraSpouse:[242000,252000],roth:[242000,252000]}};
 const CA_BR={MFJ:[[22158,.01],[52528,.02],[82904,.04],[115084,.06],[145448,.08],[742958,.093],[891542,.103],[1485906,.113],[Infinity,.123]],
              S:[[11079,.01],[26264,.02],[41452,.04],[57542,.06],[72724,.08],[371479,.093],[445771,.103],[742953,.113],[Infinity,.123]]};
 function prof(year){ const ty=taxYear(year); ty.profile=ty.profile||{children:[]}; return ty.profile; }
