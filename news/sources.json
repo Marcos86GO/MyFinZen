@@ -191,7 +191,7 @@
       "region": "global",
       "gn": {
         "ed": "US",
-        "q": "\"global markets\" OR \"world stocks\" OR \"global stocks\" OR \"emerging markets\""
+        "q": "(\"global markets\" OR \"world stocks\" OR \"global stocks\" OR \"emerging markets\") (site:apnews.com OR site:cnbc.com OR site:theguardian.com OR site:aljazeera.com OR site:euronews.com OR site:dw.com)"
       }
     },
     {
@@ -199,7 +199,8 @@
       "region": "global",
       "gn": {
         "ed": "GB",
-        "q": "IMF OR \"central banks\" OR \"oil prices\" OR \"bond yields\""
+        "q": "(IMF OR \"central banks\" OR \"oil prices\" OR \"bond yields\" OR \"World Bank\") (site:apnews.com OR site:cnbc.com OR site:theguardian.com OR site:aljazeera.com OR site:npr.org OR site:dw.com)",
+        "when": "2d"
       }
     },
     {
@@ -253,7 +254,7 @@
       "region": "us",
       "gn": {
         "ed": "US",
-        "q": "\"Federal Reserve\" OR Treasury yields OR inflation OR jobs report"
+        "q": "(\"Federal Reserve\" OR \"Treasury yields\" OR inflation OR \"jobs report\" OR Powell) (site:apnews.com OR site:cnbc.com OR site:npr.org OR site:cbsnews.com OR site:axios.com OR site:foxbusiness.com)"
       }
     },
     {
@@ -279,7 +280,7 @@
       "region": "eu",
       "gn": {
         "ed": "GB",
-        "q": "\"European stocks\" OR \"STOXX 600\" OR \"European markets\" OR \"euro zone\""
+        "q": "(\"European stocks\" OR \"STOXX 600\" OR \"European markets\" OR \"euro zone\" OR eurozone) (site:cnbc.com OR site:euronews.com OR site:dw.com OR site:theguardian.com OR site:apnews.com OR site:france24.com)"
       }
     },
     {
@@ -287,7 +288,8 @@
       "region": "eu",
       "gn": {
         "ed": "GB",
-        "q": "ECB OR \"European Central Bank\" OR Lagarde"
+        "q": "(ECB OR \"European Central Bank\" OR Lagarde) (site:cnbc.com OR site:euronews.com OR site:dw.com OR site:theguardian.com OR site:apnews.com OR site:france24.com)",
+        "when": "2d"
       }
     },
     {
@@ -315,7 +317,7 @@
       "region": "es",
       "gn": {
         "ed": "ES",
-        "q": "Ibex OR \"Bolsa española\" OR \"Bolsa de Madrid\" OR \"mercado continuo\" OR \"parqué madrileño\""
+        "q": "(Ibex OR \"Bolsa española\" OR \"Bolsa de Madrid\" OR \"mercado continuo\") (site:europapress.es OR site:rtve.es OR site:eleconomista.es OR site:bolsamania.com OR site:20minutos.es OR site:eldiario.es OR site:efe.com OR site:estrategiasdeinversion.com)"
       }
     },
     {
@@ -323,7 +325,7 @@
       "region": "es",
       "gn": {
         "ed": "ES",
-        "q": "\"Banco de España\" OR \"prima de riesgo\" OR Euríbor OR CNMV OR \"bono español\""
+        "q": "(\"Banco de España\" OR \"prima de riesgo\" OR Euríbor OR CNMV OR inflación OR paro) (site:europapress.es OR site:rtve.es OR site:eleconomista.es OR site:eldiario.es OR site:cadenaser.com OR site:efe.com OR site:lainformacion.com OR site:20minutos.es)"
       }
     },
     {
@@ -331,7 +333,7 @@
       "region": "gb",
       "gn": {
         "ed": "GB",
-        "q": "FTSE OR \"London stocks\" OR \"Bank of England\" OR gilts"
+        "q": "(FTSE OR \"Bank of England\" OR gilts OR \"UK economy\" OR \"UK inflation\") (site:theguardian.com OR site:news.sky.com OR site:independent.co.uk OR site:cityam.com OR site:standard.co.uk)"
       }
     },
     {
@@ -339,7 +341,7 @@
       "region": "de",
       "gn": {
         "ed": "GB",
-        "q": "DAX OR \"German stocks\" OR Bundesbank OR \"German economy\"",
+        "q": "(DAX OR Bundesbank OR \"German economy\" OR Germany) (site:dw.com OR site:euronews.com OR site:theguardian.com OR site:cnbc.com OR site:apnews.com)",
         "when": "2d"
       }
     },
@@ -348,7 +350,7 @@
       "region": "fr",
       "gn": {
         "ed": "GB",
-        "q": "\"CAC 40\" OR \"French stocks\" OR \"French economy\"",
+        "q": "(\"CAC 40\" OR \"French economy\" OR \"Banque de France\" OR France) (site:france24.com OR site:rfi.fr OR site:euronews.com OR site:theguardian.com OR site:apnews.com)",
         "when": "2d"
       }
     },
@@ -357,7 +359,8 @@
       "region": "it",
       "gn": {
         "ed": "IT",
-        "q": "\"Piazza Affari\" OR \"Borsa di Milano\" OR \"FTSE MIB\" OR \"spread Btp\""
+        "q": "(\"Piazza Affari\" OR \"Borsa di Milano\" OR \"FTSE MIB\" OR spread OR Bce) (site:ansa.it OR site:rainews.it OR site:tg24.sky.it OR site:adnkronos.com OR site:agi.it OR site:teleborsa.it)",
+        "when": "2d"
       }
     },
     {
@@ -374,7 +377,8 @@
       "region": "ca",
       "gn": {
         "ed": "CA",
-        "q": "TSX OR \"Bank of Canada\" OR \"Canadian stocks\" OR loonie"
+        "q": "(TSX OR \"Bank of Canada\" OR \"Canadian economy\" OR loonie) (site:cbc.ca OR site:ctvnews.ca OR site:globalnews.ca OR site:bnnbloomberg.ca)",
+        "when": "2d"
       }
     },
     {
@@ -406,7 +410,8 @@
       "region": "co",
       "gn": {
         "ed": "CO",
-        "q": "Colcap OR \"Bolsa de Valores de Colombia\" OR \"Banco de la República\" OR \"dólar en Colombia\""
+        "q": "(Colcap OR \"Bolsa de Valores de Colombia\" OR \"Banco de la República\" OR dólar) (site:valoraanalitik.com OR site:bluradio.com OR site:caracol.com.co OR site:infobae.com)",
+        "when": "2d"
       }
     },
     {
@@ -414,7 +419,8 @@
       "region": "cl",
       "gn": {
         "ed": "CL",
-        "q": "IPSA OR \"Bolsa de Santiago\" OR \"Banco Central de Chile\" OR cobre"
+        "q": "(IPSA OR \"Bolsa de Santiago\" OR \"Banco Central de Chile\" OR cobre) (site:biobiochile.cl OR site:cooperativa.cl OR site:24horas.cl OR site:cnnchile.com)",
+        "when": "2d"
       }
     },
     {
@@ -422,7 +428,8 @@
       "region": "jp",
       "gn": {
         "ed": "US",
-        "q": "Nikkei OR \"Japanese stocks\" OR \"Bank of Japan\" OR yen"
+        "q": "(Nikkei OR \"Bank of Japan\" OR yen OR \"Japan economy\") (site:nhk.or.jp OR site:english.kyodonews.net OR site:japantoday.com OR site:nippon.com OR site:apnews.com OR site:cnbc.com)",
+        "when": "2d"
       }
     },
     {
@@ -430,7 +437,8 @@
       "region": "cn",
       "gn": {
         "ed": "US",
-        "q": "\"Hang Seng\" OR \"Chinese stocks\" OR \"Shanghai Composite\" OR yuan OR PBOC"
+        "q": "(\"Hang Seng\" OR \"Chinese stocks\" OR \"China economy\" OR yuan OR PBOC) (site:apnews.com OR site:cnbc.com OR site:rthk.hk OR site:thestandard.com.hk OR site:aljazeera.com OR site:theguardian.com)",
+        "when": "2d"
       }
     },
     {
@@ -454,7 +462,8 @@
       "region": "au",
       "gn": {
         "ed": "AU",
-        "q": "ASX OR \"Reserve Bank of Australia\" OR \"Australian shares\""
+        "q": "(ASX OR \"Reserve Bank of Australia\" OR RBA OR \"Australian shares\") (site:abc.net.au OR site:sbs.com.au OR site:theguardian.com OR site:9news.com.au)",
+        "when": "2d"
       }
     }
   ],
@@ -570,7 +579,8 @@
     "thehindu.com",
     "indianexpress.com/premium",
     "cronista.com",
-    "kedglobal.com"
+    "kedglobal.com",
+    "economictimes.com/prime"
   ],
   "skip": [
     "moomoo.com",
@@ -666,6 +676,7 @@
     "dinheirovivo.pt": 2,
     "dw.com": 1,
     "eco.sapo.pt": 2,
+    "economictimes.com": 2,
     "economictimes.indiatimes.com": 2,
     "efe.com": 1,
     "eldiario.es": 1,
@@ -681,6 +692,7 @@
     "europapress.es": 1,
     "expansion.mx": 2,
     "foxbusiness.com": 2,
+    "foxnews.com": 2,
     "france24.com": 1,
     "g1.globo.com": 1,
     "globalnews.ca": 2,
