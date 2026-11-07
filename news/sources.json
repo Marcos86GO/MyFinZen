@@ -1,5 +1,5 @@
 {
-  "_nota": "Fuentes públicas y gratuitas de la terminal de noticias. Las búsquedas 'gn' son de Google News (agrega a muchos medios; se filtran los de pago con 'paywall'). Si una fuente falla, el resto sigue funcionando y se ve en 'Estado de las fuentes' dentro de la app. 'skip' descarta agregadores automáticos o de baja calidad; 'allow' en una fuente limita sus resultados a esos dominios (sufijos).",
+  "_nota": "Fuentes de la terminal de noticias. Solo se publican titulares de los medios de 'trusted': agencias de noticias, radiotelevisiones públicas y redacciones reconocidas con normas editoriales y de corrección, de acceso libre (sin suscripción ni muro de pago por cuota). Quedan fuera los muros de pago (también los dinámicos o por número de artículos, como bbc.com en EE. UU., cnn.com o reuters.com), los agregadores que mezclan contenido patrocinado (Yahoo Finance, Benzinga, Motley Fool, Zacks…), los textos generados automáticamente, los medios estatales de países sin prensa libre y la prensa de partido. 'trusted' da el nivel: 1 = agencia, pública o redacción de referencia; 2 = prensa económica o generalista reconocida. 'paywall' quita rutas de pago dentro de un medio libre (cnbc.com/pro). Las búsquedas 'gn' son de Google News; de sus resultados solo quedan los medios de 'trusted'. Si una fuente falla, el resto sigue y se ve en 'Estado de las fuentes' dentro de la app. Si cambias estas listas, sube FORMAT en build.mjs.",
   "editions": {
     "US": {
       "hl": "en-US",
@@ -167,16 +167,18 @@
   ],
   "feeds": [
     {
-      "id": "bbc-business",
-      "region": "global",
-      "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
-      "source": "BBC"
-    },
-    {
       "id": "guardian-business",
       "region": "global",
       "url": "https://www.theguardian.com/business/rss",
       "source": "The Guardian"
+    },
+    {
+      "id": "gn-ap-global",
+      "region": "global",
+      "gn": {
+        "ed": "US",
+        "q": "site:apnews.com (economy OR markets OR stocks OR trade OR tariffs OR oil)"
+      }
     },
     {
       "id": "cnbc-world",
@@ -213,10 +215,30 @@
       "source": "CNBC"
     },
     {
-      "id": "investing-us",
+      "id": "npr-business",
       "region": "us",
-      "url": "https://www.investing.com/rss/news_25.rss",
-      "source": "Investing.com"
+      "url": "https://feeds.npr.org/1006/rss.xml",
+      "source": "NPR"
+    },
+    {
+      "id": "cbs-moneywatch",
+      "region": "us",
+      "url": "https://www.cbsnews.com/latest/rss/moneywatch",
+      "source": "CBS News"
+    },
+    {
+      "id": "foxbusiness-markets",
+      "region": "us",
+      "url": "https://moxie.foxbusiness.com/google-publisher/markets.xml",
+      "source": "Fox Business"
+    },
+    {
+      "id": "gn-ap-us",
+      "region": "us",
+      "gn": {
+        "ed": "US",
+        "q": "site:apnews.com (\"Wall Street\" OR \"Federal Reserve\" OR inflation OR economy OR earnings)"
+      }
     },
     {
       "id": "gn-us",
@@ -275,16 +297,18 @@
       "source": "Europa Press"
     },
     {
-      "id": "investing-es",
-      "region": "es",
-      "url": "https://es.investing.com/rss/news_25.rss",
-      "source": "Investing.com España"
-    },
-    {
       "id": "20minutos-economia",
       "region": "es",
       "url": "https://www.20minutos.es/rss/economia/",
       "source": "20minutos"
+    },
+    {
+      "id": "gn-es-rtve",
+      "region": "es",
+      "gn": {
+        "ed": "ES",
+        "q": "site:rtve.es (economía OR Ibex OR bolsa OR BCE OR inflación OR empleo)"
+      }
     },
     {
       "id": "gn-es",
@@ -292,23 +316,7 @@
       "gn": {
         "ed": "ES",
         "q": "Ibex OR \"Bolsa española\" OR \"Bolsa de Madrid\" OR \"mercado continuo\" OR \"parqué madrileño\""
-      },
-      "allow": [
-        ".es",
-        "es.investing.com",
-        "bolsamania.com",
-        "rankia.com",
-        "estrategiasdeinversion.com",
-        "libremercado.com",
-        "eleconomista.es",
-        "europapress.es",
-        "20minutos.es",
-        "rtve.es",
-        "epdata.es",
-        "merca2.es",
-        "infobae.com/espana",
-        "forbes.es"
-      ]
+      }
     },
     {
       "id": "gn-es-eco",
@@ -316,23 +324,7 @@
       "gn": {
         "ed": "ES",
         "q": "\"Banco de España\" OR \"prima de riesgo\" OR Euríbor OR CNMV OR \"bono español\""
-      },
-      "allow": [
-        ".es",
-        "es.investing.com",
-        "bolsamania.com",
-        "rankia.com",
-        "estrategiasdeinversion.com",
-        "libremercado.com",
-        "eleconomista.es",
-        "europapress.es",
-        "20minutos.es",
-        "rtve.es",
-        "epdata.es",
-        "merca2.es",
-        "infobae.com/espana",
-        "forbes.es"
-      ]
+      }
     },
     {
       "id": "gn-gb",
@@ -375,10 +367,7 @@
         "ed": "PT",
         "q": "PSI OR \"bolsa de Lisboa\" OR Euribor OR \"Banco de Portugal\" OR \"juros da dívida\"",
         "when": "2d"
-      },
-      "allow": [
-        ".pt"
-      ]
+      }
     },
     {
       "id": "gn-ca",
@@ -554,7 +543,34 @@
     "zacks.com/premium",
     "marketbeat.com",
     "tipranks.com",
-    "gurufocus.com"
+    "gurufocus.com",
+    "bbc.com",
+    "bbc.co.uk",
+    "cnn.com",
+    "usatoday.com",
+    "latimes.com",
+    "sfchronicle.com",
+    "mercurynews.com",
+    "ocregister.com",
+    "sacbee.com",
+    "sandiegouniontribune.com",
+    "cnbc.com/investingclub",
+    "eleconomista.es/ecotrader",
+    "eleconomista.es/premium",
+    "moneycontrol.com/pro",
+    "elespanol.com",
+    "larepublica.co",
+    "portafolio.co",
+    "elespectador.com",
+    "latercera.com",
+    "emol.com",
+    "jornaldenegocios.pt",
+    "exame.com",
+    "uol.com.br",
+    "thehindu.com",
+    "indianexpress.com/premium",
+    "cronista.com",
+    "kedglobal.com"
   ],
   "skip": [
     "moomoo.com",
@@ -579,6 +595,143 @@
     "sharewise.com",
     "finanznachrichten.de",
     "kalkinemedia.com",
-    "kalkine.com.au"
-  ]
+    "kalkine.com.au",
+    "yahoo.com",
+    "benzinga.com",
+    "fool.com",
+    "zacks.com",
+    "simplywall.st",
+    "insidermonkey.com",
+    "investorplace.com",
+    "247wallst.com",
+    "barchart.com",
+    "investing.com",
+    "finbold.com",
+    "coincodex.com",
+    "prnewswire.com",
+    "businesswire.com",
+    "globenewswire.com",
+    "accesswire.com",
+    "einpresswire.com",
+    "newsfilecorp.com",
+    "msn.com",
+    "aol.com",
+    "newsbreak.com",
+    "ground.news",
+    "rt.com",
+    "cgtn.com",
+    "xinhuanet.com",
+    "globaltimes.cn",
+    "chinadaily.com.cn",
+    "sputniknews.com",
+    "okdiario.com",
+    "libremercado.com",
+    "merca2.es",
+    "rankia.com",
+    "forbes.es",
+    "forbes.com.mx"
+  ],
+  "trusted": {
+    "20minutos.es": 2,
+    "24horas.cl": 1,
+    "9news.com.au": 2,
+    "abc.net.au": 1,
+    "abc7.com": 2,
+    "abcnews.go.com": 1,
+    "adnkronos.com": 2,
+    "agenciabrasil.ebc.com.br": 1,
+    "agi.it": 1,
+    "aljazeera.com": 1,
+    "ambito.com": 2,
+    "ansa.it": 1,
+    "antena3.com": 2,
+    "apnews.com": 1,
+    "axios.com": 1,
+    "biobiochile.cl": 2,
+    "bluradio.com": 2,
+    "bnnbloomberg.ca": 2,
+    "bolsamania.com": 2,
+    "cadenaser.com": 1,
+    "calmatters.org": 1,
+    "caracol.com.co": 2,
+    "cbc.ca": 1,
+    "cbsnews.com": 1,
+    "cityam.com": 2,
+    "cnbc.com": 1,
+    "cnnbrasil.com.br": 2,
+    "cnnchile.com": 2,
+    "cnnportugal.iol.pt": 2,
+    "cooperativa.cl": 2,
+    "ctvnews.ca": 2,
+    "dinheirovivo.pt": 2,
+    "dw.com": 1,
+    "eco.sapo.pt": 2,
+    "economictimes.indiatimes.com": 2,
+    "efe.com": 1,
+    "eldiario.es": 1,
+    "eleconomista.com.mx": 2,
+    "eleconomista.es": 2,
+    "eluniversal.com.mx": 2,
+    "en.yna.co.kr": 1,
+    "english.hani.co.kr": 2,
+    "english.kyodonews.net": 1,
+    "epdata.es": 1,
+    "estrategiasdeinversion.com": 2,
+    "euronews.com": 1,
+    "europapress.es": 1,
+    "expansion.mx": 2,
+    "foxbusiness.com": 2,
+    "france24.com": 1,
+    "g1.globo.com": 1,
+    "globalnews.ca": 2,
+    "hindustantimes.com": 2,
+    "independent.co.uk": 2,
+    "infobae.com": 2,
+    "infomoney.com.br": 2,
+    "iprofesional.com": 2,
+    "japantoday.com": 2,
+    "koreaherald.com": 2,
+    "koreajoongangdaily.joins.com": 2,
+    "koreatimes.co.kr": 2,
+    "kqed.org": 1,
+    "ktla.com": 2,
+    "lainformacion.com": 2,
+    "laist.com": 1,
+    "lasexta.com": 2,
+    "milenio.com": 2,
+    "moneycontrol.com": 2,
+    "moneytimes.com.br": 2,
+    "nbclosangeles.com": 2,
+    "nbcnews.com": 1,
+    "ndtv.com": 2,
+    "ndtvprofit.com": 2,
+    "news.sky.com": 1,
+    "nhk.or.jp": 1,
+    "nippon.com": 2,
+    "noticias.caracoltv.com": 2,
+    "npr.org": 1,
+    "pbs.org": 1,
+    "perfil.com": 2,
+    "poder360.com.br": 2,
+    "politico.com": 2,
+    "ptinews.com": 1,
+    "rainews.it": 1,
+    "rfi.fr": 1,
+    "rthk.hk": 2,
+    "rtp.pt": 1,
+    "rtve.es": 1,
+    "sbs.com.au": 1,
+    "sfgate.com": 2,
+    "sicnoticias.pt": 2,
+    "standard.co.uk": 2,
+    "teleborsa.it": 2,
+    "tg24.sky.it": 2,
+    "theguardian.com": 1,
+    "thehill.com": 2,
+    "thestandard.com.hk": 2,
+    "timesofindia.indiatimes.com": 2,
+    "tn.com.ar": 2,
+    "valoraanalitik.com": 2,
+    "world.kbs.co.kr": 1
+  }
 }

@@ -35,7 +35,9 @@ const ICONS={
   bars:'M4 20V12M10 20V6M16 20v-9M22 20H2', cpu:'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
   bolt:'M13 3L5 14h6l-1 7 8-11h-6z', coin:'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2',
   globe:'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
-  news:'M5 5h12v14H6a1 1 0 0 1-1-1zM17 9h2a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0M8 9h6M8 13h6M8 16h4', pin:'M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11zM12 8a2 2 0 1 1 0 4a2 2 0 1 1 0-4z', piggy:'M5 11a7 6 0 0 1 13-2h2v4l-2 1v3h-3v-2H9v2H6v-3a6 6 0 0 1-1-3zM15 10h.01'
+  news:'M5 5h12v14H6a1 1 0 0 1-1-1zM17 9h2a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0M8 9h6M8 13h6M8 16h4', pin:'M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11zM12 8a2 2 0 1 1 0 4a2 2 0 1 1 0-4z', piggy:'M5 11a7 6 0 0 1 13-2h2v4l-2 1v3h-3v-2H9v2H6v-3a6 6 0 0 1-1-3zM15 10h.01',
+  thumbUp:'M7 11v9H4v-9zM7 11l4-7a2 2 0 0 1 2 2v4h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 16.8 20H7', thumbDown:'M7 13V4H4v9zM7 13l4 7a2 2 0 0 0 2-2v-4h5a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 16.8 4H7',
+  layers:'M12 4l9 5-9 5-9-5zM3 14l9 5 9-5', star:'M12 4l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z'
 };
 const ic=(n,cls)=>`<svg class="ico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]||''}"/></svg>`;
 // Menú: orden pedido por el usuario. Lo que no cabe va en "Más".
@@ -213,6 +215,12 @@ function sanitizeState(st){
   S2.recIgnore=arr(s.recIgnore).filter(x=>typeof x==='string').slice(-300);
   if(s.lastAI&&typeof s.lastAI==='object') S2.lastAI={date:isoDate(s.lastAI.date)||today(),q:str(s.lastAI.q,500),text:str(s.lastAI.text,60000)};
   if(s.newsTab) S2.newsTab=str(s.newsTab,20); if(s.newsCountries) S2.newsCountries=arr(s.newsCountries).filter(x=>typeof x==='string'&&/^[a-z]{2,10}$/.test(x)); if(s.newsHide) S2.newsHide=arr(s.newsHide).filter(x=>typeof x==='string').map(x=>x.slice(0,100));
+  if(s.newsSort==='rec') S2.newsSort='rec';
+  if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
+    for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
+    for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }
+    const pd=obj(p.pend); const pend=typeof pd.u==='string'&&/^https?:\/\//i.test(pd.u)&&typeof pd.t==='string'?{u:pd.u.slice(0,2000),t:pd.t.slice(0,400),s:str(pd.s,80),d:str(pd.d,100),f:arr(pd.f).filter(k=>typeof k==='string'&&/^[tsrkw]:/.test(k)).map(k=>k.slice(0,42)).slice(0,20),at:numStrict(pd.at)||0}:null;
+    S2.newsPrefs={w,rated,n:Math.max(0,Math.round(numStrict(p.n)||0)),pend}; }
   o.settings=S2;
   const tax={}; for(const [y,t0] of Object.entries(obj(o.tax))){ if(!/^\d{4}$/.test(y)) continue; const t=obj(t0); const nn=k=>numStrict(t[k])||0;
     const docs=arr(t.docs).map(d=>{ d=obj(d); const f={}; for(const [k,v] of Object.entries(obj(d.fields))){ const n=numStrict(v); if(/^\w{1,30}$/.test(k)&&n!=null) f[k]=n; }
@@ -867,6 +875,49 @@ function newsOrigin(it,R){ if(NEWS_CAL.test(it.t)) return {cal:true,label:'Calif
 function newsLogo(it){ const n=String(it.s||it.d||'?').replace(/^(the|el|la|los|las)\s+/i,'').replace(/\.(com|es|org|net|co\.uk|mx)$/i,''); const w=n.split(/[\s.\-]+/).filter(Boolean);
   const ini=(w.length>1?w[0][0]+w[1][0]:n.slice(0,2)).toUpperCase(); let h=0; for(const c of String(it.d||it.s)) h=(h*31+c.charCodeAt(0))%9973; h=[215,262,190,350,152,18,240,320,200,280,170,0][h%12];
   return `<span class="nlogo" style="--h:${h}" aria-hidden="true">${esc(ini)}</span>`; }
+/* Preferencias de noticias: la app aprende de lo que abres y de si te ha resultado relevante. Todo se guarda cifrado en S (nunca sale del dispositivo). */
+const NEWS_STOP=new Set('this that with from after amid over into than more most says said will would could about their there what when where which while your have been were they them como para pero tras ante sobre entre desde hasta según segun porque cuando donde esta este estos estas tiene tienen será sera sido otra otro años anos week today hoy'.split(' '));
+function newsPrefs(){ const st=S.settings; const p=st.newsPrefs&&typeof st.newsPrefs==='object'?st.newsPrefs:(st.newsPrefs={});
+  if(!p.w||typeof p.w!=='object') p.w={}; if(!p.rated||typeof p.rated!=='object') p.rated={}; p.n=p.n||0; if(p.pend===undefined) p.pend=null; return p; }
+function newsWords(t){ return [...new Set(String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9&]+/g,' ').split(' ').filter(w=>w.length>=4&&!NEWS_STOP.has(w)&&!/^\d+$/.test(w)))].slice(0,8); }
+function newsFeat(it){ const tp=it.tp||newsTopic(it); const f=['t:'+tp[0]]; if(it.d) f.push('s:'+String(it.d).slice(0,40));
+  (it.r||[]).slice(0,3).forEach(r=>f.push('r:'+r)); [...new Set([...(it.mine||[]),...(it.k||[])])].slice(0,4).forEach(k=>f.push('k:'+k));
+  newsWords(it.t).forEach(w=>f.push('w:'+w.slice(0,40))); return f.filter(k=>/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)); }
+// Puntuación: tema + medio + región (media) + símbolos + palabras del titular (media)
+function newsPrefScore(it,P){ const W=(P||newsPrefs()).w; const f=it.f||newsFeat(it); let s=0, r=0, nr=0, w=0, nw=0;
+  for(const k of f){ const v=W[k]||0; switch(k[0]){ case 't': s+=v; break; case 's': s+=0.8*v; break; case 'k': s+=Math.max(-3,Math.min(3,v)); break; case 'r': r+=v; nr++; break; case 'w': w+=v; nw++; break; } }
+  return s+(nr?0.4*r/nr:0)+(nw?w/nw:0); }
+function newsLearn(f,y,P){ P=P||newsPrefs(); const W=P.w;
+  if(Math.abs(y)>=1){ for(const k in W){ W[k]*=0.98; if(Math.abs(W[k])<0.05) delete W[k]; } P.n++; } // lo antiguo pesa algo menos
+  for(const k of f||[]) W[k]=Math.max(-6,Math.min(6,(W[k]||0)+y));
+  const ks=Object.keys(W); if(ks.length>600) ks.sort((a,b)=>Math.abs(W[a])-Math.abs(W[b])).slice(0,ks.length-600).forEach(k=>delete W[k]); }
+function newsOpen(it){ if(!S||!it) return; const P=newsPrefs(); const f=it.f||newsFeat(it); newsLearn(f,0.25,P);
+  P.pend={u:it.u,t:it.t,s:it.s||it.d||'',d:it.d||'',f,at:Date.now()}; save(); flushSave(); }
+function newsAsk(){ if(!S||document.hidden) return; const P=newsPrefs(), p=P.pend; if(!p||$('#nfb')) return;
+  const age=Date.now()-p.at; if(age>3*86400e3){ P.pend=null; save(); return; } if(age<1500) return;
+  const el=document.createElement('div'); el.id='nfb'; el.className='nfb'; el.setAttribute('role','dialog'); el.setAttribute('aria-label',L('¿Te ha resultado relevante?','Was it relevant to you?'));
+  el.innerHTML=`<div class="nfb-h"><b>${L('¿Te ha resultado relevante?','Was this relevant to you?')}</b><button class="x" data-fb="0" title="${L('Omitir','Skip')}" aria-label="${L('Omitir','Skip')}">${ic('close')}</button></div>
+    <div class="nfb-t">${esc(p.t)}</div><div class="nfb-s">${esc(p.s||p.d)}</div>
+    <div class="nfb-b"><button class="pri" data-fb="1">${ic('thumbUp')}${L('Sí, relevante','Yes, relevant')}</button><button data-fb="-1">${ic('thumbDown')}${L('No me interesa','Not for me')}</button></div>
+    <p class="nfb-n">${L('Con tu respuesta la app aprende qué noticias ponerte primero. Se guarda cifrado solo en este dispositivo.','Your answer teaches the app which news to show you first. It is saved encrypted on this device only.')}</p>`;
+  document.body.appendChild(el); el.querySelectorAll('[data-fb]').forEach(b=>b.onclick=()=>newsFeedback(+b.dataset.fb)); }
+function newsFeedback(v){ const el=$('#nfb'); if(el) el.remove(); if(!S) return; const P=newsPrefs(), p=P.pend; if(!p) return; P.pend=null;
+  if(v===1||v===-1){ newsLearn(p.f,v,P); delete P.rated[p.u.slice(0,300)]; P.rated[p.u.slice(0,300)]=v; const ks=Object.keys(P.rated); if(ks.length>300) ks.slice(0,ks.length-300).forEach(k=>delete P.rated[k]);
+    toast(v>0?L('Gracias: verás antes las noticias como esta.','Thanks: news like this will show up first.'):L('Entendido: verás menos noticias como esta.','Got it: you\'ll see less news like this.')); }
+  save(); if(NEWS.redraw) NEWS.redraw(); }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) setTimeout(newsAsk,400); });
+window.addEventListener('focus',()=>setTimeout(newsAsk,400));
+function newsPrefLabel(k,R){ const v=k.slice(2);
+  switch(k[0]){ case 't': { const t=[...NEWS_TOPICS,NEWS_GENERAL].find(x=>x[0]===v); return t?L(t[1],t[2]):v; } case 'r': return regionL(R.get(v)||{id:v,name:v.toUpperCase()}); case 'w': return '«'+v+'»'; default: return v; } }
+function newsPrefsHTML(R){ const P=newsPrefs(); const fw={t:1,s:0.8,k:1,r:0.4,w:0.5}; const e=Object.entries(P.w).map(([k,v])=>[k,v,v*fw[k[0]]]);
+  const top=(sg)=>e.filter(x=>sg>0?x[1]>=0.5:x[1]<=-0.5).sort((a,b)=>sg*(b[2]-a[2])).slice(0,8).map(([k])=>`<span class="pill">${esc(newsPrefLabel(k,R))}</span>`).join(' ');
+  const up=top(1), dn=top(-1);
+  return `<details id="tPrefs"><summary>${L('Lo que ha aprendido','What it has learned')} · ${P.n} ${L(P.n===1?'valoración':'valoraciones',P.n===1?'rating':'ratings')}</summary>
+    ${!up&&!dn?`<p style="margin:6px 0">${L('Todavía nada. Abre noticias y, al volver, dinos si te han resultado relevantes.','Nothing yet. Open stories and, when you come back, tell us whether they were relevant.')}</p>`:''}
+    ${up?`<p style="margin:6px 0">${L('Te interesa','You like')}: ${up}</p>`:''}${dn?`<p style="margin:6px 0">${L('Te interesa menos','You like less')}: ${dn}</p>`:''}
+    <p style="margin:6px 0">${L('Se guarda cifrado en tu dispositivo y en tus copias; no se envía a ningún servidor.','Saved encrypted on your device and in your backups; never sent to any server.')}</p>
+    ${P.n||e.length?`<button class="sm" id="tPrefReset">${L('Olvidar lo aprendido','Forget what it learned')}</button>`:''}</details>`; }
+
 async function loadNews(force){
   if(NEWS.loading) return NEWS.loading;
   if(!force&&NEWS.data&&Date.now()-NEWS.at<10*60000) return NEWS.data;
@@ -886,7 +937,9 @@ function sanitizeNews(d){ const S_=(v,n)=>typeof v==='string'?v.slice(0,n):''; c
     feeds:arr(d.feeds).filter(f=>f&&typeof f==='object').map(f=>({id:S_(f.id,40),region:S_(f.region,10),ok:!!f.ok,n:Math.max(0,parseInt(f.n)||0),err:S_(f.err,120)})),
     tickers:d.tickers&&typeof d.tickers==='object'?{queried:parseInt(d.tickers.queried)||0,ok:parseInt(d.tickers.ok)||0,stopped:S_(d.tickers.stopped,120)}:null,
     items:arr(d.items).filter(x=>x&&typeof x.t==='string'&&typeof x.u==='string'&&/^https?:\/\//i.test(x.u)&&typeof x.p==='string'&&!isNaN(Date.parse(x.p)))
-      .map(x=>({t:x.t.slice(0,400),u:x.u.slice(0,2000),s:S_(x.s,80),d:S_(x.d,100),p:new Date(Date.parse(x.p)).toISOString(),r:ids(x.r),k:ids(x.k)}))}; }
+      .map(x=>({t:x.t.slice(0,400),u:x.u.slice(0,2000),s:S_(x.s,80),d:S_(x.d,100),p:new Date(Date.parse(x.p)).toISOString(),r:ids(x.r),k:ids(x.k),
+        i:x.i==null||isNaN(parseInt(x.i))?null:Math.max(0,Math.min(3,parseInt(x.i))),n:Math.max(1,Math.min(99,parseInt(x.n)||1)),
+        o:arr(x.o).filter(a=>a&&typeof a.u==='string'&&/^https?:\/\//i.test(a.u)).slice(0,4).map(a=>({s:S_(a.s,80),u:a.u.slice(0,2000),d:S_(a.d,100)}))}))}; }
 function newsSettings(){ const st=S.settings; st.newsTab=st.newsTab||'cartera'; st.newsCountries=Array.isArray(st.newsCountries)?st.newsCountries:['gb','de','mx','jp']; st.newsHide=Array.isArray(st.newsHide)?st.newsHide:[]; return st; }
 function myPositions(){ const m=new Map();
   S.accounts.filter(a=>a.holdings&&a.holdings.rows).forEach(a=>a.holdings.rows.forEach(x=>{ if(x.fund) return; const s=String(x.sym||'').toUpperCase().trim(); if(!s) return; const o=m.get(s)||{s,name:x.name||'',value:0}; o.value+=x.value||0; if(!o.name&&x.name) o.name=x.name; m.set(s,o); }));
@@ -922,15 +975,24 @@ function newsRows(st){ const D=NEWS.data; if(!D) return {rows:[],extra:''};
     if(!sel.size) return {rows:[],extra,empty:L('Elige uno o varios países.','Choose one or more countries.')};
   } else rows=D.items.filter(it=>(it.r||[]).includes(tab));
   rows=rows.filter(it=>!hide.has(it.d)&&(!q||(it.t+' '+it.s+' '+(it.mine||[]).join(' ')).toLowerCase().includes(q)));
-  rows.forEach(it=>{ it.tp=newsTopic(it); }); const tcount={}; rows.forEach(it=>{ tcount[it.tp[0]]=(tcount[it.tp[0]]||0)+1; });
+  // Lo de menor impacto (o que sueles marcar como no relevante) se oculta salvo que lo pidas; en "Mi cartera" solo lo que no te interesa
+  const P=newsPrefs(), port=tab==='cartera';
+  rows.forEach(it=>{ it.tp=newsTopic(it); it.f=newsFeat(it); it.pf=newsPrefScore(it,P); it.low=(!port&&it.i===0&&it.pf<2)||it.pf<=-3; it.rk=(it.i==null?1:it.i)*1.2+Math.max(-4,Math.min(4,it.pf))*0.6; });
+  const low=q?0:rows.filter(it=>it.low).length; if(!NEWS.showLow&&!q) rows=rows.filter(it=>!it.low);
+  const tcount={}; rows.forEach(it=>{ tcount[it.tp[0]]=(tcount[it.tp[0]]||0)+1; });
   if(NEWS.topic!=='all'&&!tcount[NEWS.topic]) NEWS.topic='all';
   if(NEWS.topic!=='all') rows=rows.filter(it=>it.tp[0]===NEWS.topic);
-  rows.sort((a,b)=>b.p.localeCompare(a.p)); return {rows,extra,tcount};
+  const dk=iso=>{ const d=new Date(iso); return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); };
+  if(st.newsSort==='rec') rows.sort((a,b)=>b.p.localeCompare(a.p));
+  else rows.sort((a,b)=>dk(b.p)-dk(a.p)||b.rk-a.rk||b.p.localeCompare(a.p)); // por día; dentro del día, lo más importante para ti primero
+  return {rows,extra,tcount,low};
 }
-function newsRowHTML(it,R){ const src=esc(it.s||it.d), tp=it.tp||newsTopic(it), o=newsOrigin(it,R);
-  return `<article class="nw">${newsLogo(it)}<div class="nw-b"><div class="nw-m"><b>${src}</b><span title="${esc(new Date(it.p).toLocaleString(NEWS_LOC()))}">· ${newsAgo(it.p)}</span></div>
-    <a class="nw-t" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">${esc(it.t)}</a>
-    <div class="nw-tags"><span class="ntp" style="--h:${tp[4]}">${ic(tp[3])}${L(tp[1],tp[2])}</span>${o?`<span class="nrg">${o.cal?ic('pin'):`<span class="fl">${o.flag}</span>`}${esc(o.label)}</span>`:''}${(it.mine||[]).map(s=>`<span class="tk">${esc(s)}</span>`).join('')}</div></div>
+function newsRowHTML(it,R,ix){ const src=esc(it.s||it.d), tp=it.tp||newsTopic(it), o=newsOrigin(it,R); const rated=S&&newsPrefs().rated[String(it.u).slice(0,300)];
+  const others=(it.o||[]).filter(x=>x.d!==it.d);
+  return `<article class="nw">${newsLogo(it)}<div class="nw-b"><div class="nw-m"><b>${src}</b><span title="${esc(new Date(it.p).toLocaleString(NEWS_LOC()))}">· ${newsAgo(it.p)}</span>${rated?`<span class="nrated ${rated>0?'up':'dn'}" title="${rated>0?L('Marcada como relevante','Marked relevant'):L('Marcada como no relevante','Marked not relevant')}">${ic(rated>0?'thumbUp':'thumbDown')}</span>`:''}</div>
+    <a class="nw-t" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer" data-ni="${ix}">${esc(it.t)}</a>
+    <div class="nw-tags">${it.i>=2?`<span class="nimp">${ic('bolt')}${L('Alto impacto','High impact')}</span>`:''}${it.n>1?`<span class="ncor" title="${esc(L('Publicada por ','Reported by ')+it.n+L(' medios',' outlets'))}">${ic('layers')}${it.n} ${L('medios','outlets')}</span>`:''}${it.pf>=2.5?`<span class="nfy" title="${L('Por lo que has marcado como relevante','Based on what you marked as relevant')}">${ic('star')}${L('Para ti','For you')}</span>`:''}<span class="ntp" style="--h:${tp[4]}">${ic(tp[3])}${L(tp[1],tp[2])}</span>${o?`<span class="nrg">${o.cal?ic('pin'):`<span class="fl">${o.flag}</span>`}${esc(o.label)}</span>`:''}${(it.mine||[]).map(s=>`<span class="tk">${esc(s)}</span>`).join('')}</div>
+    ${others.length?`<div class="nalso">${L('También en','Also in')}: ${others.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener noreferrer" data-ni="${ix}">${esc(x.s||x.d)}</a>`).join(' · ')}</div>`:''}</div>
     <button class="x" data-hide="${esc(it.d)}" title="${L('Ocultar','Hide')} ${src}" aria-label="${L('Ocultar las noticias de','Hide news from')} ${src}">${ic('close')}</button></article>`; }
 function newsDay(iso){ const d=new Date(iso), n=new Date(); const y=new Date(); y.setDate(n.getDate()-1);
   if(d.toDateString()===n.toDateString()) return L('Hoy','Today'); if(d.toDateString()===y.toDateString()) return L('Ayer','Yesterday');
@@ -942,30 +1004,35 @@ VIEWS.noticias=(el)=>{
       <div class="nhead"><h2>${L('Noticias de inversión','Investment news')}</h2><span class="nlive" id="tState"></span><button class="sm sp" id="tRef" title="${L('Actualizar (R)','Refresh (R)')}">${ic('refresh')}${L('Actualizar','Refresh')}</button></div>
       <div class="ntabs" role="tablist">${NEWS_TABS.map(([k,l],i)=>`<button role="tab" data-ntab="${k}" class="${st.newsTab===k?'on':''}" aria-selected="${st.newsTab===k}"><span class="fk">${i+1}</span>${l}</button>`).join('')}</div>
       <div class="nsearch">${ic('search')}<input id="tQ" type="search" placeholder="${L('Buscar en los titulares o por símbolo','Search headlines or symbols')}" value="${esc(NEWS.q)}" autocomplete="off" spellcheck="false" aria-label="${L('Buscar','Search')}"></div>
+      <div class="nsort" role="group" aria-label="${L('Orden','Order')}"><button data-nsort="para" class="${st.newsSort!=='rec'?'on':''}">${ic('star')}${L('Para ti','For you')}</button><button data-nsort="rec" class="${st.newsSort==='rec'?'on':''}">${ic('clock')}${L('Recientes','Latest')}</button></div>
       <div id="tTopics"></div><div id="tExtra"></div></div>
     <div id="tBody"></div><div class="nfoot" id="tFoot"></div>
-    <p class="muted" style="margin:12px 4px 0">${L('Titulares de medios de acceso libre, actualizados cada hora; los enlaces llevan a la web que publica cada noticia. El tema y el origen los deduce la app del titular. Para ver tus posiciones, la app descarga la misma lista que cualquiera y la filtra en este dispositivo: nadie sabe qué tienes.','Headlines from free-access outlets, refreshed every hour; the links go to the website that publishes each story. The app works out the topic and origin from the headline. To show your positions, the app downloads the same list as everyone else and filters it on this device: nobody knows what you hold.')}</p>`;
+    <p class="muted" style="margin:12px 4px 0">${L('Solo titulares de agencias, radiotelevisiones públicas y medios reconocidos de acceso libre (sin suscripción), actualizados cada hora; sin opinión, contenido patrocinado ni listas de "acciones para comprar". "Alto impacto" y "N medios" indican el tema y cuántos medios distintos publican la misma noticia. Los enlaces llevan a la web de cada medio. Al volver de leer una noticia, la app te pregunta si te ha resultado relevante y aprende qué ponerte primero; eso y tus posiciones se quedan cifrados en este dispositivo: la app descarga la misma lista que cualquiera.','Only headlines from news agencies, public broadcasters and recognized free-access outlets (no subscription), refreshed every hour; no opinion, sponsored content or "stocks to buy" lists. "High impact" and "N outlets" show the topic and how many different outlets report the same story. The links go to each outlet\'s website. When you come back from reading a story, the app asks whether it was relevant and learns what to show you first; that and your positions stay encrypted on this device: the app downloads the same list as everyone else.')}</p>`;
   const body=$('#tBody'), foot=$('#tFoot');
   const draw=()=>{ const D=NEWS.data; const stt=$('#tState');
     if(!D){ stt.innerHTML=`<i class="${NEWS.loading?'old':'off'}"></i>${NEWS.loading?L('Cargando…','Loading…'):L('Sin datos','No data')}`; $('#tTopics').innerHTML=''; $('#tExtra').innerHTML='';
       body.innerHTML=`<div class="card nempty"><div class="empty"><div class="ei">${ic('news')}</div><p>${NEWS.loading?L('Cargando titulares…','Loading headlines…'):L('No se pudieron cargar las noticias (','Could not load the news (')+esc(NEWS.err)+').'+(NEWS.errCode==='none'?L('<br>La tarea de GitHub "Noticias" aún no se ha ejecutado.','<br>The GitHub "Noticias" workflow hasn\'t run yet.'):'')}</p></div></div>`; foot.innerHTML=''; return; }
     const age=Date.now()-Date.parse(D.updated); const stale=age>6*3600e3; const R=new Map((D.regions||[]).map(r=>[r.id,r]));
     stt.innerHTML=`<i class="${NEWS.err?'off':stale?'old':''}"></i>${NEWS.err?L('Sin conexión · ','Offline · '):''}${L('Actualizado ','Updated ')}${newsAgo(D.updated)}`;
-    const {rows,extra,empty,tcount}=newsRows(st);
+    const {rows,extra,empty,tcount,low}=newsRows(st); NEWS.shown=rows||[];
     const tops=[['all',L('Todas','All'),'news',(rows&&!empty)?Object.values(tcount||{}).reduce((a,b)=>a+b,0):0]].concat([...NEWS_TOPICS,NEWS_GENERAL].filter(t=>tcount&&tcount[t[0]]).map(t=>[t[0],L(t[1],t[2]),t[3],tcount[t[0]]]).sort((a,b)=>b[3]-a[3]));
     $('#tTopics').innerHTML=empty||tops.length<3?'':`<div class="nchips scroll" role="group" aria-label="${L('Temas','Topics')}">${tops.map(([k,l,i,n])=>`<button class="${NEWS.topic===k?'on':''}" data-topic="${k}">${ic(i)}${esc(l)}<i>${n}</i></button>`).join('')}</div>`;
     $('#tExtra').innerHTML=(stale?`<div class="nnote warn">${L(`Las noticias son de ${newsAgo(D.updated)}. Puede que GitHub haya pausado la tarea: en el repositorio, Actions → Noticias → Enable workflow / Run workflow.`,`The news is from ${newsAgo(D.updated)}. GitHub may have paused the workflow: in the repository, Actions → Noticias → Enable workflow / Run workflow.`)}</div>`:'')+extra;
     if(empty) body.innerHTML=`<div class="card nempty">${empty}</div>`;
     else if(!rows.length) body.innerHTML=`<div class="card nempty">${NEWS.q?L('Ningún titular coincide con la búsqueda.','No headline matches the search.'):st.newsTab==='cartera'&&NEWS.tk!=='all'?L('Sin noticias recientes de ','No recent news for ')+esc(NEWS.tk)+'.':L('Sin titulares en esta pestaña.','No headlines in this tab.')}</div>`;
     else { const shown=rows.slice(0,NEWS.limit); const g=[]; shown.forEach(it=>{ const k=newsDay(it.p); const l=g[g.length-1]; if(l&&l.k===k) l.items.push(it); else g.push({k,items:[it]}); });
-      body.innerHTML=g.map(x=>`<div class="nday">${esc(x.k)}</div><div class="card list">${x.items.map(it=>newsRowHTML(it,R)).join('')}</div>`).join('')
+      let ix=0; body.innerHTML=g.map(x=>`<div class="nday">${esc(x.k)}</div><div class="card list">${x.items.map(it=>newsRowHTML(it,R,ix++)).join('')}</div>`).join('')
         +(rows.length>NEWS.limit?`<div class="row" style="justify-content:center;margin-top:12px"><button id="tMore">${L(`Ver ${Math.min(120,rows.length-NEWS.limit)} más (${rows.length-NEWS.limit} restantes)`,`Show ${Math.min(120,rows.length-NEWS.limit)} more (${rows.length-NEWS.limit} left)`)}</button></div>`:''); }
+    if(!empty&&(low||NEWS.showLow)) body.insertAdjacentHTML('beforeend',`<div class="row" style="justify-content:center;margin-top:12px"><button class="sm" id="tLow">${NEWS.showLow?L('Ocultar las de menor impacto','Hide lower-impact news'):L(`Ver ${low} de menor impacto o que no sueles marcar como relevantes`,`Show ${low} lower-impact stories or ones you don't usually find relevant`)}</button></div>`);
     const F=D.feeds||[]; const okN=F.filter(f=>f.ok).length;
     foot.innerHTML=`<span>${rows.length} ${L('titulares','headlines')}</span><span>${okN}/${F.length} ${L('fuentes activas','active sources')}</span><span class="hide-sm">${L('Atajos: 1–6 pestañas · / buscar · R actualizar','Shortcuts: 1–6 tabs · / search · R refresh')}</span>
       <details><summary>${L('Estado de las fuentes','Source status')}${st.newsHide.length?` · ${st.newsHide.length} ${L('ocultas','hidden')}`:''}</summary>
       ${st.newsHide.length?`<p style="margin:6px 0">${L('Ocultas','Hidden')}: ${st.newsHide.map(d=>`<button class="sm" data-unhide="${esc(d)}">${esc(d)} ✕</button>`).join(' ')}</p>`:''}
       <div class="tbl"><table><tbody>${F.map(f=>`<tr><td class="${f.ok?'ok':'ko'}">${f.ok?'●':'○'}</td><td>${esc(f.id)}</td><td>${esc(regionL(D.regions.find(r=>r.id===f.region)||{id:f.region,name:f.region}))}</td><td class="n">${f.n}</td><td>${esc(f.err||'')}</td></tr>`).join('')}</tbody></table></div>
-      ${D.tickers?`<p style="margin:6px 0 0">${L('Búsquedas por símbolo en la última hora','Symbol searches in the last hour')}: ${D.tickers.ok}/${D.tickers.queried}${D.tickers.stopped?' · '+esc(D.tickers.stopped):''}. ${L('Cada símbolo se renueva cada ~4 horas.','Each symbol is refreshed every ~4 hours.')}</p>`:''}</details>`;
+      ${D.tickers?`<p style="margin:6px 0 0">${L('Búsquedas por símbolo en la última hora','Symbol searches in the last hour')}: ${D.tickers.ok}/${D.tickers.queried}${D.tickers.stopped?' · '+esc(D.tickers.stopped):''}. ${L('Cada símbolo se renueva cada ~4 horas.','Each symbol is refreshed every ~4 hours.')}</p>`:''}</details>${newsPrefsHTML(R)}`;
+    const lw=$('#tLow'); if(lw) lw.onclick=()=>{ NEWS.showLow=!NEWS.showLow; draw(); };
+    const pr=$('#tPrefReset'); if(pr) pr.onclick=()=>{ if(pr.dataset.sure!=='1'){ pr.dataset.sure='1'; pr.textContent=L('¿Seguro? Toca otra vez para olvidarlo','Sure? Tap again to forget it'); return; }
+      const P=newsPrefs(); P.w={}; P.rated={}; P.n=0; P.pend=null; save(); draw(); toast(L('Preferencias de noticias borradas','News preferences cleared')); };
     el.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{ NEWS.tk=b.dataset.tk; NEWS.limit=120; draw(); });
     el.querySelectorAll('[data-topic]').forEach(b=>b.onclick=()=>{ NEWS.topic=b.dataset.topic; NEWS.limit=120; draw(); });
     el.querySelectorAll('[data-cty]').forEach(b=>b.onclick=()=>{ const c=b.dataset.cty; st.newsCountries=st.newsCountries.includes(c)?st.newsCountries.filter(x=>x!==c):st.newsCountries.concat(c); save(); draw(); });
@@ -973,11 +1040,16 @@ VIEWS.noticias=(el)=>{
     foot.querySelectorAll('[data-unhide]').forEach(b=>b.onclick=()=>{ st.newsHide=st.newsHide.filter(x=>x!==b.dataset.unhide); save(); draw(); });
     const more=$('#tMore'); if(more) more.onclick=()=>{ NEWS.limit+=120; draw(); };
   };
+  el.querySelectorAll('[data-nsort]').forEach(b=>b.onclick=()=>{ st.newsSort=b.dataset.nsort==='rec'?'rec':undefined; if(!st.newsSort) delete st.newsSort; save(); el.querySelectorAll('[data-nsort]').forEach(x=>x.classList.toggle('on',x===b)); draw(); });
+  // Abrir una noticia cuenta un poco a su favor; al volver, la app pregunta si fue relevante (newsAsk)
+  const opened=e=>{ const a=e.target.closest&&e.target.closest('a[data-ni]'); if(!a||(e.type==='auxclick'&&e.button!==1)) return; newsOpen((NEWS.shown||[])[+a.dataset.ni]); };
+  body.addEventListener('click',opened); body.addEventListener('auxclick',opened);
+  NEWS.redraw=()=>{ if($('#tBody')===body) draw(); };
   el.querySelectorAll('[data-ntab]').forEach(b=>b.onclick=()=>{ st.newsTab=b.dataset.ntab; NEWS.limit=120; NEWS.topic='all'; save(); el.querySelectorAll('[data-ntab]').forEach(x=>{ x.classList.toggle('on',x===b); x.setAttribute('aria-selected',x===b); }); draw(); });
   const qi=$('#tQ'); let qt; qi.oninput=()=>{ clearTimeout(qt); qt=setTimeout(()=>{ NEWS.q=qi.value; NEWS.limit=120; draw(); },120); };
   const refresh=async(force)=>{ const b=$('#tRef'); if(b) b.disabled=true; const pr=loadNews(force); draw(); await pr; if($('#tBody')===body){ draw(); if(b) b.disabled=false; } };
   $('#tRef').onclick=()=>refresh(true);
-  refresh(false);
+  refresh(false); setTimeout(newsAsk,300);
 };
 document.addEventListener('keydown',e=>{ if(!S||location.hash!=='#noticias'||e.metaKey||e.ctrlKey||e.altKey) return; const t=e.target; const typing=t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable);
   if(e.key==='Escape'&&t&&t.id==='tQ'){ t.blur(); return; } if(typing) return;
@@ -2522,7 +2594,7 @@ async function unlockWithPasskey(){
 }
 /* ---------- Bloqueo ---------- */
 let lockTimer=null, hiddenAt=0;
-function lockNow(){ if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
+function lockNow(){ if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
 function bumpLock(){ clearTimeout(lockTimer); if(!S) return; const m=(S.settings&&S.settings.lockMin)||5; lockTimer=setTimeout(()=>{ if(S) lockNow(); },m*60000); }
 ['pointerdown','keydown','scroll','touchstart'].forEach(ev=>window.addEventListener(ev,()=>{ if(S) bumpLock(); },{passive:true}));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden){ hiddenAt=Date.now(); if(S) flushSave(); } else if(S&&hiddenAt&&Date.now()-hiddenAt>((S.settings.lockMin||5)*60000)) lockNow(); });

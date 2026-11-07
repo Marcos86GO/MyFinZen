@@ -75,21 +75,22 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   const NEWSFX={v:1,updated:ago(0.3),regions:[{id:'global',name:'Global'},{id:'us',name:'EE. UU.'},{id:'eu',name:'Europa'},{id:'es',name:'España'},{id:'gb',name:'Reino Unido',country:true},{id:'mx',name:'México',country:true},{id:'jp',name:'Japón',country:true}],
     universe:[{s:'VOO',n:'Vanguard S&P 500 ETF'},{s:'VXUS',n:'Vanguard Total International Stock ETF'},{s:'NFLX',n:'Netflix'}],
     feeds:[{id:'cnbc-top',region:'us',ok:true,n:3},{id:'gn-es',region:'es',ok:true,n:2},{id:'nasdaq-markets',region:'us',ok:false,n:0,err:'HTTP 403'}],tickers:{queried:50,ok:50,failed:0},
-    items:[{t:'Wall Street cierra la semana con subidas en el S&P 500',u:'https://www.cnbc.com/2026/10/31/a.html',s:'CNBC',d:'cnbc.com',p:ago(1),r:['us','global']},
-      {t:'Should you buy VOO before the end of the year?',u:'https://www.fool.com/x/voo',s:'The Motley Fool',d:'fool.com',p:ago(2),k:['VOO']},
-      {t:'Netflix shares jump after strong subscriber growth',u:'https://finance.yahoo.com/news/nflx.html',s:'Yahoo Finance',d:'finance.yahoo.com',p:ago(3),r:['us']},
-      {t:'El Ibex 35 cierra en máximos del año impulsado por la banca',u:'https://www.eleconomista.es/mercados/ibex.html',s:'elEconomista.es',d:'eleconomista.es',p:ago(1.5),r:['es']},
-      {t:'El BCE mantiene los tipos de interés por tercera reunión',u:'https://www.europapress.es/economia/bce.html',s:'Europa Press',d:'europapress.es',p:ago(4),r:['es','eu']},
-      {t:'FTSE 100 edges higher as Bank of England holds rates',u:'https://www.bbc.com/news/business-1',s:'BBC',d:'bbc.com',p:ago(2),r:['gb']},
-      {t:'La Bolsa Mexicana avanza y el peso se aprecia frente al dólar',u:'https://www.eleconomista.com.mx/mercados/bmv',s:'El Economista México',d:'eleconomista.com.mx',p:ago(5),r:['mx']},
-      {t:'Nikkei hits record as yen weakens against the dollar',u:'https://www.cnbc.com/2026/10/31/nikkei.html',s:'CNBC',d:'cnbc.com',p:ago(6),r:['jp']},
-      {t:'CalPERS boosts its stake in green bonds as Sacramento weighs new rules',u:'https://www.latimes.com/business/calpers',s:'Los Angeles Times',d:'latimes.com',p:ago(7),r:['us']}]};
+    items:[{t:'Wall Street cierra la semana con subidas en el S&P 500',u:'https://www.cnbc.com/2026/10/31/a.html',s:'CNBC',d:'cnbc.com',p:ago(1),r:['us','global'],i:2,n:3,o:[{s:'AP News',u:'https://apnews.com/article/ws',d:'apnews.com'},{s:'NPR',u:'https://www.npr.org/2026/10/31/ws',d:'npr.org'}]},
+      {t:'Vanguard S&P 500 ETF draws record inflows as investors pile into index funds',u:'https://apnews.com/article/voo',s:'AP News',d:'apnews.com',p:ago(2),k:['VOO'],i:1},
+      {t:'Netflix shares jump after strong subscriber growth',u:'https://www.cnbc.com/2026/10/31/nflx.html',s:'CNBC',d:'cnbc.com',p:ago(1.2),r:['us'],i:1},
+      {t:'Starbucks names new head of its China business',u:'https://www.npr.org/2026/10/31/sbux',s:'NPR',d:'npr.org',p:ago(2.5),r:['us'],i:0},
+      {t:'El Ibex 35 cierra en máximos del año impulsado por la banca',u:'https://www.eleconomista.es/mercados/ibex.html',s:'elEconomista.es',d:'eleconomista.es',p:ago(1.5),r:['es'],i:1},
+      {t:'El BCE mantiene los tipos de interés por tercera reunión',u:'https://www.europapress.es/economia/bce.html',s:'Europa Press',d:'europapress.es',p:ago(4),r:['es','eu'],i:2},
+      {t:'FTSE 100 edges higher as Bank of England holds rates',u:'https://www.theguardian.com/business/ftse',s:'The Guardian',d:'theguardian.com',p:ago(2),r:['gb'],i:2},
+      {t:'La Bolsa Mexicana avanza y el peso se aprecia frente al dólar',u:'https://www.eleconomista.com.mx/mercados/bmv',s:'El Economista México',d:'eleconomista.com.mx',p:ago(5),r:['mx'],i:1},
+      {t:'Nikkei hits record as yen weakens against the dollar',u:'https://www.cnbc.com/2026/10/31/nikkei.html',s:'CNBC',d:'cnbc.com',p:ago(6),r:['jp'],i:1},
+      {t:'CalPERS boosts its stake in green bonds as Sacramento weighs new rules',u:'https://calmatters.org/economy/calpers',s:'CalMatters',d:'calmatters.org',p:ago(7),r:['us'],i:1}]};
   await pg.route('https://raw.githubusercontent.com/**',r=>{ newsHits++; r.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(NEWSFX)}); });
   await pg.goto(U+'#inversiones'); await pg.waitForTimeout(300); await pg.click('a.btn[href="#noticias"]'); await pg.waitForSelector('.nw',{timeout:5000});
   const nv=await pg.evaluate(()=>({tab:S.settings.newsTab,rows:[...document.querySelectorAll('.nw .nw-t')].map(a=>a.innerText),tk:[...document.querySelectorAll('.nw .tk')].map(e=>e.innerText),nav:document.querySelector('nav a.on').getAttribute('href'),
     chips:[...document.querySelectorAll('[data-tk]')].map(b=>b.innerText.replace(/\s+/g,' ')),link:(a=>a&&{href:a.href,target:a.target,rel:a.rel})(document.querySelector('.nw .nw-t'))}));
   ok(nv.tab==='cartera'&&nv.rows.length===2&&nv.tk.includes('VOO')&&nv.tk.includes('NFLX')&&nv.nav==='#inversiones','noticias de mis posiciones (símbolo del servidor + nombre detectado en el navegador) · '+nv.rows.length+' filas');
-  ok(nv.link&&nv.link.target==='_blank'&&/noopener/.test(nv.link.rel)&&/^https:\/\/(www\.fool\.com|finance\.yahoo\.com)\//.test(nv.link.href),'enlace al medio que publica, en pestaña nueva');
+  ok(nv.link&&nv.link.target==='_blank'&&/noopener/.test(nv.link.rel)&&/^https:\/\/(apnews\.com|www\.cnbc\.com)\//.test(nv.link.href),'enlace al medio que publica, en pestaña nueva');
   ok(newsHits===1&&nv.chips.some(c=>/^VXUS\s*0$/.test(c)),'una sola descarga pública, igual para todos ('+nv.chips.join(' | ')+')');
   if(process.env.SHOTS){ await pg.screenshot({path:process.env.SHOTS+'/noticias-movil.png'}); }
   await pg.click('[data-ntab="es"]'); await pg.waitForTimeout(150);
@@ -104,6 +105,32 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.keyboard.press('6'); await pg.waitForTimeout(150);
   const p1=await pg.$$eval('.nw .nw-t',a=>a.map(x=>x.innerText)); await pg.click('[data-cty="mx"]'); await pg.waitForTimeout(150); const p2=await pg.$$eval('.nw .nw-t',a=>a.map(x=>x.innerText));
   ok(p1.length===3&&p2.length===2&&!p2.some(x=>/Mexicana/.test(x))&&await pg.evaluate(()=>!S.settings.newsCountries.includes('mx')),'países seleccionables (atajo 6) y se recuerdan');
+  // Impacto, medios que publican la misma noticia y aprendizaje de preferencias
+  await pg.click('[data-ntab="us"]'); await pg.waitForTimeout(150);
+  const us1=await pg.evaluate(()=>{ const r=[...document.querySelectorAll('.nw')]; const ws=r.find(n=>/Wall Street/.test(n.innerText));
+    return {titles:r.map(n=>n.querySelector('.nw-t').innerText),imp:!!ws.querySelector('.nimp'),cor:(ws.querySelector('.ncor')||{}).innerText||'',also:[...ws.querySelectorAll('.nalso a')].map(a=>a.innerText+'|'+a.target).join(),low:($('#tLow')||{}).innerText||''}; });
+  ok(!us1.titles.some(t=>/Starbucks/.test(t))&&us1.imp&&/3 medios/.test(us1.cor)&&us1.also==='AP News|_blank,NPR|_blank'&&/Ver 1 de menor impacto/.test(us1.low),'alto impacto, "3 medios" con enlaces a los demás y lo de menor impacto plegado ('+JSON.stringify(us1)+')');
+  await pg.click('#tLow'); await pg.waitForTimeout(100); ok(await pg.$$eval('.nw .nw-t',a=>a.some(x=>/Starbucks/.test(x.innerText))),'mostrar las de menor impacto'); await pg.click('#tLow'); await pg.waitForTimeout(100);
+  const firstUS=()=>pg.evaluate(()=>{ const s=NEWS.shown, a=s.findIndex(x=>/Netflix/.test(x.t)), b=s.findIndex(x=>/Wall Street/.test(x.t)); return new Date(s[a].p).toDateString()!==new Date(s[b].p).toDateString()?'otro día':a<b?'netflix':'wall'; });
+  const before=await firstUS();
+  await pg.evaluate(()=>{ const a=[...document.querySelectorAll('.nw-t')].find(x=>/Netflix/.test(x.innerText)); a.addEventListener('click',e=>e.preventDefault(),{once:true}); a.click(); });
+  ok(await pg.evaluate(()=>{ const P=S.settings.newsPrefs; return P.pend&&/Netflix/.test(P.pend.t)&&P.w['t:empresas']>0&&P.w['s:cnbc.com']>0&&!$('#nfb'); }),'abrir una noticia queda pendiente de valorar y cuenta un poco a su favor');
+  await pg.evaluate(()=>{ S.settings.newsPrefs.pend.at-=5000; document.dispatchEvent(new Event('visibilitychange')); }); await pg.waitForSelector('#nfb',{timeout:3000});
+  ok(await pg.evaluate(()=>/relevante/.test($('#nfb').innerText)&&/Netflix/.test($('#nfb .nfb-t').innerText)),'al volver pregunta si la noticia ha sido relevante');
+  await pg.click('#nfb [data-fb="1"]'); await pg.waitForTimeout(150);
+  const fb=await pg.evaluate(()=>{ const P=S.settings.newsPrefs; const n=[...document.querySelectorAll('.nw')].find(x=>/Netflix/.test(x.innerText));
+    return {gone:!$('#nfb'),n:P.n,pend:P.pend,rated:P.rated['https://www.cnbc.com/2026/10/31/nflx.html'],fy:!!n.querySelector('.nfy'),thumb:!!n.querySelector('.nrated.up'),kept:sanitizeState(JSON.parse(JSON.stringify(S))).settings.newsPrefs.n}; });
+  const after=await firstUS();
+  ok(fb.gone&&fb.n===1&&fb.pend===null&&fb.rated===1&&fb.fy&&fb.thumb&&fb.kept===1&&before!=='netflix'&&(after==='netflix'||after==='otro día'),'"Sí, relevante" aprende: "Para ti" y la sube dentro del día ('+before+' → '+after+')');
+  await pg.click('[data-nsort="rec"]'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(()=>S.settings.newsSort==='rec'&&NEWS.shown.every((x,i,a)=>!i||a[i-1].p>=x.p)),'orden "Recientes" por hora'); await pg.click('[data-nsort="para"]'); await pg.waitForTimeout(100);
+  await pg.click('#tLow'); await pg.evaluate(()=>{ const a=[...document.querySelectorAll('.nw-t')].find(x=>/Starbucks/.test(x.innerText)); a.addEventListener('click',e=>e.preventDefault(),{once:true}); a.click(); S.settings.newsPrefs.pend.at-=5000; window.dispatchEvent(new Event('focus')); });
+  await pg.waitForSelector('#nfb',{timeout:3000}); await pg.click('#nfb [data-fb="-1"]'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>{ const P=S.settings.newsPrefs; return P.n===2&&P.rated['https://www.npr.org/2026/10/31/sbux']===-1&&P.w['w:starbucks']<0; }),'"No me interesa" también aprende');
+  await pg.click('#tLow'); await pg.click('#tFoot #tPrefs summary'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(()=>{ const t=$('#tPrefs').innerText; return /2 valoraciones/.test(t)&&/Te interesa: .*Empresas/.test(t)&&/Te interesa menos: .*«starbucks»/.test(t); }),'"Lo que ha aprendido" lo muestra');
+  await pg.click('#tPrefReset'); await pg.click('#tPrefReset'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(()=>{ const P=S.settings.newsPrefs; return P.n===0&&!Object.keys(P.w).length&&!Object.keys(P.rated).length; }),'olvidar lo aprendido');
   await pg.click('[data-ntab="us"]'); await pg.fill('#tQ','netflix'); await pg.waitForTimeout(300);
   ok(await pg.$$eval('.nw .nw-t',a=>a.length===1&&/Netflix/.test(a[0].innerText)),'filtro de titulares');
   await pg.fill('#tQ',''); await pg.waitForTimeout(250); await pg.click('.nw .x[data-hide="cnbc.com"]'); await pg.waitForTimeout(150);
