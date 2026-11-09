@@ -295,6 +295,32 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.goto(U+'#cuentas'); await pg.waitForTimeout(200); await pg.click('#addA'); await pg.waitForTimeout(150);
   ok(await pg.evaluate(()=>!!document.querySelector('#modal #fNew')&&!!document.querySelector('#modal #nNoDoc')),'añadir cuenta empieza por un extracto');
   await pg.click('#nNoDoc'); await pg.waitForTimeout(150); ok(await pg.evaluate(()=>/Nueva cuenta/.test(document.querySelector('#modal').innerText)&&!!document.querySelector('#modal input')),'crear cuenta sin documento'); await pg.evaluate(()=>closeModal());
+  // Extractos del mes: qué falta, avisos, importar por cuenta, soltar archivos y el botón +
+  await pg.evaluate(()=>{ const t=today(), m=n=>isoAddMonths(t,n);
+    S.accounts.push({id:'rtA',kind:'cash',name:'Rutina Banco',institution:'Banco Rutina'},{id:'rtB',kind:'retirement',name:'Rutina 401k',institution:'Plan Rutina'},{id:'rtC',kind:'cash',name:'Rutina Efectivo',institution:''});
+    S.imports.push({id:'ri1',acc:'rtA',kind:'pdf',date:m(-5),fp:'rt1',added:t},{id:'ri2',acc:'rtA',kind:'pdf',date:m(-4),fp:'rt2',added:t},{id:'ri3',acc:'rtA',kind:'pdf',date:m(-2),fp:'rt3',added:t},{id:'ri4',acc:'rtB',kind:'pdf',date:m(-4),fp:'rt4',added:t},{id:'ri5',acc:'rtB',kind:'pdf',date:m(-1),fp:'rt5',added:t}); save(); });
+  await pg.goto(U+'#importar'); await pg.waitForSelector('#routineBody .srow');
+  const sr=await pg.evaluate(()=>{ const r=id=>document.querySelector(`[data-sacc="${id}"]`); const exp=stmtLabel(isoAddMonths(today(),-1)), gap=stmtLabel(isoAddMonths(today(),-3),true);
+    return {a:r('rtA').innerText.replace(/\s+/g,' '),aDue:!!r('rtA').querySelector('.sst.due'),exp,gap,b:r('rtB').innerText.replace(/\s+/g,' '),bOk:!!r('rtB').querySelector('.sst.ok'),c:!!r('rtC').querySelector('[data-soff]'),badge:!!document.querySelector('.tabs-inline a[href="#importar"] .tbadge'),
+      alert:computeAlerts().some(x=>/^stmt:/.test(x.key)&&x.go.h==='importar'&&/Falta|Faltan/.test(x.t))&&stmtList().some(x=>x.a.id==='rtA'&&x.state==='due'),first:document.querySelector('#routineBody .srow').dataset.sacc}; });
+  ok(sr.aDue&&sr.a.includes('Falta el de '+sr.exp)&&sr.a.includes('también falta '+sr.gap)&&sr.bOk&&/trimestral/.test(sr.b)&&sr.c&&sr.badge&&sr.alert,'extractos del mes: falta el del mes pasado, huecos, 401(k) trimestral, aviso y recuento ('+sr.a+' | '+sr.b+')');
+  await pg.click('[data-soff="rtC"]'); ok(await pg.evaluate(()=>S.settings.stmtOff.includes('rtC')&&!!document.querySelector('[data-son="rtC"]')&&sanitizeState(JSON.parse(JSON.stringify(S))).settings.stmtOff.includes('rtC')),'"No necesita" quita una cuenta del recordatorio');
+  await pg.click('[data-son="rtC"]'); ok(await pg.evaluate(()=>!S.settings.stmtOff.includes('rtC')),'"Recordar" la vuelve a poner');
+  await pg.goto(U+'#cuentas'); await pg.waitForTimeout(200);
+  ok(await pg.evaluate(()=>/Falta/.test(document.querySelector('[data-acc="rtA"]').innerText)&&!!document.querySelector('#dueBanner')),'Mis cuentas marca la cuenta a la que le falta el extracto');
+  await pg.goto(U+'#importar'); await pg.waitForSelector('[data-simp="rtA"]');
+  const td=new Date(), us=`${String(td.getMonth()+1).padStart(2,'0')}/${String(td.getDate()).padStart(2,'0')}/${td.getFullYear()}`;
+  const [fcR]=await Promise.all([pg.waitForEvent('filechooser'),pg.click('[data-simp="rtA"]')]);
+  await fcR.setFiles([mem('rutina.csv',`Date,Description,Amount\n${us},RUTINA MENSUAL,-4\n`)]); await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='rutina.csv',null,{timeout:10000});
+  ok(await pg.evaluate(()=>BATCH.res[0].status==='ok'&&BATCH.res[0].acc==='rtA'&&stmtInfo(acc('rtA')).state==='ok'&&!!document.querySelector('[data-sacc="rtA"] .sst.ok')),'Importar en una fila guarda en esa cuenta y la deja al día');
+  await pg.evaluate(()=>{ const dt=new DataTransfer(); dt.items.add(new File(['Date,Description,Amount\n11/02/2026,SOLTADO EN LA APP,-2\n'],'soltado.csv',{type:'text/csv'})); document.querySelector('#pageTitle').dispatchEvent(new DragEvent('dragenter',{dataTransfer:dt,bubbles:true})); window.__drag=document.body.classList.contains('dragging'); document.querySelector('#pageTitle').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true})); });
+  await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='soltado.csv',null,{timeout:10000});
+  ok(await pg.evaluate(()=>window.__drag&&!document.body.classList.contains('dragging')&&location.hash==='#importar'),'soltar archivos en cualquier parte de la app los importa');
+  await pg.goto(U+'#resumen'); await pg.waitForTimeout(200); await pg.click('#fab'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>!!document.querySelector('#modal #fNew')&&!!document.querySelector('#modal #fabTx')&&!!document.querySelector('#modal #nNoDoc')&&/Compartir|arrastra|Archivos/.test(document.querySelector('#modal').innerText)),'el botón + abre una sola hoja: extractos, movimiento o cuenta sin extractos');
+  await pg.setInputFiles('#fNew',[mem('Checking6789_activity_fab.csv',`Posting Date,Description,Amount\n${us},DESDE EL BOTON MAS,-6\n`)]); await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='Checking6789_activity_fab.csv',null,{timeout:10000});
+  ok(await pg.evaluate(()=>location.hash==='#importar'&&!document.querySelector('#modal.show')),'elegir extractos desde el + los importa sin más pasos');
+  await pg.evaluate(()=>{ ['rtA','rtB','rtC'].forEach(id=>deleteAccount(id)); save(); });
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
@@ -346,6 +372,15 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.click('#lockBtn'); await pg.waitForTimeout(400); await pg.click('#gRec'); await pg.fill('#gR',rec.toLowerCase()); await pg.fill('#g1','otra frase segura 22'); await pg.fill('#g2','otra frase segura 22'); await pg.click('#gGo');
   await pg.waitForSelector('.reccode',{timeout:20000}); ok(true,'recuperación con clave'); await pg.check('#gOk'); await pg.click('#gNext'); await pg.waitForTimeout(300); if(await pg.$('#gSkip')) await pg.click('#gSkip');
   ok(await pg.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration())),'service worker registrado');
+  // Compartir desde otra app (Android): el service worker guarda los archivos en memoria y la app los importa al desbloquear
+  await pg.evaluate(()=>navigator.serviceWorker.ready); if(!(await pg.evaluate(()=>!!navigator.serviceWorker.controller))){ await pg.reload(); await pg.waitForTimeout(800); }
+  const shareUrl=await pg.evaluate(async()=>{ const fd=new FormData(); fd.append('files',new File(['Date,Description,Amount\n11/20/2026,COMPARTIDO DESDE EL BANCO,-9\n'],'compartido.csv',{type:'text/csv'})); const r=await fetch('./share-target',{method:'POST',body:fd}); return r.url; });
+  ok(/\?share=[0-9a-f-]{36}$/.test(shareUrl),'el service worker recibe lo compartido y redirige a la app');
+  await pg.goto(shareUrl.replace(/\?share=/,'?share=')+'#importar'); await pg.waitForTimeout(1200);
+  ok(await pg.evaluate(()=>!/share=/.test(location.href)&&/Desbloquea la app para importar el archivo/.test(document.querySelector('#toast').textContent)),'con la app bloqueada, avisa de que hay que desbloquear (y limpia la dirección)');
+  ok(await pg.evaluate(async()=>{ for(const k of await caches.keys()){ const c=await caches.open(k); if((await c.keys()).some(q=>/share/.test(q.url))) return false; } return true; }),'lo compartido no se guarda en la caché');
+  if(await pg.evaluate(()=>S===null)){ await pg.fill('#gP','otra frase segura 22'); await pg.click('#gGo'); } await pg.waitForFunction(()=>S&&BATCH&&!BATCH.running&&BATCH.res.length&&BATCH.res[0].name==='compartido.csv',null,{timeout:15000});
+  ok(await pg.evaluate(()=>location.hash==='#importar'&&SHARED_FILES===null),'al desbloquear, importa lo compartido');
   await ctx.setOffline(true); await pg.reload(); await pg.waitForTimeout(800); ok(await pg.evaluate(()=>document.title==='MyFinZen'),'carga sin conexión'); await ctx.setOffline(false);
   ok(errs.length===0,'sin errores en consola'+(errs.length?': '+errs.join(' | '):''));
   await b.close(); srv.close(); console.log(failed?`\n${failed} prueba(s) fallida(s)`:'\nTodo OK'); process.exit(failed?1:0);

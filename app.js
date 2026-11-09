@@ -68,12 +68,24 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&document.body.clas
 window.addEventListener('scroll',()=>{ const t=document.getElementById('topbar'); if(t) t.classList.toggle('scrolled',window.scrollY>4); },{passive:true});
 // Botón "+": importar extractos o añadir un movimiento
 const FAB_VIEWS=['resumen','flujo','cuentas','inversiones','hipotecas'];
-document.getElementById('fab').addEventListener('click',()=>{
-  openModal(`<h2>${L('¿Qué quieres hacer?','What do you want to do?')}</h2><div class="choice">
-    <button id="fabImp"><span class="av" style="--h:215">${ic('upload')}</span><span><b>${L('Importar extractos','Import statements')}</b><span class="muted">${L('PDF o CSV de tus bancos, tarjetas, inversiones o hipotecas','PDF or CSV from your banks, cards, investments or mortgages')}</span></span></button>
-    <button id="fabTx"><span class="av" style="--h:152">${ic('plus')}</span><span><b>${L('Añadir movimiento','Add a transaction')}</b><span class="muted">${L('Un gasto en efectivo o algo que no esté en tus extractos','A cash expense or something not in your statements')}</span></span></button></div>
+document.getElementById('fab').addEventListener('click',()=>addSheet());
+/* Una sola forma de añadir: extractos (abre el selector de archivos directamente y crea las cuentas que falten),
+   un movimiento a mano o una cuenta sin extractos. La usan el botón + y "Añadir cuenta". */
+function addSheet(opts={}){ const acctOnly=!!opts.account;
+  openModal(`<h2>${acctOnly?L('Añadir cuenta','Add account'):L('Añadir','Add')}</h2><div class="choice">
+    <label class="btn chl" id="pkNew"><span class="av" style="--h:215">${ic('upload')}</span><span><b>${L('Importar extractos','Import statements')}</b><span class="muted">${L('PDF o CSV de bancos, tarjetas, inversiones o hipotecas. La app reconoce cada uno y crea las cuentas que falten.','PDF or CSV from banks, cards, investments or mortgages. The app recognizes each one and creates any missing accounts.')}</span></span><input type="file" id="fNew" accept="${PICK_ACCEPT}" multiple></label>
+    ${acctOnly?'':`<button id="fabTx"><span class="av" style="--h:152">${ic('plus')}</span><span><b>${L('Añadir movimiento','Add a transaction')}</b><span class="muted">${L('Un gasto en efectivo o algo que no esté en tus extractos','A cash expense or something not in your statements')}</span></span></button>`}
+    <button id="nNoDoc"><span class="av" style="--h:36">${ic('house')}</span><span><b>${L('Cuenta sin extractos','Account without statements')}</b><span class="muted">${L('Una casa, efectivo o un préstamo sin documentos','A house, cash or a loan without documents')}</span></span></button></div>
+    <p class="muted" style="margin:12px 2px 0">${quickTip()}</p>
     <div class="row" style="margin-top:12px"><button id="mc">${L('Cancelar','Cancel')}</button></div>`);
-  $('#mc').onclick=closeModal; $('#fabImp').onclick=()=>{ closeModal(); location.hash='#importar'; }; $('#fabTx').onclick=()=>{ closeModal(); addTxModal(); }; });
+  $('#mc').onclick=closeModal; if($('#fabTx')) $('#fabTx').onclick=()=>{ closeModal(); addTxModal(); };
+  $('#nNoDoc').onclick=()=>{ closeModal(); editAccount(null,'cash'); };
+  $('#fNew').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(!fs.length) return; closeModal(); importFiles(fs,{isNew:true}); }; }
+// La forma más rápida de traer extractos según el dispositivo
+const DEVICE=/Android/i.test(navigator.userAgent)?'android':/iPhone|iPad|iPod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)?'ios':'desktop';
+function quickTip(){ return DEVICE==='android'?L('<b>Más rápido:</b> en la app de tu banco abre el PDF del extracto y pulsa <b>Compartir → MyFinZen</b> (con la app instalada desde Chrome).','<b>Faster:</b> in your bank\'s app open the statement PDF and tap <b>Share → MyFinZen</b> (with the app installed from Chrome).')
+  :DEVICE==='ios'?L('<b>En el iPhone:</b> guarda los PDF del banco en Archivos y elígelos todos a la vez aquí.','<b>On iPhone:</b> save the bank PDFs to Files and pick them all at once here.')
+  :L('<b>Más rápido:</b> arrastra los archivos a cualquier parte de MyFinZen, o ábrelos con MyFinZen desde tu carpeta de descargas.','<b>Faster:</b> drag the files anywhere onto MyFinZen, or open them with MyFinZen from your downloads folder.'); }
 function langSwitch(){ return `<div class="langsw"><button class="sm ${LANG==='es'?'on':''}" data-lang="es">Español</button><button class="sm ${LANG==='en'?'on':''}" data-lang="en">English</button></div>`; }
 function wireLang(root,after){ root.querySelectorAll('[data-lang]').forEach(b=>b.onclick=()=>{ setLang(b.dataset.lang); if(after) after(); }); }
 /* ---------- Ayuda: icono (i) en cada caja; textos en help.js ---------- */
@@ -218,6 +230,7 @@ function sanitizeState(st){
   if(s.mortCalc&&typeof s.mortCalc==='object'){ const c=s.mortCalc, n=(k,lo,hi)=>{ const v=numStrict(c[k]); return v==null?null:Math.max(lo,Math.min(hi,v)); };
     S2.mortCalc={price:n('price',0,1e8),down:n('down',0,1e8),term:[15,20,30].includes(+c.term)?+c.term:30,fico:FICO_T.some(f=>f[0]===c.fico)?c.fico:'GE740',rate:n('rate',0.01,29.99),tax:n('tax',0,5),ins:n('ins',0,1e6),hoa:n('hoa',0,1e5),pmi:n('pmi',0,5),limit:n('limit',0,1e8)}; }
   if(s.newsSort==='rec') S2.newsSort='rec';
+  if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
     for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }
@@ -525,7 +538,9 @@ function computeAlerts(){
   if(!lb && (S.tx.length||S.snapshots.length) ) A.push({lvl:'crit',key:'nobk',go:{h:'ajustes'},t:L('<b>No tienes copia de seguridad.</b> Los datos solo viven en este navegador: si se borra, se pierden. Haz una en "Copia y ajustes".','<b>You have no backup.</b> Your data only lives in this browser: if it is cleared, it is lost. Make one in "Backup & settings".')});
   else if(lb && daysBetween(lb,new Date().toISOString())>30){ const d=daysBetween(lb,new Date().toISOString()); A.push({lvl:'warn',key:'oldbk:'+lb,go:{h:'ajustes'},t:L(`<b>Tu última copia tiene ${d} días.</b> Haz una nueva en "Copia y ajustes".`,`<b>Your last backup is ${d} days old.</b> Make a new one in "Backup & settings".`)}); }
   // stale balances
-  const stale=S.accounts.filter(a=>{const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>40;});
+  const SL=stmtList(), inRoutine=new Set(SL.filter(x=>x.state==='ok'||x.state==='due').map(x=>x.a.id)), SD=SL.filter(x=>x.state==='due');
+  if(SD.length) A.push({lvl:'warn',key:'stmt:'+hashKey(SD.map(x=>x.a.id+x.due.join()).join()),go:{h:'importar'},t:stmtDueText(SD)+L(' Toca para importarlos.',' Tap to import them.')});
+  const stale=S.accounts.filter(a=>{ if(inRoutine.has(a.id)) return false; const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>40;});
   if(stale.length) A.push({lvl:'warn',key:'stale:'+hashKey(stale.map(a=>a.id).join()),go:stale.length===1?{h:'cuentas',acc:stale[0].id}:{h:'cuentas'},t:`<b>${L('Saldos por actualizar:','Balances to update:')}</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?L(` y ${stale.length-4} más`,` and ${stale.length-4} more`):''}.`});
   // conciliación entre cuentas
   const RC=lastRec(); const rn=RC?RC.issues.filter(i=>i.lvl!=='info'):[];
@@ -568,7 +583,29 @@ function wireAlerts(root,A,refresh){
    Views
    ============================================================ */
 const VIEWS={};
-function route(){ if(!S) return; const h=(location.hash||'#resumen').slice(1); const v=Object.prototype.hasOwnProperty.call(VIEWS,h)?h:'resumen';
+/* Archivos que llegan de fuera: Compartir → MyFinZen (share_target, los guarda el service worker en memoria),
+   "Abrir con MyFinZen" (file_handlers / launchQueue) o soltados sobre la app. Se quedan solo en memoria hasta
+   que la bóveda está abierta; al bloquear se descartan. */
+let SHARED_FILES=null;
+function takeFiles(fs){ fs=[...(fs||[])].filter(f=>f&&typeof f==='object'&&f.size>0).slice(0,20); if(!fs.length) return;
+  SHARED_FILES=fs; if(S){ closeModal(); route(); } else toast(L(`Desbloquea la app para importar ${fs.length===1?'el archivo':`los ${fs.length} archivos`}`,`Unlock the app to import ${fs.length===1?'the file':`the ${fs.length} files`}`)); }
+async function takeShared(){ let u; try{ u=new URL(location.href); }catch(e){ return; } if(!u.searchParams.has('share')) return; const id=u.searchParams.get('share')||'';
+  u.searchParams.delete('share'); history.replaceState(null,'',u.pathname+(u.search||'')+(u.hash||'#importar'));
+  if(!/^[0-9a-f-]{36}$/.test(id)||!('serviceWorker' in navigator)) return;
+  try{ const reg=await navigator.serviceWorker.ready; const sw=navigator.serviceWorker.controller||reg.active; if(!sw) return; const ch=new MessageChannel();
+    const files=await new Promise(res=>{ ch.port1.onmessage=e=>res(e.data&&Array.isArray(e.data.files)?e.data.files:[]); sw.postMessage({type:'getShared',id},[ch.port2]); setTimeout(()=>res([]),5000); });
+    takeFiles(files); }catch(e){} }
+if('launchQueue' in window){ try{ window.launchQueue.setConsumer(async lp=>{ if(!lp||!lp.files||!lp.files.length) return; const fs=[]; for(const h of lp.files){ try{ fs.push(await h.getFile()); }catch(e){} } takeFiles(fs); }); }catch(e){} }
+// Soltar archivos en cualquier parte de la app
+{ let depth=0; const files=e=>!!(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files'));
+  const hint=()=>{ let h=document.getElementById('dragHint'); if(!h){ h=document.createElement('div'); h.id='dragHint'; h.setAttribute('aria-hidden','true'); document.body.appendChild(h); } h.textContent=L('Suelta los extractos para importarlos','Drop the statements to import them'); };
+  document.addEventListener('dragenter',e=>{ if(!files(e)) return; depth++; hint(); document.body.classList.add('dragging'); });
+  document.addEventListener('dragover',e=>{ if(!files(e)) return; e.preventDefault(); e.dataTransfer.dropEffect='copy'; });
+  document.addEventListener('dragleave',e=>{ if(!files(e)) return; depth=Math.max(0,depth-1); if(!depth) document.body.classList.remove('dragging'); });
+  document.addEventListener('drop',e=>{ depth=0; document.body.classList.remove('dragging'); if(!files(e)) return; e.preventDefault(); // nunca dejar que el navegador abra el PDF
+    if(e.target&&e.target.closest&&e.target.closest('.drop')) return; takeFiles(e.dataTransfer.files); }); }
+function route(){ if(!S) return;
+  if(SHARED_FILES){ const fs=SHARED_FILES; SHARED_FILES=null; setTimeout(()=>importFiles(fs),0); } const h=(location.hash||'#resumen').slice(1); const v=Object.prototype.hasOwnProperty.call(VIEWS,h)?h:'resumen';
   const on=NAV_PARENT[v]||v; document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+on)); hideTip(); menuOpen(false);
   if(NAV_MORE.some(x=>x[0]===on)&&$('#navMore')) $('#navMore').open=true;
   $('#pageTitle').textContent=navLabel(v); $('#fab').style.display=FAB_VIEWS.includes(v)?'':'none';
@@ -1224,12 +1261,12 @@ VIEWS.alquiler=(el)=>{
    "cuenta nueva" queda preseleccionada si el archivo no es de ninguna cuenta conocida). */
 let IMPORT_FOR=null, IMPORT_NEW=false;
 function forAcc(filter){ const a=IMPORT_FOR&&acc(IMPORT_FOR); return a&&filter(a)?a:null; }
-function acctTabs(cur){ return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cuentas'?'pri':''}" href="#cuentas">${L('Mis cuentas','My accounts')}</a><a class="btn ${cur==='importar'?'pri':''}" href="#importar">${L('Importar','Import')}</a></div>`; }
+function acctTabs(cur){ const n=stmtDueCount(); return `<div class="tabs-inline" style="margin-bottom:12px"><a class="btn ${cur==='cuentas'?'pri':''}" href="#cuentas">${L('Mis cuentas','My accounts')}</a><a class="btn ${cur==='importar'?'pri':''}" href="#importar">${L('Extractos','Statements')}${n?`<span class="tbadge" title="${L('Extractos que faltan','Missing statements')}">${n}</span>`:''}</a></div>`; }
 // Abre Cuentas → Importar y, ya pintada la pantalla, ejecuta fn.
 function openImport(fn){ if(location.hash==='#importar'){ fn(); return; } const h=()=>{ window.removeEventListener('hashchange',h); setTimeout(fn,0); }; window.addEventListener('hashchange',h); location.hash='#importar'; }
 // Un archivo: revisión paso a paso (permite crear la cuenta). Varios: por lotes.
-function importFiles(fs,{forId=null,isNew=false}={}){ fs=[...fs]; if(!fs.length) return;
-  openImport(()=>{ IMPORT_FOR=forId; IMPORT_NEW=isNew; importBanner(); if(fs.length===1&&!forId){ isPdfFile(fs[0])?queuePDF(fs[0]):handleCSV(fs[0]); } else importBatch(fs); }); }
+function importFiles(fs,{forId=null,isNew=false}={}){ fs=[...fs].filter(f=>f&&f.size!==0); if(!fs.length) return;
+  openImport(()=>{ IMPORT_FOR=forId; IMPORT_NEW=isNew; importBanner(); importBatch(fs,{autoReview:fs.length===1}); }); }
 const PICK_ACCEPT='.pdf,.csv,application/pdf,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain';
 // Avatar de cuenta: iniciales de la entidad (o del nombre) con el color de su tipo
 const KIND_HUE={cash:215,credit:350,brokerage:152,retirement:262,kids:320,property:36,mortgage:18,other:190};
@@ -1237,16 +1274,18 @@ function accAv(a){ const src=(a.institution||a.name||'?').replace(/[^A-Za-z0-9Á
   const ini=(w.length>1?w[0][0]+w[1][0]:src.slice(0,2)).toUpperCase(); return `<span class="av" style="--h:${KIND_HUE[a.kind]||215}">${esc(ini)}</span>`; }
 VIEWS.cuentas=(el)=>{
   const groups=Object.keys(KINDS);
-  const row=a=>{ const s=lastSnap(a.id); return `<button class="lrow" data-acc="${esc(a.id)}">${accAv(a)}<span class="lm"><b>${esc(a.last4?a.name.replace(/\s*···\d{4}$/,''):a.name)}</b><span>${esc(a.institution||KINDS[a.kind].label)}${a.last4?' · ···'+esc(a.last4):''}</span></span><span class="lr"><b>${s?fmt(s.value,2):'—'}</b><span>${s?dLabel(s.date):L('sin saldo','no balance')}</span></span>${ic('right','chev')}</button>`; };
+  const SI={}; stmtList().forEach(x=>{ SI[x.a.id]=x; }); const due=Object.values(SI).filter(x=>x.state==='due');
+  const row=a=>{ const s=lastSnap(a.id), st=SI[a.id]; return `<button class="lrow" data-acc="${esc(a.id)}">${accAv(a)}<span class="lm"><b>${esc(a.last4?a.name.replace(/\s*···\d{4}$/,''):a.name)}</b><span>${esc(a.institution||KINDS[a.kind].label)}${a.last4?' · ···'+esc(a.last4):''}</span></span><span class="lr"><b>${s?fmt(s.value,2):'—'}</b>${st&&st.state==='due'?`<span class="neg">${L('Falta','Missing')} ${esc(stmtLabel(st.due[0],true))}</span>`:`<span>${s?dLabel(s.date):L('sin saldo','no balance')}</span>`}</span>${ic('right','chev')}</button>`; };
   el.innerHTML=acctTabs('cuentas')+`
   <input type="file" id="fAcc" accept="${PICK_ACCEPT}" multiple hidden>
+  ${due.length?`<a class="alert warn act" href="#importar" id="dueBanner" style="text-decoration:none;color:inherit"><span class="ic">!</span><div style="flex:1">${stmtDueText(due)}</div>${ic('right','chev')}</a>`:''}
   ${S.accounts.length?`<div class="card" style="margin-bottom:4px">${helpBtn('accounts')}<div class="row"><div><h2 style="margin:0">${L('Tus cuentas','Your accounts')}</h2><p class="muted" style="margin:2px 0 0">${L(`${S.accounts.length} cuentas`,`${S.accounts.length} accounts`)}</p></div><button class="pri" id="addA">${ic('plus')}${L('Añadir cuenta','Add account')}</button></div></div>`
   +groups.filter(k=>S.accounts.some(a=>a.kind===k)).map(k=>{ const accs=S.accounts.filter(a=>a.kind===k); const tot=accs.reduce((t,a)=>t+(balanceOf(a)||0),0);
     return `<h3 class="sec">${KINDS[k].label}<span class="tot">${fmt(tot)}</span></h3><div class="card list">${accs.map(row).join('')}</div>`; }).join('')
   :`<div class="card">${helpBtn('acc_first')}<h2>${L('Crea tu primera cuenta desde un extracto','Create your first account from a statement')}</h2><p class="sub">${L('Elige uno o varios extractos (PDF o CSV). La app crea la cuenta por ti y tú solo lo revisas.','Choose one or more statements (PDF or CSV). The app creates the account for you and you just review it.')}</p>
-    <div class="drop" id="dropFirst"><label class="pick">${ic('upload')}${L('Elegir extractos (PDF o CSV)','Choose statements (PDF or CSV)')}<input type="file" accept="${PICK_ACCEPT}" id="fFirst" multiple></label><div class="muted" style="margin-top:8px">${L('o arrástralos aquí desde el ordenador','or drag them here from your computer')}</div></div>
+    <div class="drop" id="dropFirst"><label class="pick">${ic('upload')}${L('Elegir extractos (PDF o CSV)','Choose statements (PDF or CSV)')}<input type="file" accept="${PICK_ACCEPT}" id="fFirst" multiple></label><div class="muted" style="margin-top:8px">${quickTip()}</div></div>
     <p class="muted" style="margin:12px 0 0">${L('¿Una casa, efectivo o una cuenta sin extractos?','A house, cash or an account without statements?')} <button class="sm" id="addNoDoc">${L('Crear sin documento','Create without a document')}</button></p></div>`}`;
-  if($('#addA')) $('#addA').onclick=addAccountModal;
+  if($('#addA')) $('#addA').onclick=()=>addSheet({account:true});
   if($('#addNoDoc')) $('#addNoDoc').onclick=()=>editAccount(null,'cash');
   if($('#dropFirst')){ const d=$('#dropFirst'); d.ondragover=e=>{e.preventDefault();d.classList.add('over')}; d.ondragleave=()=>d.classList.remove('over'); d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); importFiles(e.dataTransfer.files,{isNew:true});}; $('#fFirst').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; importFiles(fs,{isNew:true}); }; }
   $('#fAcc').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; const t=$('#fAcc').dataset.target; if(t&&acc(t)) importFiles(fs,{forId:t}); };
@@ -1266,16 +1305,8 @@ function accountSheet(id){ const a=acc(id); if(!a) return; const s=lastSnap(a.id
   m.querySelector('[data-snap]').onclick=()=>addSnapshot(id); m.querySelector('[data-edit]').onclick=()=>editAccount(id); m.querySelector('[data-hist]').onclick=()=>showHistory(id);
   m.querySelectorAll('[data-tx]').forEach(b=>b.onclick=()=>txSheet(b.dataset.tx));
 }
-// Alta de cuenta: primero desde un extracto; a mano solo si no hay documento.
-function addAccountModal(){
-  openModal(`<h2>${L('Nueva cuenta','New account')}</h2>
-   <p class="sub">${L('Lo más rápido y fiable es importar un extracto de la cuenta: la app lee la entidad, el tipo, los últimos 4 dígitos, el saldo y los movimientos, y crea la cuenta con todo. Después solo revisas.','The fastest and most reliable way is to import a statement of the account: the app reads the institution, the type, the last 4 digits, the balance and the transactions, and creates the account with everything. Then you just review.')}</p>
-   <label class="pick" style="display:block;text-align:center">${L('Elegir extracto (PDF o CSV)','Choose statement (PDF or CSV)')}<input type="file" id="fNew" accept="${PICK_ACCEPT}" multiple></label>
-   <p class="muted" style="margin:14px 0 6px">${L('¿No tienes extractos? Por ejemplo, una casa, efectivo o un préstamo sin documentos.','No statements? For example, a house, cash or a loan without documents.')}</p>
-   <div class="row"><button id="nNoDoc">${L('Crear sin documento','Create without a document')}</button><button id="nCancel">${L('Cancelar','Cancel')}</button></div>`);
-  $('#nCancel').onclick=closeModal; $('#nNoDoc').onclick=()=>{ closeModal(); editAccount(null,'cash'); };
-  $('#fNew').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(!fs.length) return; closeModal(); importFiles(fs,{isNew:true}); };
-}
+// Alta de cuenta: la misma hoja que el botón + (primero desde un extracto; a mano solo si no hay documento).
+function addAccountModal(){ addSheet({account:true}); }
 function editAccount(id, kind='cash', preset={}){
   const a=id?acc(id):Object.assign({id:null,kind,name:'',institution:''},preset);
   const k=a.kind;
@@ -1333,28 +1364,81 @@ VIEWS.importar=(el)=>{
   pdfBusy=false; pdfQueue.length=0;
   const drag=L('o arrástralo aquí desde el ordenador','or drag it here from your computer');
   el.innerHTML=acctTabs('importar')+`<div id="impFor"></div>
-  <div class="alert info"><span class="ic">i</span><div>${L('<b>Los archivos no salen de este dispositivo.</b> Se leen dentro del navegador y solo se guardan las cifras y los movimientos.','<b>Files never leave this device.</b> They are read inside the browser and only the figures and transactions are saved.')}</div></div>
-  <div class="card" style="margin-bottom:12px">${helpBtn('imp_batch')}<h2>${L('Importar varios archivos a la vez','Import several files at once')}</h2><p class="sub">${L('Elige todos tus extractos a la vez, PDF y CSV mezclados.','Choose all your statements at once, PDFs and CSVs mixed.')}</p>
-    <div class="drop" id="dropAll"><label class="pick">${ic('upload')}${L('Elegir archivos (PDF y CSV)','Choose files (PDF and CSV)')}<input type="file" accept=".pdf,.csv,application/pdf,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain" id="fAll" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div>
-    <div id="batchOut"></div></div>
-  <div class="grid g2">
-    <div class="card">${helpBtn('imp_csv')}<h2>${L('Movimientos del banco o tarjeta (CSV)','Bank or card transactions (CSV)')}</h2><p class="sub">${L('Movimientos descargados de tu banco o tarjeta, o las posiciones de M1.','Transactions downloaded from your bank or card, or your M1 positions.')}</p>
-      <div class="drop" id="dropCSV"><label class="pick">${L('Elegir archivo CSV','Choose CSV file')}<input type="file" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain" id="fCSV" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div></div>
-    <div class="card">${helpBtn('imp_pdf')}<h2>${L('PDF de cualquier cuenta o documento fiscal','PDF of any account or tax document')}</h2><p class="sub">${L('Extractos de cualquier cuenta y formularios fiscales (W-2, 1098, 1099).','Statements from any account and tax forms (W-2, 1098, 1099).')}</p>
-      <div class="drop" id="dropPDF"><label class="pick">${L('Elegir archivo PDF','Choose PDF file')}<input type="file" accept="application/pdf,.pdf" id="fPDF" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div></div>
-  </div>
+  <div class="alert warn" id="wvNote" style="display:none"><span class="ic">!</span><div>${L('<b>¿El botón de elegir archivo no hace nada?</b> Estás abriendo MyFinZen dentro de otra app que no deja elegir archivos. Ábrela en Chrome o instálala desde Chrome. Para un CSV, también puedes pegar su contenido en "Más formas de importar".','<b>Does the choose-file button do nothing?</b> You are opening MyFinZen inside another app that doesn\'t allow picking files. Open it in Chrome or install it from Chrome. For a CSV, you can also paste its content under "More ways to import".')}</div></div>
+  <div class="card" id="routine" style="margin-bottom:12px">${helpBtn('stmt_routine')}<div id="routineBody"></div>
+    <input type="file" id="fRoutine" accept="${PICK_ACCEPT}" multiple hidden>
+    <div class="drop" id="dropAll" style="margin-top:14px"><label class="pick">${ic('upload')}${L('Elegir extractos (PDF y CSV)','Choose statements (PDF and CSV)')}<input type="file" accept="${PICK_ACCEPT}" id="fAll" multiple></label><div class="muted" style="margin-top:8px">${quickTip()}</div></div>
+    <div id="batchOut"></div>
+    <p class="muted" style="margin:12px 0 0;font-size:12.5px">${ic('lock')} ${L('Los archivos se leen dentro de este dispositivo y no salen de él; solo se guardan, cifradas, las cifras y los movimientos.','Files are read on this device and never leave it; only the figures and transactions are saved, encrypted.')}</p></div>
+  <details class="card" id="impMore"><summary><b>${L('Más formas de importar','More ways to import')}</b> <span class="muted">${L('archivo a archivo, CSV pegado','file by file, pasted CSV')}</span></summary>
+    <h3 class="sec">${L('Revisar un archivo paso a paso','Review one file step by step')} ${helpBtn('imp_pdf',true)}</h3>
+    <p class="sub">${L('Para ver y corregir lo que la app lee antes de guardarlo, o para leer un PDF con Claude.','To see and fix what the app reads before saving it, or to read a PDF with Claude.')}</p>
+    <div class="grid g2"><div class="drop" id="dropPDF"><label class="pick">${L('Elegir PDF','Choose PDF')}<input type="file" accept="application/pdf,.pdf" id="fPDF" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div>
+      <div class="drop" id="dropCSV"><label class="pick">${L('Elegir CSV','Choose CSV')}<input type="file" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain" id="fCSV" multiple></label><div class="muted" style="margin-top:8px">${drag}</div></div></div>
+    <h3 class="sec">${L('Pegar CSV como texto','Paste CSV as text')} ${helpBtn('imp_paste',true)}</h3>
+    <p class="sub">${L('Si no puedes elegir el archivo, copia su contenido y pégalo aquí.','If you can\'t choose the file, copy its content and paste it here.')}</p><textarea id="pasteCSV" placeholder="Symbol,Name,Quantity,..."></textarea><div class="row" style="margin-top:8px"><input id="pasteName" placeholder="${L('Nombre (opcional), p. ej. Holdings-Oct-30-2026','Name (optional), e.g. Holdings-Oct-30-2026')}"><button class="pri" id="pasteGo">${L('Importar texto','Import text')}</button></div></details>
   <div id="impOut" style="margin-top:12px"></div>`;
-  const wv=/; wv\)|Version\/[\d.]+ Chrome\/[\d.]+ Mobile/.test(navigator.userAgent)&&/Android/.test(navigator.userAgent);
-  el.querySelector('.tabs-inline').insertAdjacentHTML('afterend',`<div class="alert ${wv?'warn':'info'}" id="wvNote" style="${wv?'':'display:none'}"><span class="ic">!</span><div>${L('<b>¿El botón de elegir archivo no hace nada?</b> Estás abriendo MyFinZen dentro de otra app que no deja elegir archivos. Ábrela en Chrome o instálala desde Chrome. Para un CSV, también puedes pegar su contenido abajo.','<b>Does the choose-file button do nothing?</b> You are opening MyFinZen inside another app that doesn\'t allow picking files. Open it in Chrome or install it from Chrome. For a CSV, you can also paste its content below.')}</div></div>`);
-  el.insertAdjacentHTML('beforeend',`<div class="card" style="margin-top:12px">${helpBtn('imp_paste')}<h2>${L('Pegar CSV como texto','Paste CSV as text')}</h2><p class="sub">${L('Si no puedes elegir el archivo, copia su contenido y pégalo aquí.','If you can\'t choose the file, copy its content and paste it here.')}</p><textarea id="pasteCSV" placeholder="Symbol,Name,Quantity,..."></textarea><div class="row" style="margin-top:8px"><input id="pasteName" placeholder="${L('Nombre (opcional), p. ej. Holdings-Oct-30-2026','Name (optional), e.g. Holdings-Oct-30-2026')}"><button class="pri" id="pasteGo">${L('Importar texto','Import text')}</button></div></div>`);
+  if(/; wv\)|Version\/[\d.]+ Chrome\/[\d.]+ Mobile/.test(navigator.userAgent)&&/Android/.test(navigator.userAgent)) $('#wvNote').style.display='';
   $('#pasteGo').onclick=()=>{ const t=$('#pasteCSV').value.trim(); if(!t) return toast(L('Pega el contenido del CSV','Paste the CSV content')); const n=($('#pasteName').value.trim()||(L('pegado-','pasted-')+today()))+'.csv'; handleCSV({name:n,text:async()=>t}); window.scrollTo(0,document.body.scrollHeight); };
   ['#fCSV','#fPDF','#fAll'].forEach(id=>{ const i=$(id); let opened=false; i.addEventListener('click',()=>{ opened=false; setTimeout(()=>{ if(!opened&&document.hasFocus()) $('#wvNote').style.display=''; },2500); }); window.addEventListener('blur',()=>{opened=true;},{once:false}); i.addEventListener('change',()=>{opened=true;}); });
   // Un archivo: revisión paso a paso. Varios: importación por lotes.
-  const run=(fs,one)=>{ if(!fs.length) return; if(fs.length>1||!one) importBatch(fs); else one(fs[0]); };
+  const run=(fs,one)=>{ if(!fs.length) return; if(fs.length>1||!one) importBatch(fs,{autoReview:fs.length===1}); else one(fs[0]); };
   const wire=(drop,input,one)=>{ const d=$(drop); d.ondragover=e=>{e.preventDefault();d.classList.add('over')}; d.ondragleave=()=>d.classList.remove('over'); d.ondrop=e=>{e.preventDefault();d.classList.remove('over'); run([...e.dataTransfer.files],one);}; $(input).onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; run(fs,one); }; };
   wire('#dropCSV','#fCSV',handleCSV); wire('#dropPDF','#fPDF',queuePDF); wire('#dropAll','#fAll',null);
-  importBanner(); if(BATCH&&!BATCH.running) renderBatch();
+  $('#fRoutine').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; const t=e.target.dataset.target; if(fs.length) importFiles(fs,{forId:t&&acc(t)?t:null}); };
+  renderRoutine(); importBanner(); if(BATCH&&!BATCH.running) renderBatch();
 };
+/* ---------- Extractos del mes: qué cuentas están al día y qué extractos faltan ----------
+   Para cada cuenta con extractos (banco, tarjeta, inversión, jubilación, hijos, hipoteca) se toma la fecha del
+   último extracto (registro de importaciones, saldos o último movimiento importado) y su ritmo (mensual; trimestral
+   en jubilación o si los extractos van de 3 en 3 meses). Se espera el siguiente un mes (o tres) después, con unos
+   días de margen para que el banco lo publique. settings.stmtOff = cuentas que el usuario no quiere que se le recuerden. */
+const STMT_KINDS=['cash','credit','brokerage','retirement','kids','mortgage'], STMT_GRACE=6;
+function isoAddMonths(iso,n){ const [y,m,d]=iso.split('-').map(Number); const t=new Date(Date.UTC(y,m-1+n,1)); const last=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+1,0)).getUTCDate(); t.setUTCDate(Math.min(d,last)); return t.toISOString().slice(0,10); }
+const monthsApart=(a,b)=>{ const [ya,ma]=a.split('-').map(Number), [yb,mb]=b.split('-').map(Number); return (yb-ya)*12+(mb-ma); };
+function stmtLabel(iso,short){ const d=new Date(iso+'T12:00:00'); const m=short?mesAbbr(d.getMonth()):mesLong(d.getMonth()); return d.getFullYear()===new Date().getFullYear()?m:m+' '+d.getFullYear(); }
+function stmtInfo(a){
+  const off=(S.settings.stmtOff||[]).includes(a.id);
+  const imps=(S.imports||[]).filter(e=>e.acc===a.id&&e.kind!=='tax'&&isoDate(e.date));
+  const dates=[...new Set([...imps.map(e=>e.date),...S.snapshots.filter(x=>x.acc===a.id).map(x=>x.date)])].filter(d=>isoDate(d)&&d<=today()).sort();
+  const txs=S.tx.filter(t=>t.acc===a.id&&t.src!=='manual'); const txLast=txs.reduce((m,t)=>t.date>m?t.date:m,'');
+  const hasDocs=imps.length>0||txs.length>0||(a.kind==='mortgage'&&dates.length>0)||!!(a.holdings&&a.holdings.rows&&a.holdings.rows.length);
+  const last=[dates[dates.length-1]||'',txLast].sort().pop()||null;
+  const pd=imps.filter(e=>e.kind!=='csv').map(e=>e.date).sort(); let step=a.kind==='retirement'?3:1;
+  if(pd.length>=2){ const g=pd.slice(1).map((d,i)=>monthsApart(pd[i],d)).filter(x=>x>0).sort((x,y)=>x-y); if(g.length) step=g[Math.floor(g.length/2)]>=3?3:1; }
+  const now=today(), due=[];
+  if(last&&hasDocs){ let next=isoAddMonths(last,step); while(daysBetween(next,now)>=STMT_GRACE&&due.length<24){ due.push(next); next=isoAddMonths(next,step); } }
+  const gaps=[]; if(step===1&&hasDocs){ const yr=isoAddMonths(now,-12); for(let i=1;i<dates.length;i++){ if(dates[i]<yr) continue; const k=monthsApart(dates[i-1],dates[i]); for(let j=1;j<k&&gaps.length<6;j++) gaps.push(isoAddMonths(dates[i-1],j)); } }
+  return {a,state:off?'off':!hasDocs?'none':due.length?'due':'ok',last,due,gaps,step};
+}
+function stmtList(){ return S?S.accounts.filter(a=>STMT_KINDS.includes(a.kind)).map(stmtInfo):[]; }
+function stmtDueCount(){ return stmtList().reduce((n,x)=>n+(x.state==='due'?x.due.length:0),0); }
+function stmtDueText(due){ const n=due.reduce((s,x)=>s+x.due.length,0); const lst=due.slice(0,3).map(x=>`${esc(x.a.name)} (${x.due.slice(0,2).map(d=>esc(stmtLabel(d))).join(', ')}${x.due.length>2?'…':''})`).join(', ');
+  return L(`<b>${n===1?'Falta 1 extracto':`Faltan ${n} extractos`}:</b> ${lst}${due.length>3?' y más':''}.`,`<b>${n===1?'1 statement missing':`${n} statements missing`}:</b> ${lst}${due.length>3?' and more':''}.`); }
+function stmtRowText(x){ const d=x.due.map(v=>stmtLabel(v)); let t;
+  if(x.state==='ok') t=L(`Al día · último del ${dLabel(x.last)}`,`Up to date · latest on ${dLabel(x.last)}`)+(x.step===3?L(' · trimestral',' · quarterly'):'');
+  else if(x.state==='due') t=d.length===1?L(`Falta el de ${d[0]}`,`${d[0]} is missing`):d.length===2?L(`Faltan ${d[0]} y ${d[1]}`,`${d[0]} and ${d[1]} are missing`):L(`Faltan ${d.length}, desde ${d[0]}`,`${d.length} missing, since ${d[0]}`);
+  else if(x.state==='none') t=L('Sin extractos importados','No statements imported');
+  else t=L('Sin recordatorio','No reminder');
+  if(x.gaps.length&&x.state!=='off') t+=L(' · también falta ',' · also missing ')+x.gaps.slice(0,3).map(v=>stmtLabel(v,true)).join(', ');
+  return esc(t); }
+function renderRoutine(){ const box=$('#routineBody'); if(!box) return; const all=stmtList();
+  const act=all.filter(x=>x.state==='ok'||x.state==='due'), none=all.filter(x=>x.state==='none'), off=all.filter(x=>x.state==='off');
+  const okN=act.filter(x=>x.state==='ok').length, dueN=act.reduce((n,x)=>n+x.due.length,0);
+  const chip={ok:`<span class="sst ok">${ic('check')}${L('Al día','Up to date')}</span>`,due:`<span class="sst due">${L('Falta','Missing')}</span>`,none:'',off:''};
+  const row=x=>`<div class="srow" data-sacc="${esc(x.a.id)}">${accAv(x.a)}<span class="lm"><b>${esc(x.a.name)}</b><span>${stmtRowText(x)}</span></span>${chip[x.state]}
+    ${x.state==='none'?`<button class="sm ghost" data-soff="${esc(x.a.id)}">${L('No necesita','Not needed')}</button>`:''}<button class="sm${x.state==='due'?' pri':''}" data-simp="${esc(x.a.id)}" aria-label="${L('Importar en','Import into')} ${esc(x.a.name)}">${ic('upload')}<span class="hide-xs">${L('Importar','Import')}</span></button></div>`;
+  box.innerHTML=`<h2>${L('Extractos del mes','This month\'s statements')}</h2>
+    ${act.length?`<p class="sub">${dueN?L(`${okN} de ${act.length} cuentas al día · <b>${dueN===1?'falta 1 extracto':`faltan ${dueN} extractos`}</b>`,`${okN} of ${act.length} accounts up to date · <b>${dueN} missing</b>`):L(`<b>Todo al día</b> · ${act.length} cuentas`,`<b>All up to date</b> · ${act.length} accounts`)}</p>
+      <div class="sbar" role="progressbar" aria-valuemin="0" aria-valuemax="${act.length}" aria-valuenow="${okN}"><i style="width:${Math.round(okN/act.length*100)}%"></i></div>`
+      :`<p class="sub">${L('Elige los extractos de todas tus cuentas a la vez: la app reconoce cada documento y crea las cuentas.','Choose the statements of all your accounts at once: the app recognizes each document and creates the accounts.')}</p>`}
+    ${act.length||none.length?`<div class="slist">${[...act.filter(x=>x.state==='due'),...act.filter(x=>x.state==='ok'),...none].map(row).join('')}</div>`:''}
+    ${off.length?`<p class="muted" style="margin:10px 0 0;font-size:12.5px">${L('Sin recordatorio','No reminder')}: ${off.map(x=>`${esc(x.a.name)} <button class="sm ghost" data-son="${esc(x.a.id)}">${L('Recordar','Remind')}</button>`).join(' ')}</p>`:''}`;
+  box.querySelectorAll('[data-simp]').forEach(b=>b.onclick=()=>{ const f=$('#fRoutine'); f.dataset.target=b.dataset.simp; f.click(); });
+  const setOff=(id,on)=>{ const s0=new Set(S.settings.stmtOff||[]); on?s0.add(id):s0.delete(id); S.settings.stmtOff=[...s0]; save(); renderRoutine(); };
+  box.querySelectorAll('[data-soff]').forEach(b=>b.onclick=()=>setOff(b.dataset.soff,true));
+  box.querySelectorAll('[data-son]').forEach(b=>b.onclick=()=>setOff(b.dataset.son,false));
+  const tb=document.querySelector('.tabs-inline a[href="#importar"]'); if(tb){ const n=stmtDueCount(); const old=tb.querySelector('.tbadge'); if(old) old.remove(); if(n) tb.insertAdjacentHTML('beforeend',`<span class="tbadge">${n}</span>`); } }
 function importBanner(){ const b=$('#impFor'); if(!b) return; const a=IMPORT_FOR&&acc(IMPORT_FOR);
   b.innerHTML=a?`<div class="alert good"><span class="ic">→</span><div style="flex:1">${L(`Importando en <b>${esc(a.name)}</b>. Los archivos se guardan en esta cuenta salvo que sus últimos 4 dígitos sean de otra.`,`Importing into <b>${esc(a.name)}</b>. Files are saved to this account unless their last 4 digits belong to another one.`)} <button class="sm" id="impAny">${L('Cualquier cuenta','Any account')}</button></div></div>`:'';
   if(a) $('#impAny').onclick=()=>{ IMPORT_FOR=null; importBanner(); }; }
@@ -1887,7 +1971,7 @@ let BATCH=null;
 async function importOne(f,force){ const h=await fileHash(f); startImport(f.name,h,force);
   if(IMP_CTX.prev&&!force){ const r={status:'skip',dupOf:IMP_CTX.prev.id,msg:dupMsg(IMP_CTX.prev)}; IMP_CTX=null; return r; }
   try{ return isPdfFile(f)?await autoPDF(f):await autoCSV(f); } finally{ IMP_CTX=null; } }
-async function importBatch(files){
+async function importBatch(files,opt={}){
   const list=[...files].filter(f=>isPdfFile(f)||/\.(csv|txt)$/i.test(f.name)||/csv|text\/plain|vnd\.ms-excel/.test(f.type));
   const box=$('#batchOut'); if(!box) return; if(!list.length){ toast(L('Elige archivos PDF o CSV','Choose PDF or CSV files')); return; }
   BATCH={running:true,res:[]}; box.innerHTML=`<div class="alert info" style="margin-top:10px"><span class="ic">i</span><div class="bprog"></div></div>`;
@@ -1897,7 +1981,8 @@ async function importBatch(files){
       if(seen.has(h)) r={status:'skip',msg:L('Es el mismo archivo que otro de este lote','It is the same file as another one in this batch')};
       else { seen.add(h); r=await importOne(f,false); } }catch(e){ IMP_CTX=null; r={status:'error',msg:String(e&&e.message||e)}; }
     r.file=f; r.name=f.name; BATCH.res.push(r); }
-  BATCH.running=false; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch();
+  BATCH.running=false; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch(); renderRoutine();
+  if(opt.autoReview&&BATCH.res.length===1&&BATCH.res[0].status==='review'){ const b=$('#batchOut [data-brev="0"]'); if(b) b.click(); }
 }
 function renderBatch(){
   const box=$('#batchOut'); if(!box||!BATCH) return; const res=BATCH.res; const n=s=>res.filter(r=>r.status===s).length;
@@ -1914,7 +1999,7 @@ function renderBatch(){
     ${res.map((r,i)=>{ const [c,s]=ic[r.status]||ic.error; return `<div class="alert ${c}" style="margin-bottom:6px"><span class="ic">${s}</span><div style="flex:1;min-width:0"><div style="overflow-wrap:anywhere"><b>${esc(r.name)}</b></div><div class="muted">${detail(r)}</div>${r.dupOf?`<button class="sm" style="margin-top:6px" data-bforce="${i}">${L('Importar de nuevo (reemplaza el anterior)','Import again (replaces the previous one)')}</button>`:''}${r.status==='review'?`<button class="sm" style="margin-top:6px" data-brev="${i}">${r.opened?L('Abierto abajo ↓','Opened below ↓'):L('Revisar','Review')}</button>`:''}</div></div>`; }).join('')}
     ${R?`<p class="muted">${L(`Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b> en <a href="#flujo">Movimientos</a>`:''}.`,`Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b> in <a href="#flujo">Transactions</a>`:''}.`)}</p>`:''}</div>`;
   box.querySelectorAll('[data-bforce]').forEach(b=>b.onclick=async()=>{ const i=+b.dataset.bforce, f=res[i].file; b.disabled=true; let r;
-    try{ r=await importOne(f,true); }catch(e){ IMP_CTX=null; r={status:'error',msg:String(e&&e.message||e)}; } r.file=f; r.name=f.name; res[i]=r; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch(); });
+    try{ r=await importOne(f,true); }catch(e){ IMP_CTX=null; r={status:'error',msg:String(e&&e.message||e)}; } r.file=f; r.name=f.name; res[i]=r; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch(); renderRoutine(); });
   box.querySelectorAll('[data-brev]').forEach(b=>b.onclick=()=>{ const r=res[+b.dataset.brev]; r.opened=true; renderBatch(); if(isPdfFile(r.file)){ pdfBusy=false; pdfQueue.length=0; queuePDF(r.file); } else handleCSV(r.file); setTimeout(()=>{ const o=$('#impOut'); if(o) o.scrollIntoView({behavior:'smooth'}); },300); });
 }
 
@@ -2712,7 +2797,7 @@ async function unlockWithPasskey(){
 }
 /* ---------- Bloqueo ---------- */
 let lockTimer=null, hiddenAt=0;
-function lockNow(){ if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
+function lockNow(){ SHARED_FILES=null; if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
 function bumpLock(){ clearTimeout(lockTimer); if(!S) return; const m=(S.settings&&S.settings.lockMin)||5; lockTimer=setTimeout(()=>{ if(S) lockNow(); },m*60000); }
 ['pointerdown','keydown','scroll','touchstart'].forEach(ev=>window.addEventListener(ev,()=>{ if(S) bumpLock(); },{passive:true}));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden){ hiddenAt=Date.now(); if(S) flushSave(); } else if(S&&hiddenAt&&Date.now()-hiddenAt>((S.settings.lockMin||5)*60000)) lockNow(); });
@@ -2806,5 +2891,6 @@ function downloadFile(name,text,type='application/json'){ try{ const a=document.
     reg.addEventListener('updatefound',()=>{ const w=reg.installing; w&&w.addEventListener('statechange',()=>{ if(w.state==='installed'&&navigator.serviceWorker.controller) ready(w); }); });
     let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(reloaded) return; reloaded=true; location.reload(); });
     setInterval(()=>reg.update().catch(()=>{}),60*60*1000);
+    takeShared();
   }catch(e){} }
 })();
