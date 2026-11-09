@@ -1,7 +1,7 @@
 // MyFinZen service worker: guarda la app para usarla sin conexión.
 // Solo cachea los archivos de la app (código e iconos), nunca tus datos.
 // Sube VERSION en cada cambio para que los dispositivos reciban la actualización.
-const VERSION='v1.14.0';
+const VERSION='v1.15.0';
 const CACHE = 'myfinzen-' + VERSION;
 const ASSETS = [
   './',

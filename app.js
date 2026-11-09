@@ -215,6 +215,8 @@ function sanitizeState(st){
   S2.recIgnore=arr(s.recIgnore).filter(x=>typeof x==='string').slice(-300);
   if(s.lastAI&&typeof s.lastAI==='object') S2.lastAI={date:isoDate(s.lastAI.date)||today(),q:str(s.lastAI.q,500),text:str(s.lastAI.text,60000)};
   if(s.newsTab) S2.newsTab=str(s.newsTab,20); if(s.newsCountries) S2.newsCountries=arr(s.newsCountries).filter(x=>typeof x==='string'&&/^[a-z]{2,10}$/.test(x)); if(s.newsHide) S2.newsHide=arr(s.newsHide).filter(x=>typeof x==='string').map(x=>x.slice(0,100));
+  if(s.mortCalc&&typeof s.mortCalc==='object'){ const c=s.mortCalc, n=(k,lo,hi)=>{ const v=numStrict(c[k]); return v==null?null:Math.max(lo,Math.min(hi,v)); };
+    S2.mortCalc={price:n('price',0,1e8),down:n('down',0,1e8),term:[15,20,30].includes(+c.term)?+c.term:30,fico:FICO_T.some(f=>f[0]===c.fico)?c.fico:'GE740',rate:n('rate',0.01,29.99),tax:n('tax',0,5),ins:n('ins',0,1e6),hoa:n('hoa',0,1e5),pmi:n('pmi',0,5),limit:n('limit',0,1e8)}; }
   if(s.newsSort==='rec') S2.newsSort='rec';
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
@@ -456,7 +458,7 @@ function showTip(html, x, y){ tip.innerHTML=html; tip.style.opacity=1; const w=t
 function hideTip(){ tip.style.opacity=0; }
 function niceTicks(min,max,count=4){ if(min===max){max=min+1;} const span=max-min; const step0=span/count; const mag=Math.pow(10,Math.floor(Math.log10(step0))); const f=step0/mag; const step=(f<1.5?1:f<3?2:f<7?5:10)*mag; const lo=Math.floor(min/step)*step, hi=Math.ceil(max/step)*step; const t=[]; for(let v=lo; v<=hi+step/2; v+=step) t.push(+v.toFixed(10)); return t; }
 
-function lineChart(el, {labels, series, height=220, yFmt=fmtK, tipLabel=l=>l, zero=false}){
+function lineChart(el, {labels, series, height=220, yFmt=fmtK, tipLabel=l=>l, zero=false, tipFmt=fmt}){
   el.classList.add('chart');
   const W=Math.max(el.clientWidth||600, 280), H=height, P={l:52,r:14,t:10,b:24};
   const vals=series.flatMap(s=>s.values.filter(v=>v!=null));
@@ -479,7 +481,7 @@ function lineChart(el, {labels, series, height=220, yFmt=fmtK, tipLabel=l=>l, ze
   const svg=el.querySelector('svg'), xh=svg.querySelector('.xh');
   const move=e=>{ const r=svg.getBoundingClientRect(); const px=(e.touches?e.touches[0].clientX:e.clientX)-r.left; const sx=px*W/r.width; let i=Math.round((sx-P.l)/((W-P.l-P.r)/Math.max(1,labels.length-1))); i=Math.max(0,Math.min(labels.length-1,i));
     xh.setAttribute('x1',X(i)); xh.setAttribute('x2',X(i)); xh.setAttribute('opacity',1);
-    let h=`<b>${esc(tipLabel(labels[i]))}</b>`; series.forEach((se,k)=>{ const c=svg.querySelector('.dot'+k); const v=se.values[i]; if(v==null){c.setAttribute('opacity',0);return;} c.setAttribute('cx',X(i)); c.setAttribute('cy',Y(v)); c.setAttribute('opacity',1); h+=`<br><span class="k" style="background:${se.color}"></span>${esc(se.name)}: ${fmt(v)}`; });
+    let h=`<b>${esc(tipLabel(labels[i]))}</b>`; series.forEach((se,k)=>{ const c=svg.querySelector('.dot'+k); const v=se.values[i]; if(v==null){c.setAttribute('opacity',0);return;} c.setAttribute('cx',X(i)); c.setAttribute('cy',Y(v)); c.setAttribute('opacity',1); h+=`<br><span class="k" style="background:${se.color}"></span>${esc(se.name)}: ${tipFmt(v)}`; });
     showTip(h,(e.touches?e.touches[0].clientX:e.clientX),(e.touches?e.touches[0].clientY:e.clientY)); };
   const out=()=>{ xh.setAttribute('opacity',0); series.forEach((se,k)=>svg.querySelector('.dot'+k).setAttribute('opacity',0)); hideTip(); };
   const hit=svg.querySelector('.hit'); hit.addEventListener('mousemove',move); hit.addEventListener('touchstart',move,{passive:true}); hit.addEventListener('touchmove',move,{passive:true}); hit.addEventListener('mouseleave',out); hit.addEventListener('touchend',()=>setTimeout(out,1500));
@@ -763,10 +765,10 @@ function manageCats(){
 const extraSim={};
 VIEWS.hipotecas=(el)=>{
   const ms=S.accounts.filter(a=>a.kind==='mortgage');
-  if(!ms.length){ el.innerHTML=`<div class="card empty">${helpBtn('mortgage')}<div class="ei">${ic('house')}</div><p>${L('Aún no hay hipotecas. Importa el último extracto de tu hipoteca y la app la crea con su cuota y su saldo.','No mortgages yet. Import your latest mortgage statement and the app creates it with its payment and balance.')}</p><label class="pick">${ic('upload')}${L('Importar extracto','Import statement')}<input type="file" accept="application/pdf,.pdf" class="mPick"></label> <button id="addM">${L('Añadir a mano','Add by hand')}</button></div>`; $('#addM').onclick=()=>editAccount(null,'mortgage'); wireMortPick(el); return; }
-  el.innerHTML=ms.map(m=>`<div class="card" style="margin-bottom:12px" id="m_${m.id}"></div>`).join('')+`<div class="row"><label class="pick" style="flex:none">${L('Actualizar con el statement (PDF)','Update with the statement (PDF)')}<input type="file" accept="application/pdf,.pdf" class="mPick"></label><button id="addM">${L('+ Añadir hipoteca a mano','+ Add a mortgage by hand')}</button></div>`; wireMortPick(el);
+  if(!ms.length){ el.innerHTML=`<div class="card empty">${helpBtn('mortgage')}<div class="ei">${ic('house')}</div><p>${L('Aún no hay hipotecas. Importa el último extracto de tu hipoteca y la app la crea con su cuota y su saldo.','No mortgages yet. Import your latest mortgage statement and the app creates it with its payment and balance.')}</p><label class="pick">${ic('upload')}${L('Importar extracto','Import statement')}<input type="file" accept="application/pdf,.pdf" class="mPick"></label> <button id="addM">${L('Añadir a mano','Add by hand')}</button></div>`+mortExtrasShell(); $('#addM').onclick=()=>editAccount(null,'mortgage'); wireMortPick(el); mortExtras(); return; }
+  el.innerHTML=ms.map(m=>`<div class="card" style="margin-bottom:12px" id="m_${m.id}"></div>`).join('')+`<div class="row"><label class="pick" style="flex:none">${L('Actualizar con el statement (PDF)','Update with the statement (PDF)')}<input type="file" accept="application/pdf,.pdf" class="mPick"></label><button id="addM">${L('+ Añadir hipoteca a mano','+ Add a mortgage by hand')}</button></div>`+mortExtrasShell(); wireMortPick(el);
   $('#addM').onclick=()=>editAccount(null,'mortgage');
-  ms.forEach(m=>renderMortgage(m));
+  ms.forEach(m=>renderMortgage(m)); mortExtras();
 };
 function renderMortgage(m){
   const box=$('#m_'+m.id); const bal=balanceOf(m)||0; const snap=lastSnap(m.id);
@@ -800,6 +802,122 @@ function renderMortgage(m){
   lineChart(box.querySelector('.mchart'),{labels:lab,zero:true,series:[{name:nSin,color:'var(--muted)',values:pick(base),dash:true},{name:nAct,color:'var(--s1)',values:pick(curr)},{name:nSim,color:'var(--s2)',values:pick(alt)}]});
   box.querySelector('[data-edit]').onclick=()=>editAccount(m.id);
   const r=box.querySelector('[data-sim]'); r.oninput=()=>{ extraSim[m.id]=+r.value; renderMortgage(m); const nr=$('#m_'+m.id).querySelector('[data-sim]'); nr.focus(); };
+}
+
+/* ---------- Calculadora de hipoteca y tipos de interés actuales ----------
+   Los tipos vienen de rates.json (rama news; la tarea horaria los toma de FRED: Optimal Blue y Freddie Mac).
+   Son índices nacionales de tipos bloqueados de verdad: en California sirven de referencia; lo que cambia es el límite del préstamo. */
+// Límites de préstamo conforme (FHFA, una vivienda). Actualizar cada noviembre (ver CLAUDE.md, mantenimiento anual).
+const LOAN_LIM={2026:{base:832750,ceil:1249125}};
+function loanLim(){ const y=new Date().getFullYear(); const ks=Object.keys(LOAN_LIM).map(Number).filter(k=>k<=y).sort((a,b)=>b-a); const k=ks[0]||Math.min(...Object.keys(LOAN_LIM).map(Number)); return {year:k,...LOAN_LIM[k]}; }
+const FICO_T=[['GE740','740+','740+'],['B720A739','720–739','720–739'],['B700A719','700–719','700–719'],['B680A699','680–699','680–699'],['LT680','< 680','< 680']];
+const RATES={data:null,at:0,err:'',loading:null};
+function ratesURL(){ return newsURL().replace(/news\.json$/,'rates.json'); }
+function sanitizeRates(d){ const out={updated:typeof d.updated==='string'&&!isNaN(Date.parse(d.updated))?d.updated:null,series:{}};
+  for(const [k,x] of Object.entries(obj(d.series))){ if(!/^[A-Z0-9]{3,40}$/.test(k)||!x||typeof x!=='object') continue; const v=Number(x.v); if(!isoDate(x.d)||!(v>0&&v<30)) continue;
+    const o={d:x.d,v}; const a=Number(x.a); if(isoDate(x.ad)&&a>0&&a<30){ o.ad=x.ad; o.a=a; }
+    if(Array.isArray(x.h)) o.h=x.h.filter(p=>Array.isArray(p)&&isoDate(p[0])&&Number(p[1])>0&&Number(p[1])<30).slice(-60).map(p=>[p[0],Number(p[1])]);
+    out.series[k]=o; }
+  return out; }
+async function loadRates(force){
+  if(RATES.loading) return RATES.loading;
+  if(!force&&RATES.data&&Date.now()-RATES.at<30*60000) return RATES.data;
+  RATES.loading=(async()=>{ try{ const r=await fetch(ratesURL(),{cache:force?'reload':'default',credentials:'omit',referrerPolicy:'no-referrer'}); if(!r.ok) throw new Error('HTTP '+r.status);
+      const d=await r.json(); RATES.data=sanitizeRates(d&&typeof d==='object'?d:{}); RATES.at=Date.now(); RATES.err=''; }
+    catch(e){ RATES.err=navigator.onLine===false?L('sin conexión','offline'):String(e.message||e); } finally{ RATES.loading=null; } return RATES.data; })();
+  return RATES.loading; }
+const rateOf=id=>RATES.data&&RATES.data.series[id]||null;
+const pct=(v,d=2)=>Number.isFinite(v)?v.toFixed(d)+'%':'—';
+function rateCell(id){ const x=rateOf(id); if(!x) return '—'; const ch=x.a!=null?x.v-x.a:null;
+  return `<b>${pct(x.v)}</b>${ch!=null&&Math.abs(ch)>=0.01?` <span class="rch ${ch<0?'pos':'neg'}" title="${L('Cambio en 4 semanas','Change over 4 weeks')}">${ch<0?'▼':'▲'}${Math.abs(ch).toFixed(2)}</span>`:''}`; }
+// Categoría del préstamo según su importe y el límite del condado
+function loanCat(amount,limit){ const LL=loanLim(); if(amount<=LL.base) return 'conf'; if(amount<=Math.max(LL.base,limit||LL.base)) return 'hb'; return 'jumbo'; }
+const LOAN_CAT={conf:['Conforme','Conforming'],hb:['Conforme de importe alto (high-balance)','High-balance conforming'],jumbo:['Jumbo','Jumbo']};
+// Tipo de referencia para un préstamo: producto, plazo, FICO y entrada
+function refRate(cat,term,fico,ltv){
+  if(term===15){ const x=rateOf('OBMMIC15YF'); return x?{v:x.v,d:x.d,id:'OBMMIC15YF',note:L('media a 15 años (sin desglose por FICO)','15-year average (no FICO breakdown)')}:null; }
+  if(cat==='jumbo'){ const x=rateOf('OBMMIJUMBO30YF'); return x?{v:x.v,d:x.d,id:'OBMMIJUMBO30YF',note:L('media jumbo a 30 años','30-year jumbo average')}:null; }
+  const id='OBMMIC30YFLV'+(ltv>0.8?'GT80':'LE80')+'F'+fico; const x=rateOf(id)||rateOf('OBMMIC30YF');
+  return x?{v:x.v,d:x.d,id,note:L(`conforme a 30 años, FICO ${FICO_T.find(f=>f[0]===fico)[1]}, entrada ${ltv>0.8?'menor':'de al menos'} del 20%`,`30-year conforming, FICO ${FICO_T.find(f=>f[0]===fico)[2]}, ${ltv>0.8?'under':'at least'} 20% down`)}:null; }
+function mortCalcState(){ const st=S.settings; const c=st.mortCalc&&typeof st.mortCalc==='object'?st.mortCalc:(st.mortCalc={});
+  if(c.price==null) c.price=1000000; if(c.down==null) c.down=200000; if(![15,20,30].includes(c.term)) c.term=30; if(!FICO_T.some(f=>f[0]===c.fico)) c.fico='GE740';
+  if(c.tax==null) c.tax=1.1; if(c.ins==null) c.ins=2400; if(c.hoa==null) c.hoa=0; if(c.pmi==null) c.pmi=0.5; if(!c.limit) c.limit=LOAN_LIM[loanLim().year].ceil; return c; }
+function mortExtrasShell(){ return `<div class="card" style="margin-top:12px" id="mCalc"></div><div class="card" style="margin-top:12px" id="mRates"></div>`; }
+function mortExtras(){ renderMortCalc(); renderRates(); const pr=loadRates(false); if(!RATES.data) pr.then(()=>{ if(location.hash==='#hipotecas'&&$('#mRates')){ renderRates(); mcCalc(); } }); }
+function renderMortCalc(){ const box=$('#mCalc'); if(!box) return; const c=mortCalcState(); const LL=loanLim();
+  const inp=(id,lbl,val,ph,extra='')=>`<label class="f">${lbl}<input id="${id}" inputmode="decimal" value="${val??''}" placeholder="${ph||''}" autocomplete="off"${extra}></label>`;
+  box.innerHTML=`${helpBtn('mortcalc')}<h2>${L('Calculadora de hipoteca','Mortgage calculator')}</h2><p class="sub">${L('Cuota mensual, intereses y tipo de préstamo para una compra o un refinanciamiento.','Monthly payment, interest and loan type for a purchase or a refinance.')}</p>
+    <div class="grid g3 mcgrid">
+      ${inp('mcPrice',L('Precio de la vivienda','Home price'),c.price,'$')}
+      ${inp('mcDown',L('Entrada ($)','Down payment ($)'),c.down,'$')}
+      <label class="f">${L('Plazo','Term')}<select id="mcTerm">${[30,20,15].map(t=>`<option value="${t}" ${c.term===t?'selected':''}>${t} ${L('años','years')}</option>`).join('')}</select></label>
+      <label class="f">${L('Tu puntuación de crédito (FICO)','Your credit score (FICO)')}<select id="mcFico">${FICO_T.map(f=>`<option value="${f[0]}" ${c.fico===f[0]?'selected':''}>${L(f[1],f[2])}</option>`).join('')}</select></label>
+      <label class="f wide">${L('Límite conforme de tu condado','Your county\'s conforming limit')}<select id="mcLim"><option value="${LL.ceil}" ${c.limit>=LL.ceil?'selected':''}>${fmt(LL.ceil)} · ${L('alto coste (Orange, Los Ángeles…)','high cost (Orange, Los Angeles…)')}</option><option value="${LL.base}" ${c.limit<LL.ceil?'selected':''}>${fmt(LL.base)} · ${L('general','standard')}</option></select></label>
+      ${inp('mcRate',L('Tipo de interés (%)','Interest rate (%)'),c.rate??'',L('el de hoy','today\'s'))}
+      ${inp('mcTax',L('Impuesto de propiedad (% al año)','Property tax (% per year)'),c.tax,'1.1')}
+      ${inp('mcIns',L('Seguro de hogar ($ al año)','Home insurance ($ per year)'),c.ins,'$')}
+      ${inp('mcHoa',L('HOA ($ al mes)','HOA ($ per month)'),c.hoa,'$')}
+    </div>
+    <div id="mcOut"></div>`;
+  const keep=()=>{ const n=id=>{ const v=num($(id).value); return isNaN(v)?null:v; };
+    c.price=Math.max(0,n('#mcPrice')||0); c.down=Math.max(0,Math.min(c.price,n('#mcDown')||0)); c.term=+$('#mcTerm').value; c.fico=$('#mcFico').value; c.limit=+$('#mcLim').value;
+    const r=n('#mcRate'); c.rate=r!=null&&r>0&&r<30?r:null; c.tax=Math.max(0,Math.min(5,n('#mcTax')??1.1)); c.ins=Math.max(0,n('#mcIns')||0); c.hoa=Math.max(0,n('#mcHoa')||0); };
+  let tm; box.querySelectorAll('input,select').forEach(i=>i.addEventListener(i.tagName==='SELECT'?'change':'input',()=>{ keep(); mcCalc(); clearTimeout(tm); tm=setTimeout(save,600); }));
+  mcCalc(); }
+function mcCalc(){ const out=$('#mcOut'); if(!out) return; const c=mortCalcState(); const LL=loanLim();
+  const loan=Math.max(0,c.price-c.down), ltv=c.price?loan/c.price:0, cat=loanCat(loan,c.limit), ref=refRate(cat,c.term===15?15:30,c.fico,ltv);
+  const rate=c.rate??(ref?ref.v:null);
+  if(!loan||!rate){ out.innerHTML=`<p class="muted">${!loan?L('Pon el precio y la entrada.','Enter the price and the down payment.'):L('Escribe un tipo de interés (los de hoy aún no se han podido cargar).','Enter an interest rate (today\'s rates couldn\'t be loaded yet).')}</p>`; return; }
+  const n=c.term*12, i=rate/100/12, pi=i?loan*i/(1-Math.pow(1+i,-n)):loan/n;
+  const tax=c.price*c.tax/100/12, ins=c.ins/12, hoa=c.hoa, pmi=ltv>0.8&&cat!=='jumbo'?loan*c.pmi/100/12:0, total=pi+tax+ins+hoa+pmi, interest=pi*n-loan;
+  const yrs=[], bal=[], intc=[]; let b=loan, ic2=0; for(let m=1;m<=n;m++){ const it=b*i; ic2+=it; b=Math.max(0,b-(pi-it)); if(m%12===0){ yrs.push(String(m/12)); bal.push(Math.round(b)); intc.push(Math.round(ic2)); } }
+  const catTxt=L(LOAN_CAT[cat][0],LOAN_CAT[cat][1]);
+  out.innerHTML=`<div class="grid g4" style="margin-top:12px">
+      <div class="stat"><div class="lbl">${L('Cuota total al mes','Total monthly payment')}</div><div class="val">${fmt(total)}</div><div class="note">${L('capital e intereses','principal & interest')} ${fmt(pi)}</div></div>
+      <div class="stat"><div class="lbl">${L('Préstamo','Loan')}</div><div class="val">${fmt(loan)}</div><div class="note">${catTxt} · LTV ${Math.round(ltv*100)}%</div></div>
+      <div class="stat"><div class="lbl">${L('Tipo','Rate')}</div><div class="val">${pct(rate,3)}</div><div class="note">${c.rate!=null?L('el que has escrito','the one you entered'):ref?L('de hoy: ','today\'s: ')+esc(ref.note):''}</div></div>
+      <div class="stat"><div class="lbl">${L('Intereses en total','Total interest')}</div><div class="val">${fmtK(interest)}</div><div class="note">${c.term} ${L('años','years')} · ${L('pagas','you pay')} ${fmtK(pi*n)}</div></div>
+    </div>
+    <div class="tbl" style="margin-top:10px"><table><tbody>
+      <tr><td>${L('Capital e intereses','Principal & interest')}</td><td class="n">${fmt(pi,2)}</td></tr>
+      <tr><td>${L('Impuesto de propiedad','Property tax')} (${c.tax}%)</td><td class="n">${fmt(tax,2)}</td></tr>
+      <tr><td>${L('Seguro de hogar','Home insurance')}</td><td class="n">${fmt(ins,2)}</td></tr>
+      ${hoa?`<tr><td>HOA</td><td class="n">${fmt(hoa,2)}</td></tr>`:''}
+      ${pmi?`<tr><td>${L('Seguro hipotecario (PMI, estimado ',' Mortgage insurance (PMI, estimated ')}${c.pmi}%${L(' al año)',' per year)')}</td><td class="n">${fmt(pmi,2)}</td></tr>`:''}
+      <tr><td><b>${L('Total','Total')}</b></td><td class="n"><b>${fmt(total,2)}</b></td></tr></tbody></table></div>
+    <p class="muted" style="margin:8px 0 0">${[
+      cat==='jumbo'?L(`Pasa del límite conforme de tu condado (${fmt(c.limit)}): es un préstamo <b>jumbo</b>. Suelen pedir más entrada, más reservas y mejor crédito, y el tipo depende mucho del banco.`,`It's above your county's conforming limit (${fmt(c.limit)}): it's a <b>jumbo</b> loan. Lenders usually ask for a bigger down payment, more reserves and better credit, and the rate varies a lot by bank.`)
+      :cat==='hb'?L(`Pasa de ${fmt(LL.base)} pero no del límite de tu condado: es un préstamo conforme de <b>importe alto</b> (high-balance), que puede llevar un pequeño recargo sobre el tipo conforme.`,`It's above ${fmt(LL.base)} but within your county's limit: it's a <b>high-balance</b> conforming loan, which may carry a small surcharge over the conforming rate.`):'',
+      ltv>0.8&&cat!=='jumbo'?L(`Con menos del 20% de entrada pagas PMI (aquí un ${c.pmi}% al año estimado) hasta que debas el 80% del valor. Con ${fmt(c.price*0.2)} de entrada no lo pagarías.`,`With less than 20% down you pay PMI (estimated here at ${c.pmi}% per year) until you owe 80% of the value. With ${fmt(c.price*0.2)} down you wouldn't pay it.`):'',
+      ref&&c.rate==null&&ref.d?L(`Tipo de referencia del ${dLabel(ref.d)}; tu oferta real dependerá del prestamista, los puntos y el inmueble.`,`Reference rate as of ${dLabel(ref.d)}; your actual offer will depend on the lender, points and property.`):''].filter(Boolean).join(' ')}</p>
+    ${legend([{n:L('Saldo pendiente','Outstanding balance'),c:'var(--s1)'},{n:L('Intereses pagados (acumulado)','Interest paid (cumulative)'),c:'var(--s4)'}])}<div id="mcChart"></div>`;
+  lineChart($('#mcChart'),{labels:yrs,zero:true,height:180,tipLabel:l=>L('Año ','Year ')+l,series:[{name:L('Saldo pendiente','Outstanding balance'),color:'var(--s1)',values:bal},{name:L('Intereses pagados','Interest paid'),color:'var(--s4)',values:intc}]});
+}
+function renderRates(){ const box=$('#mRates'); if(!box) return; const D=RATES.data; const LL=loanLim();
+  const head=`${helpBtn('mortrates')}<h2>${L('Tipos de hipoteca hoy','Mortgage rates today')}</h2>`;
+  if(!D||!Object.keys(D.series).length){ box.innerHTML=head+`<p class="muted">${RATES.loading||(!RATES.err&&!D)?L('Cargando los tipos de hoy…','Loading today\'s rates…'):L('No se han podido cargar los tipos (','Couldn\'t load the rates (')+esc(RATES.err||L('todavía no hay datos publicados','no data published yet'))+').'}</p>`; return; }
+  const ref=rateOf('OBMMIC30YF')||rateOf('MORTGAGE30US'); const age=ref?(Date.now()-Date.parse(ref.d+'T12:00:00'))/864e5:99;
+  const mine=S.accounts.filter(a=>a.kind==='mortgage'&&a.rate>0).map(m=>{ const bal=balanceOf(m)||0; const cat=loanCat(bal,mortCalcState().limit); const r=refRate(cat,30,'GE740',0.7); if(!r) return '';
+    const d=r.v-m.rate; return `<li>${L(`<b>${esc(m.name)}</b> (${pct(m.rate,3)}, ${L(LOAN_CAT[cat][0],LOAN_CAT[cat][1]).toLowerCase()}): `,`<b>${esc(m.name)}</b> (${pct(m.rate,3)}, ${LOAN_CAT[cat][1].toLowerCase()}): `)}${d>=0?L(`el tipo de hoy para un préstamo así es ${pct(r.v)}, <b>más alto que el tuyo</b>: refinanciar no te bajaría la cuota.`,`today's rate for a loan like this is ${pct(r.v)}, <b>higher than yours</b>: refinancing wouldn't lower your payment.`):d>-0.75?L(`el tipo de hoy es ${pct(r.v)}, solo ${Math.abs(d).toFixed(2)} puntos menos: con los gastos de cierre, refinanciar rara vez compensa con una diferencia así.`,`today's rate is ${pct(r.v)}, only ${Math.abs(d).toFixed(2)} points lower: with closing costs, refinancing rarely pays off with a gap like that.`):L(`el tipo de hoy es ${pct(r.v)}, ${Math.abs(d).toFixed(2)} puntos menos: puede merecer la pena pedir ofertas de refinanciación y comparar el ahorro con los gastos de cierre.`,`today's rate is ${pct(r.v)}, ${Math.abs(d).toFixed(2)} points lower: it may be worth getting refinance quotes and comparing the savings with the closing costs.`)}</li>`; }).filter(Boolean);
+  const other=[['OBMMIC30YF',L('Conforme 30 años (media)','30-year conforming (average)')],['OBMMIC15YF',L('Conforme 15 años','15-year conforming')],['OBMMIJUMBO30YF',L('Jumbo 30 años','30-year jumbo')],['OBMMIFHA30YF','FHA 30 '+L('años','years')],['OBMMIVA30YF','VA 30 '+L('años','years')],['MORTGAGE30US',L('Freddie Mac 30 años (media semanal)','Freddie Mac 30-year (weekly average)')],['MORTGAGE15US',L('Freddie Mac 15 años (media semanal)','Freddie Mac 15-year (weekly average)')]].filter(([id])=>rateOf(id));
+  box.innerHTML=head+`<p class="sub">${L('Datos del','Data as of')} ${ref?dLabel(ref.d):'—'} · ${L('se actualizan cada día','updated daily')}</p>
+    ${age>7?`<div class="nnote warn">${L('Estos datos tienen más de una semana. Puede que la tarea de GitHub esté parada (Actions → Noticias).','This data is more than a week old. The GitHub workflow may be paused (Actions → Noticias).')}</div>`:''}
+    <h3 class="sec">${L('Conforme a 30 años según tu crédito y tu entrada','30-year conforming by credit score and down payment')}</h3>
+    <div class="tbl"><table class="rtab"><thead><tr><th>FICO</th><th class="n">${L('Entrada ≥ 20%','≥ 20% down')}</th><th class="n">${L('Entrada < 20%','< 20% down')}</th></tr></thead><tbody>
+      ${FICO_T.map(f=>`<tr${mortCalcState().fico===f[0]?' class="on"':''}><td>${L(f[1],f[2])}</td><td class="n">${rateCell('OBMMIC30YFLVLE80F'+f[0])}</td><td class="n">${rateCell('OBMMIC30YFLVGT80F'+f[0])}</td></tr>`).join('')}</tbody></table></div>
+    <p class="muted" style="margin:6px 0 0;font-size:12.5px">${L('Son medias de préstamos reales de ese día: según los puntos que pagó cada cliente, un tramo puede salir algo por debajo del de al lado. Con mejor crédito y más entrada, el tipo ofrecido suele ser menor.','These are averages of real loans from that day: depending on the points each borrower paid, one tier can come out slightly below the next. With better credit and a bigger down payment, the offered rate is usually lower.')}</p>
+    <h3 class="sec">${L('Otros productos','Other products')}</h3>
+    <div class="tbl"><table><tbody>${other.map(([id,l])=>`<tr><td>${l}</td><td class="n">${rateCell(id)}</td></tr>`).join('')}</tbody></table></div>
+    <h3 class="sec">${L('Según la cantidad del préstamo en California','By loan amount in California')} (${LL.year})</h3>
+    <ul class="rlist"><li>${L(`<b>Hasta ${fmt(LL.base)}</b>: préstamo conforme (Fannie Mae y Freddie Mac). Los tipos de arriba.`,`<b>Up to ${fmt(LL.base)}</b>: conforming loan (Fannie Mae and Freddie Mac). The rates above.`)}</li>
+      <li>${L(`<b>Hasta ${fmt(LL.ceil)}</b> en condados de alto coste (Orange, Los Ángeles, San Francisco…): conforme de importe alto; tipos parecidos, a veces con un pequeño recargo.`,`<b>Up to ${fmt(LL.ceil)}</b> in high-cost counties (Orange, Los Angeles, San Francisco…): high-balance conforming; similar rates, sometimes with a small surcharge.`)}</li>
+      <li>${L(`<b>Más de eso</b>: jumbo (${rateOf('OBMMIJUMBO30YF')?pct(rateOf('OBMMIJUMBO30YF').v):'—'} de media a 30 años); más requisitos y más diferencia entre bancos.`,`<b>Above that</b>: jumbo (${rateOf('OBMMIJUMBO30YF')?pct(rateOf('OBMMIJUMBO30YF').v):'—'} on average for 30 years); stricter requirements and bigger differences between banks.`)}</li></ul>
+    ${mine.length?`<h3 class="sec">${L('Tus hipotecas frente a hoy','Your mortgages vs. today')}</h3><ul class="rlist">${mine.join('')}</ul>`:''}
+    ${rateOf('OBMMIC30YF')&&rateOf('OBMMIC30YF').h?`<h3 class="sec">${L('Último año','Last year')}</h3>${legend([{n:L('Conforme 30 años (Optimal Blue)','30-year conforming (Optimal Blue)'),c:'var(--s1)'},...(rateOf('MORTGAGE30US')&&rateOf('MORTGAGE30US').h?[{n:'Freddie Mac 30',c:'var(--s3)'}]:[])])}<div id="rChart"></div>`:''}
+    <p class="muted" style="margin:10px 0 0">${L('Fuente: FRED (Banco de la Reserva Federal de St. Louis) con los índices de Optimal Blue (media diaria de tipos bloqueados de verdad en todo EE. UU.) y la encuesta semanal de Freddie Mac. Son medias nacionales: en California los tipos van muy parejos. Tu tipo final depende del prestamista, de los puntos que pagues, del tipo de inmueble y de tu situación. Información orientativa, no es una oferta ni asesoramiento financiero.','Source: FRED (Federal Reserve Bank of St. Louis) with the Optimal Blue indices (daily average of actual locked rates across the US) and Freddie Mac\'s weekly survey. They are national averages: rates in California track them closely. Your final rate depends on the lender, the points you pay, the property type and your situation. For information only; not an offer or financial advice.')}</p>`;
+  const h1=rateOf('OBMMIC30YF')&&rateOf('OBMMIC30YF').h; if(h1&&$('#rChart')){ const h2=rateOf('MORTGAGE30US')&&rateOf('MORTGAGE30US').h; const labs=h1.map(p=>p[0]);
+    const near=(h,d)=>{ if(!h) return null; let best=null; for(const p of h){ if(Math.abs(Date.parse(p[0])-Date.parse(d))<=4*864e5) best=p[1]; } return best; };
+    lineChart($('#rChart'),{labels:labs.map(d=>dLabel(d)),height:170,yFmt:v=>v.toFixed(1)+'%',tipFmt:v=>v.toFixed(2)+'%',series:[{name:L('Conforme 30 años','30-year conforming'),color:'var(--s1)',values:h1.map(p=>p[1])},...(h2?[{name:'Freddie Mac 30',color:'var(--s3)',values:labs.map(d=>near(h2,d))}]:[])]}); }
 }
 
 function mortPaidHTML(m){ const mm=mortMonthly(m); if(!mm) return ''; const R=lastRec(); const r=R&&R.mort[m.id]; const LP=r&&r.last; const paid=LP?-LP.amount:0; const ok=Math.abs(paid-mm)<=1;

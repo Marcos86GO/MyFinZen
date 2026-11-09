@@ -85,7 +85,12 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
       {t:'La Bolsa Mexicana avanza y el peso se aprecia frente al dólar',u:'https://www.eleconomista.com.mx/mercados/bmv',s:'El Economista México',d:'eleconomista.com.mx',p:ago(5),r:['mx'],i:1},
       {t:'Nikkei hits record as yen weakens against the dollar',u:'https://www.cnbc.com/2026/10/31/nikkei.html',s:'CNBC',d:'cnbc.com',p:ago(6),r:['jp'],i:1},
       {t:'CalPERS boosts its stake in green bonds as Sacramento weighs new rules',u:'https://calmatters.org/economy/calpers',s:'CalMatters',d:'calmatters.org',p:ago(7),r:['us'],i:1}]};
-  await pg.route('https://raw.githubusercontent.com/**',r=>{ newsHits++; r.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(NEWSFX)}); });
+  const dd=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10); const RS=(v,a)=>({d:dd(1),v,ad:dd(29),a});
+  const RATESFX={v:1,updated:new Date().toISOString(),series:{OBMMIC30YF:{...RS(6.30,6.45),h:[[dd(300),6.9],[dd(150),6.6],[dd(1),6.3]]},OBMMIC15YF:RS(5.60,5.70),OBMMIJUMBO30YF:RS(6.55,6.60),OBMMIFHA30YF:RS(6.05,6.20),OBMMIVA30YF:RS(5.85,5.95),MORTGAGE30US:{...RS(6.22,6.30),h:[[dd(302),6.8],[dd(152),6.5],[dd(3),6.22]]},MORTGAGE15US:RS(5.45,5.50),
+    OBMMIC30YFLVLE80FGE740:RS(6.25,6.40),OBMMIC30YFLVLE80FB720A739:RS(6.35,6.5),OBMMIC30YFLVLE80FB700A719:RS(6.45,6.5),OBMMIC30YFLVLE80FB680A699:RS(6.60,6.7),OBMMIC30YFLVLE80FLT680:RS(6.80,6.9),
+    OBMMIC30YFLVGT80FGE740:RS(6.40,6.5),OBMMIC30YFLVGT80FB720A739:RS(6.48,6.5),OBMMIC30YFLVGT80FB700A719:RS(6.55,6.6),OBMMIC30YFLVGT80FB680A699:RS(6.70,6.8),OBMMIC30YFLVGT80FLT680:RS(6.95,7),
+    'BAD<img src=x>':RS(5,5),MALO:{d:'ayer',v:4},ABSURDO:{d:dd(1),v:99}}};
+  await pg.route('https://raw.githubusercontent.com/**',r=>{ const rt=/rates\.json/.test(r.request().url()); if(!rt) newsHits++; r.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(rt?RATESFX:NEWSFX)}); });
   await pg.goto(U+'#inversiones'); await pg.waitForTimeout(300); await pg.click('a.btn[href="#noticias"]'); await pg.waitForSelector('.nw',{timeout:5000});
   const nv=await pg.evaluate(()=>({tab:S.settings.newsTab,rows:[...document.querySelectorAll('.nw .nw-t')].map(a=>a.innerText),tk:[...document.querySelectorAll('.nw .tk')].map(e=>e.innerText),nav:document.querySelector('nav a.on').getAttribute('href'),
     chips:[...document.querySelectorAll('[data-tk]')].map(b=>b.innerText.replace(/\s+/g,' ')),link:(a=>a&&{href:a.href,target:a.target,rel:a.rel})(document.querySelector('.nw .nw-t'))}));
@@ -105,6 +110,25 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.keyboard.press('6'); await pg.waitForTimeout(150);
   const p1=await pg.$$eval('.nw .nw-t',a=>a.map(x=>x.innerText)); await pg.click('[data-cty="mx"]'); await pg.waitForTimeout(150); const p2=await pg.$$eval('.nw .nw-t',a=>a.map(x=>x.innerText));
   ok(p1.length===3&&p2.length===2&&!p2.some(x=>/Mexicana/.test(x))&&await pg.evaluate(()=>!S.settings.newsCountries.includes('mx')),'países seleccionables (atajo 6) y se recuerdan');
+  // Hipotecas: tipos de hoy (rates.json de la rama news) y calculadora
+  await pg.goto(U+'#hipotecas'); await pg.waitForSelector('#mRates .rtab',{timeout:5000}); await pg.waitForTimeout(150);
+  const rt=await pg.evaluate(()=>({rows:[...document.querySelectorAll('#mRates .rtab tbody tr')].map(r=>r.innerText.replace(/\s+/g,' ')),txt:$('#mRates').innerText,keys:Object.keys(RATES.data.series),chart:!!document.querySelector('#rChart svg'),mine:document.querySelectorAll('#mRates .rlist li').length}));
+  ok(rt.rows.length===5&&/^740\+ 6\.25% ▼0\.15 6\.40% ▼0\.10/.test(rt.rows[0])&&/Jumbo 30 años\s+6\.55%/.test(rt.txt)&&/Hasta \$832,750/.test(rt.txt)&&/Hasta \$1,249,125/.test(rt.txt)&&rt.chart&&!rt.keys.some(k=>/BAD|MALO|ABSURDO/.test(k)),'tipos de hoy por FICO y entrada, otros productos, límites de California, gráfico y datos validados ('+rt.rows[0]+')');
+  ok(/Tus hipotecas frente a hoy/.test(rt.txt)&&rt.mine>=4,'compara tus hipotecas con el tipo de hoy');
+  const mc=async(sel,v)=>{ await pg.fill(sel,String(v)); await pg.waitForTimeout(80); return pg.evaluate(()=>({out:$('#mcOut').innerText.replace(/\s+/g,' '),c:{...S.settings.mortCalc}})); };
+  await pg.fill('#mcRate',''); await mc('#mcPrice',1000000); let c1=await mc('#mcDown',200000);
+  const pi=(L,r)=>{ const i=r/100/12; return L*i/(1-Math.pow(1+i,-360)); }; const f2=v=>'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  ok(c1.out.includes(f2(pi(800000,6.25)))&&/Conforme · LTV 80%/.test(c1.out)&&/6\.250%/.test(c1.out)&&!/PMI/.test(c1.out),'calculadora: préstamo conforme con el tipo de hoy para FICO 740+ y 20% de entrada ('+f2(pi(800000,6.25))+')');
+  c1=await mc('#mcDown',100000);
+  ok(c1.out.includes(f2(pi(900000,6.40)))&&/importe alto/.test(c1.out)&&/PMI/.test(c1.out),'más de $832,750 en un condado de alto coste: high-balance, tipo con menos del 20% y PMI');
+  await pg.selectOption('#mcLim','832750'); await pg.waitForTimeout(80); c1=await pg.evaluate(()=>$('#mcOut').innerText.replace(/\s+/g,' '));
+  ok(c1.includes(f2(pi(900000,6.55)))&&/jumbo/i.test(c1)&&!/PMI \(/.test(c1),'con el límite general pasa a jumbo con su tipo');
+  c1=await mc('#mcRate',7);
+  ok(c1.out.includes(f2(pi(900000,7)))&&/el que has escrito/.test(c1.out)&&c1.c.rate===7&&c1.c.limit===832750,'un tipo escrito a mano manda y todo se recuerda');
+  ok(await pg.evaluate(()=>{ const k=sanitizeState(JSON.parse(JSON.stringify(S))).settings.mortCalc; return k.price===1000000&&k.down===100000&&k.rate===7&&k.fico==='GE740'; }),'la calculadora se guarda en la bóveda');
+  await pg.fill('#mcRate',''); await pg.selectOption('#mcLim','1249125'); await pg.fill('#mcDown','200000'); await pg.waitForTimeout(80);
+  if(process.env.SHOTS){ await pg.screenshot({path:process.env.SHOTS+'/hipotecas-calc-movil.png',fullPage:true}); }
+  await pg.goto(U+'#noticias'); await pg.waitForSelector('.nw',{timeout:5000});
   // Impacto, medios que publican la misma noticia y aprendizaje de preferencias
   await pg.click('[data-ntab="us"]'); await pg.waitForTimeout(150);
   const us1=await pg.evaluate(()=>{ const r=[...document.querySelectorAll('.nw')]; const ws=r.find(n=>/Wall Street/.test(n.innerText));
