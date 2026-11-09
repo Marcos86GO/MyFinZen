@@ -540,7 +540,11 @@ function computeAlerts(){
   // stale balances
   const SL=stmtList(), inRoutine=new Set(SL.filter(x=>x.state==='ok'||x.state==='due').map(x=>x.a.id)), SD=SL.filter(x=>x.state==='due');
   if(SD.length) A.push({lvl:'warn',key:'stmt:'+hashKey(SD.map(x=>x.a.id+x.due.join()).join()),go:{h:'importar'},t:stmtDueText(SD)+L(' Toca para importarlos.',' Tap to import them.')});
-  const stale=S.accounts.filter(a=>{ if(inRoutine.has(a.id)) return false; const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>40;});
+  // Casas y otros bienes: su valor cambia despacio, basta revisarlo una vez al año
+  const SLOW=new Set(['property','other']);
+  const stale=S.accounts.filter(a=>{ if(inRoutine.has(a.id)||SLOW.has(a.kind)) return false; const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>40;});
+  const slowStale=S.accounts.filter(a=>{ if(!SLOW.has(a.kind)) return false; const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>365;});
+  if(slowStale.length) A.push({lvl:'info',key:'val:'+hashKey(slowStale.map(a=>a.id+(lastSnap(a.id)||{}).date).join()),go:slowStale.length===1?{h:'cuentas',acc:slowStale[0].id}:{h:'cuentas'},t:`<b>${L('Valor por revisar (una vez al año):','Value to review (once a year):')}</b> ${slowStale.slice(0,4).map(a=>esc(a.name)).join(', ')}${slowStale.length>4?L(` y ${slowStale.length-4} más`,` and ${slowStale.length-4} more`):''}. ${L('Pon lo que valdría hoy; cuenta en tu patrimonio.','Enter what it would be worth today; it counts in your net worth.')}`});
   if(stale.length) A.push({lvl:'warn',key:'stale:'+hashKey(stale.map(a=>a.id).join()),go:stale.length===1?{h:'cuentas',acc:stale[0].id}:{h:'cuentas'},t:`<b>${L('Saldos por actualizar:','Balances to update:')}</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?L(` y ${stale.length-4} más`,` and ${stale.length-4} more`):''}.`});
   // conciliación entre cuentas
   const RC=lastRec(); const rn=RC?RC.issues.filter(i=>i.lvl!=='info'):[];

@@ -321,6 +321,9 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.setInputFiles('#fNew',[mem('Checking6789_activity_fab.csv',`Posting Date,Description,Amount\n${us},DESDE EL BOTON MAS,-6\n`)]); await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res[0].name==='Checking6789_activity_fab.csv',null,{timeout:10000});
   ok(await pg.evaluate(()=>location.hash==='#importar'&&!document.querySelector('#modal.show')),'elegir extractos desde el + los importa sin más pasos');
   await pg.evaluate(()=>{ ['rtA','rtB','rtC'].forEach(id=>deleteAccount(id)); save(); });
+  ok(await pg.evaluate(()=>{ const d=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10); S.accounts.push({id:'hpX',kind:'property',name:'Casa Prueba Valor'}); S.snapshots.push({id:'hpS',acc:'hpX',date:d(60),value:500000});
+    const has=re=>computeAlerts().some(x=>re.test(x.key)&&/Casa Prueba Valor/.test(x.t)); const r1=!has(/^stale:/)&&!has(/^val:/);
+    S.snapshots.find(x=>x.id==='hpS').date=d(400); const r2=has(/^val:/)&&!has(/^stale:/); deleteAccount('hpX'); return r1&&r2; }),'una casa no pide el saldo cada mes, solo revisar su valor una vez al año');
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
