@@ -1,5 +1,5 @@
-# Recoge titulares públicos cada hora y los publica en la rama `news` (archivo news.json).
-# La app los lee de https://raw.githubusercontent.com/Marcos86GO/MyFinZen/news/news.json.
+# Recoge titulares públicos cada hora y los publica en la rama `news` (news.json), junto con los tipos de interés
+# de las hipotecas (rates.json, de FRED). La app los lee de https://raw.githubusercontent.com/Marcos86GO/MyFinZen/news/.
 # La rama `news` se reescribe en cada ejecución (un solo commit) para no engordar el repositorio.
 name: Noticias
 
@@ -36,10 +36,13 @@ jobs:
 
       - name: Noticias anteriores
         run: |
-          if git fetch -q --depth 1 origin news 2>/dev/null; then git show FETCH_HEAD:news.json > prev.json; else echo '{}' > prev.json; fi
+          if git fetch -q --depth 1 origin news 2>/dev/null; then git show FETCH_HEAD:news.json > prev.json; git show FETCH_HEAD:rates.json > prev-rates.json 2>/dev/null || echo '{}' > prev-rates.json; else echo '{}' > prev.json; echo '{}' > prev-rates.json; fi
 
       - name: Recoger titulares
         run: node news/build.mjs out/news.json prev.json
+
+      - name: Tipos de interés de hipotecas
+        run: node news/rates.mjs out/rates.json prev-rates.json
 
       - name: Publicar en la rama news
         run: |
@@ -47,6 +50,6 @@ jobs:
           git init -q -b news
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add news.json
+          git add news.json rates.json
           git commit -qm "Noticias $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -fq "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" news

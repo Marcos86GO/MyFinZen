@@ -1,6 +1,7 @@
 // Pruebas del recolector de noticias (sin red): lectura de RSS/Atom, medios de confianza, filtro de pago y de no-noticias, agrupación, impacto, unión y recorte.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { parseFredCSV, summarize, SERIES } from '../news/rates.mjs';
 import { parseFeed, normalize, merge, trim, isPaywalled, gnURL, tickerQuery, clean, trustTier, isJunk, isRelevant, cluster, impact, host } from '../news/build.mjs';
 
 const SRC = JSON.parse(fs.readFileSync(new URL('../news/sources.json', import.meta.url)));
@@ -91,5 +92,13 @@ t('agrupa la misma noticia de varios medios e indica el impacto', () => {
   const out = trim(c, SRC.regions, now); const f2 = out.find(x => /Fed/.test(x.t)); assert.ok(f2.n === 4 && f2.o.length === 3 && f2.i === 3); assert.ok(!('n' in out.find(x => /Starbucks/.test(x.t))));
   const again = cluster(merge([out.map(x => ({ ...x, r: x.r || [], k: x.k || [] })), [it('Fed cuts interest rates by a quarter point, signals pause', 'pbs.org', 1)]]), SRC.trusted);
   assert.equal(again.find(x => /Fed/.test(x.t)).n, 5, 'al volver a pasar se suman los medios nuevos sin perder los anteriores');
+});
+t('tipos de hipoteca: CSV de FRED, último dato, hace 4 semanas e historial semanal', () => {
+  const r = parseFredCSV('observation_date,OBMMIC30YF\n2025-11-01,6.9\n2026-10-01,6.40\n2026-10-08,.\n2026-10-09,6.30\n2026-10-30,6.27\n2026-11-02,6.25\n2026-11-05,6.20\nbasura\n2026-11-06,99\n');
+  assert.deepEqual(r.map(x => x[0]), ['2025-11-01', '2026-10-01', '2026-10-09', '2026-10-30', '2026-11-02', '2026-11-05'], 'sin "." ni valores absurdos');
+  const s = summarize(r, true); assert.ok(s.d === '2026-11-05' && s.v === 6.2 && s.ad === '2026-10-01' && s.a === 6.4);
+  assert.deepEqual(s.h.map(x => x[0]), ['2026-10-01', '2026-10-09', '2026-11-02', '2026-11-05'], 'un punto por semana, el último año');
+  assert.ok(!('h' in summarize(r, false))); assert.equal(summarize([], true), null);
+  assert.ok(SERIES.includes('OBMMIC30YFLVLE80FGE740') && SERIES.includes('OBMMIC30YFLVGT80FLT680') && SERIES.includes('MORTGAGE30US') && SERIES.length === 17);
 });
 console.log(`\n${n} pruebas de noticias OK`);
