@@ -11,7 +11,7 @@
    (compartir el archivo a la nube y abrirlo desde ella en el móvil). */
 'use strict';
 // App key pública de la app de Dropbox del autor (no es un secreto: con PKCE no hay client secret). Vacía = sin Dropbox.
-const CLOUD={dropbox:{key:''}};
+const CLOUD={dropbox:{key:'t2bzyd4rocxeybb'}};
 const SYNC_FILE='MyFinZen.mfz', SYNC_SHARE='MyFinZen-sync.txt', DBX_PATH='/MyFinZen/'+SYNC_FILE, SYNC_MAX=60e6;
 const SYNC={busy:false,last:null,err:null,timer:null,iv:null,at:null,fh:null,pending:null,joinNote:false,needPerm:false};
 const hasFSA=()=>typeof window.showSaveFilePicker==='function'&&typeof window.showOpenFilePicker==='function';
