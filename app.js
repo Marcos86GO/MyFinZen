@@ -161,18 +161,25 @@ function categorize(desc,amount){
   for(const {r,re} of compiledRules()) if(re.test(D)) return r.cat;  // reglas del usuario primero
   const N=normDesc(desc); let best=null;
   for(const {cat,bonus,re} of catRegexes()){ if(INCOME_ONLY.has(cat)&&!(amount>0)) continue; re.lastIndex=0; let m;
-    while((m=re.exec(N))){ const sc=m[1].length+bonus; if(!best||sc>best.sc) best={cat,sc}; } }
-  return best?best.cat:null; }
-// "Sin categoría": lo que la app no supo clasificar y el usuario aún no ha revisado
-const isUncat=t=>!t.manual&&!t.rec&&(!t.cat||t.cat==='Otros gastos'||t.cat==='Otros ingresos');
-const otherCat=amount=>amount>0?'Otros ingresos':'Otros gastos';
+    while((m=re.exec(N))){ const sc=m[1].length+bonus; if(!best||sc>best.sc) best={cat,sc,tie:false}; else if(sc===best.sc&&cat!==best.cat) best.tie=true; } }
+  return best&&!best.tie?best.cat:null; } // empate entre dos categorías distintas: no hay confianza → sin categoría
+// "Sin categoría": lo que la app no supo clasificar con confianza. Es un estado, no una categoría: se resuelve eligiendo
+// cualquiera (también "Otros gastos"/"Otros ingresos"). Cuenta como ingreso o gasto según el signo del importe.
+const UNCAT='Sin categoría';
+const isUncat=t=>!t.cat||t.cat===UNCAT;
+const otherCat=()=>UNCAT;
+const txType=t=>isUncat(t)?(t.amount>0?'income':'expense'):catType(t.cat);
 // Migración: las reglas de la versión anterior pasan a estar en el código; se recategoriza lo automático
 function migrateCats(){ if((S.settings.catVer||0)>=2) return; const old=new Set(OLD_DEFAULT_PATTERNS);
   S.rules=S.rules.filter(r=>!old.has(r.pattern));
   S.tx.forEach(t=>{ if(t.manual||t.rec) return; t.cat=categorize(t.desc,t.amount)||otherCat(t.amount); });
   S.settings.catVer=2; save(); }
+// v3: "Otros" deja de significar "sin categoría": lo automático que estaba en Otros pasa a Sin categoría (lo que elegiste, no)
+function migrateUncat(){ if((S.settings.catVer||0)>=3) return;
+  S.tx.forEach(t=>{ if(!t.manual&&!t.rec&&(t.cat==='Otros gastos'||t.cat==='Otros ingresos')) t.cat=categorize(t.desc,t.amount)||UNCAT; });
+  S.settings.catVer=3; save(); }
 // Los nombres internos de las categorías de sistema están en español (son los que se guardan); catL() los muestra traducidos.
-const CAT_EN={'Nómina':'Salary','Renta alquiler':'Rental income','Intereses/dividendos':'Interest/dividends','Otros ingresos':'Other income','Hipoteca casa':'Home mortgage','Hipoteca alquiler':'Rental mortgage','HOA alquiler':'Rental HOA','Gastos alquiler':'Rental expenses','Impuestos propiedad':'Property taxes','Supermercado':'Groceries','Restaurantes':'Restaurants','Gasolina':'Fuel & charging','Coche':'Car','Seguros':'Insurance','Suministros':'Utilities','Niños':'Kids','Salud':'Health','Compras':'Shopping','Ocio':'Leisure','Viajes':'Travel','Suscripciones':'Subscriptions','Educación':'Education','Impuestos':'Taxes','Otros gastos':'Other expenses','Transferencia':'Transfer','Pago tarjeta':'Card payment','Aportación inversión':'Investment contribution'};
+const CAT_EN={'Nómina':'Salary','Renta alquiler':'Rental income','Intereses/dividendos':'Interest/dividends','Otros ingresos':'Other income','Sin categoría':'Uncategorized','Hipoteca casa':'Home mortgage','Hipoteca alquiler':'Rental mortgage','HOA alquiler':'Rental HOA','Gastos alquiler':'Rental expenses','Impuestos propiedad':'Property taxes','Supermercado':'Groceries','Restaurantes':'Restaurants','Gasolina':'Fuel & charging','Coche':'Car','Seguros':'Insurance','Suministros':'Utilities','Niños':'Kids','Salud':'Health','Compras':'Shopping','Ocio':'Leisure','Viajes':'Travel','Suscripciones':'Subscriptions','Educación':'Education','Impuestos':'Taxes','Otros gastos':'Other expenses','Transferencia':'Transfer','Pago tarjeta':'Card payment','Aportación inversión':'Investment contribution'};
 const catL=c=>LANG==='en'&&CAT_EN[c]?CAT_EN[c]:c;
 const CAT_TYPES=['expense','income','neutral'];
 const typeL=t=>({expense:L('Gasto','Expense'),income:L('Ingreso','Income'),neutral:L('Neutro (no cuenta)','Neutral (not counted)')}[t]);
@@ -211,7 +218,7 @@ function sanitizeState(st){
     if(x.holdings){ const h=obj(x.holdings); x.holdings=isoDate(h.date)?{date:h.date,rows:arr(h.rows).map(sanitizeHoldingRow).filter(r=>r.sym)}:undefined; if(!x.holdings) delete x.holdings; }
     return x; });
   o.snapshots=arr(o.snapshots).map(s=>{ s=obj(s); const x={id:cleanId(s.id)||uid(),acc:cleanId(s.acc),date:isoDate(s.date),value:numStrict(s.value)}; ['rate','pi','extra','escrow'].forEach(k=>{ if(s[k]!=null) x[k]=numStrict(s[k]); }); return x; }).filter(s=>s.acc&&s.date&&s.value!=null);
-  o.tx=arr(o.tx).map(t=>{ t=obj(t); const x={id:cleanId(t.id)||uid(),date:isoDate(t.date),desc:str(t.desc,300),amount:numStrict(t.amount),cat:str(t.cat,60)||'Otros gastos',acc:t.acc?cleanId(t.acc):null,src:['csv','pdf','manual'].includes(t.src)?t.src:''};
+  o.tx=arr(o.tx).map(t=>{ t=obj(t); const x={id:cleanId(t.id)||uid(),date:isoDate(t.date),desc:str(t.desc,300),amount:numStrict(t.amount),cat:str(t.cat,60)||UNCAT,acc:t.acc?cleanId(t.acc):null,src:['csv','pdf','manual'].includes(t.src)?t.src:''};
     if(t.manual) x.manual=true; if(t.st){ const st=cleanId(t.st); if(st) x.st=st; }
     if(t.rec&&typeof t.rec==='object'&&['card','xfer','mortgage'].includes(t.rec.type)){ const r={type:t.rec.type,acc:cleanId(t.rec.acc)}; if(t.rec.with) r.with=cleanId(t.rec.with); if(t.rec.prev) r.prev=str(t.rec.prev,60); if(t.rec.cat) r.cat=str(t.rec.cat,60); x.rec=r; }
     return x; }).filter(t=>t.date&&t.amount!=null);
@@ -356,7 +363,7 @@ function payEstimates(){ const out=[], now=today(), by={};
 function cashflowByMonth(){
   const fixed=fixedMortgages(); const fixedCats=new Set(fixed.map(f=>f.cat));
   const map={};
-  for(const t of S.tx.concat(payEstimates())){ const ty=catType(t.cat); if(ty==='neutral') continue; const k=ty==='income'?payMonth(t):ym(t.date); map[k]=map[k]||{income:0,expense:0,cats:{},carried:[],est:[]};
+  for(const t of S.tx.concat(payEstimates())){ const ty=txType(t); if(ty==='neutral') continue; const k=ty==='income'?payMonth(t):ym(t.date); map[k]=map[k]||{income:0,expense:0,cats:{},carried:[],est:[]};
     if(ty==='income'){ map[k].income+=t.amount; if(t.est) map[k].est.push(t); else if(k!==ym(t.date)) map[k].carried.push(t); continue; }
     if(fixedCats.has(t.cat)) continue; // se cuenta abajo como cuota fija
     map[k].expense+=-t.amount; map[k].cats[t.cat]=(map[k].cats[t.cat]||0)+(-t.amount); }
@@ -709,7 +716,7 @@ let flujoFilter={month:'all', cat:'all', q:'', limit:200, sort:'date_desc'};
 const TX_SORTS={date_desc:(a,b)=>b.date.localeCompare(a.date),date_asc:(a,b)=>a.date.localeCompare(b.date),amt_desc:(a,b)=>Math.abs(b.amount)-Math.abs(a.amount)||b.date.localeCompare(a.date),amt_asc:(a,b)=>Math.abs(a.amount)-Math.abs(b.amount)||b.date.localeCompare(a.date)};
 // Avatar de categoría: inicial y color estable por categoría (las neutras, en gris)
 const CAT_HUES=[215,262,190,36,320,18,240,170,280,200];
-function catAv(c){ const n=catL(c||''); let h=0; for(const ch of String(c)) h=(h*31+ch.charCodeAt(0))%9973; const ty=catType(c);
+function catAv(c){ if(!c||c===UNCAT) return `<span class="av round" style="background:var(--warn);color:#1a1a19">?</span>`; const n=catL(c||''); let h=0; for(const ch of String(c)) h=(h*31+ch.charCodeAt(0))%9973; const ty=catType(c);
   return `<span class="av round" style="${ty==='neutral'?'background:var(--muted)':`--h:${ty==='income'?145:CAT_HUES[h%CAT_HUES.length]}`}">${esc((n.match(/[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/)||['·'])[0].toUpperCase())}</span>`; }
 function dayLabel(d){ const t=today(); if(d===t) return L('Hoy','Today'); const y=new Date(); y.setDate(y.getDate()-1); if(d===isoDate(y.getFullYear()+'-'+(y.getMonth()+1)+'-'+y.getDate())) return L('Ayer','Yesterday');
   const x=new Date(d+'T12:00:00'); const s=x.toLocaleDateString(LANG==='en'?'en-US':'es-ES',{weekday:'long',day:'numeric',month:'long',...(d.slice(0,4)!==t.slice(0,4)?{year:'numeric'}:{})}); return s.charAt(0).toUpperCase()+s.slice(1); }
@@ -725,7 +732,7 @@ VIEWS.flujo=(el)=>{
   const scope=sel?[sel]:months.filter(m=>cf[m]);
   const catTot={}; scope.forEach(m=>{ if(!cf[m])return; for(const[k,v] of Object.entries(cf[m].cats)) catTot[k]=(catTot[k]||0)+v; });
   const div=sel?1:Math.max(1,scope.length);
-  const catItems=Object.entries(catTot).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({k:catL(k),v:v/div}));
+  const catItems=Object.entries(catTot).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k,v])=>Object.assign({k:catL(k),v:v/div},k===UNCAT?{c:'var(--warn)'}:{}));
   if(!TX_SORTS[flujoFilter.sort]) flujoFilter.sort='date_desc'; const byDate=flujoFilter.sort.startsWith('date');
   let list=S.tx.slice().sort(TX_SORTS[flujoFilter.sort]);
   if(sel) list=list.filter(t=>ym(t.date)===sel);
@@ -757,7 +764,7 @@ VIEWS.flujo=(el)=>{
   <h3 class="sec" id="txHead">${L('Movimientos','Transactions')}${helpBtn('tx_list',true)}<span class="tot">${list.length}</span></h3>
   ${nUnc&&flujoFilter.cat!=='__none'?`<div class="alert warn act" style="margin-bottom:4px"><span class="ic">!</span><button class="ab" id="uncGo"><span>${L(`<b>${nUnc} ${nUnc>1?'movimientos':'movimiento'} sin categoría.</b> Revísalos y elige una.`,`<b>${nUnc} uncategorized transaction${nUnc>1?'s':''}.</b> Review them and choose one.`)}</span>${ic('right','chev')}</button></div>`:''}
   ${flujoFilter.cat==='__none'?`<div class="alert info" style="margin-bottom:4px"><span class="ic">i</span><div style="flex:1">${(()=>{ const out=r2(-list.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0)), inn=r2(list.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0)); const tot=[out?L('gastos ','expenses ')+fmt(out,2):'',inn?L('ingresos ','income ')+fmt(inn,2):''].filter(Boolean).join(' · ');
-      return L(`Mostrando solo los movimientos sin categoría (${list.length}${tot?': '+tot:''}). Toca uno para elegirla; la app te ofrece aplicarla a los parecidos.`,`Showing only uncategorized transactions (${list.length}${tot?': '+tot:''}). Tap one to choose it; the app offers to apply it to similar ones.`); })()} <button class="sm" id="uncAll">${L('Ver todos','Show all')}</button></div></div>`:''}
+      return L(`Mostrando solo los movimientos sin categoría (${list.length}${tot?': '+tot:''}). Toca uno para elegirla (cualquiera, también «Otros» si no encaja en ninguna); la app te ofrece aplicarla a los parecidos.`,`Showing only uncategorized transactions (${list.length}${tot?': '+tot:''}). Tap one to choose a category (any, including "Other" if none fits); the app offers to apply it to similar ones.`); })()} <button class="sm" id="uncAll">${L('Ver todos','Show all')}</button></div></div>`:''}
   ${list.length>1?`<div class="listbar"><label for="fSort" class="muted">${L('Ordenar por','Sort by')}</label><select id="fSort">${[['date_desc',L('Fecha: más reciente primero','Date: newest first')],['date_asc',L('Fecha: más antigua primero','Date: oldest first')],['amt_desc',L('Importe: de mayor a menor','Amount: largest first')],['amt_asc',L('Importe: de menor a mayor','Amount: smallest first')]].map(([v,t])=>`<option value="${v}" ${v===flujoFilter.sort?'selected':''}>${t}</option>`).join('')}</select></div>`:''}
   <div id="txList">${shown.length?(byDate?days.map(d=>`<div class="txday"><div class="txday-h"><span>${esc(dayLabel(d.date))}</span><span>${fmt(r2(d.tx.reduce((s,t)=>s+t.amount,0)),2)}</span></div><div class="card list">${d.tx.map(t=>txRow(t)).join('')}</div></div>`).join(''):`<div class="card list" style="margin-top:8px">${shown.map(t=>txRow(t,true)).join('')}</div>`)
     +(list.length>shown.length?`<div class="row" style="justify-content:center;margin-top:12px"><button id="txMore">${L(`Ver más (${list.length-shown.length})`,`Show more (${list.length-shown.length})`)}</button></div>`:'')
@@ -809,7 +816,7 @@ function offerRule(t,old){
   $('#rYes').onclick=()=>{ const p=$('#rPat').value.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); if(p){ S.rules.unshift({pattern:p,cat:t.cat}); let n=0; const re=new RegExp(p,'i'); S.tx.forEach(x=>{ if(re.test(x.desc)&&x.cat!==t.cat&&!x.manual){x.cat=t.cat;n++;} }); save(); toast(L(`Regla creada · ${n} movimientos actualizados`,`Rule created · ${n} transactions updated`));} closeModal(); route(); };
 }
 /* ---------- Categorías propias ---------- */
-function catNameTaken(n){ const k=n.trim().toLowerCase(); return allCats().some(c=>c.toLowerCase()===k||catL(c).toLowerCase()===k)||Object.values(CAT_EN).some(c=>c.toLowerCase()===k); }
+function catNameTaken(n){ const k=n.trim().toLowerCase(); return k===UNCAT.toLowerCase()||allCats().some(c=>c.toLowerCase()===k||catL(c).toLowerCase()===k)||Object.values(CAT_EN).some(c=>c.toLowerCase()===k); }
 function newCatModal(onDone,onCancel,preset){
   openModal(`<h2>${L('Nueva categoría','New category')}</h2>
    <label class="f">${L('Nombre','Name')}<input id="ncN" value="${esc(preset||'')}" placeholder="${L('Mascotas, Gimnasio, Regalos…','Pets, Gym, Gifts…')}"></label>
@@ -835,10 +842,10 @@ function manageCats(){
     if(!n||n===c.name){ inp.value=c.name; return; } if(catNameTaken(n)){ toast(L('Ya existe una categoría con ese nombre','A category with that name already exists')); inp.value=c.name; return; }
     const old=c.name; S.tx.forEach(t=>{ if(t.cat===old) t.cat=n; if(t.rec&&t.rec.prev===old) t.rec.prev=n; if(t.rec&&t.rec.cat===old) t.rec.cat=n; }); S.rules.forEach(r=>{ if(r.cat===old) r.cat=n; }); c.name=n; save(); toast(L('Categoría renombrada','Category renamed')); });
   document.querySelectorAll('.ucT').forEach(sel=>sel.onchange=()=>{ uc[+sel.dataset.i].type=sel.value; save(); });
-  document.querySelectorAll('[data-ucdel]').forEach(b=>b.onclick=()=>{ const c=uc[+b.dataset.ucdel]; const n=count(c.name); const fb=c.type==='income'?'Otros ingresos':c.type==='neutral'?'Transferencia':'Otros gastos';
+  document.querySelectorAll('[data-ucdel]').forEach(b=>b.onclick=()=>{ const c=uc[+b.dataset.ucdel]; const n=count(c.name); const fb=c.type==='neutral'?'Transferencia':UNCAT;
     openModal(`<h2>${L(`¿Borrar «${esc(c.name)}»?`,`Delete "${esc(c.name)}"?`)}</h2><p>${n?L(`Sus ${n} movimientos pasarán a <b>${esc(catL(fb))}</b> y se borrarán sus reglas.`,`Its ${n} transactions will move to <b>${esc(catL(fb))}</b> and its rules will be deleted.`):L('No tiene movimientos.','It has no transactions.')}</p><div class="row"><button id="mc">${L('Cancelar','Cancel')}</button><button class="dan" id="dOk">${L('Borrar','Delete')}</button></div>`);
     $('#mc').onclick=()=>manageCats();
-    $('#dOk').onclick=()=>{ S.tx.forEach(t=>{ if(t.cat===c.name) t.cat=fb; }); S.rules=S.rules.filter(r=>r.cat!==c.name); S.settings.userCats=userCats().filter(x=>x!==c); save(); manageCats(); }; });
+    $('#dOk').onclick=()=>{ S.tx.forEach(t=>{ if(t.cat===c.name){ t.cat=fb; if(fb===UNCAT) delete t.manual; } }); S.rules=S.rules.filter(r=>r.cat!==c.name); S.settings.userCats=userCats().filter(x=>x!==c); save(); manageCats(); }; });
 }
 
 /* ---------- Hipotecas ---------- */
@@ -2816,7 +2823,7 @@ VIEWS.ajustes=(el)=>{
     const c=$('#bCopy'); if(c) c.onclick=async()=>{try{await navigator.clipboard.writeText(txt);toast(L('Copiado','Copied'))}catch(e){toast(L('Selecciona el texto y cópialo','Select the text and copy it'))}};
     $('#bExp').disabled=false; $('#bExp').textContent=L('Crear copia cifrada','Create encrypted backup');
     S.settings.lastBackup=new Date().toISOString(); save(); };
-  $('#rGo').onclick=async()=>{ let txt=$('#rT').value.trim(); const f=$('#rF').files[0]; if(f) txt=await f.text(); if(!txt) return toast(L('Elige un archivo o pega la copia','Choose a file or paste the backup')); try{ const st=sanitizeState(await decryptBackup(txt,$('#rP').value)); const ok=await confirmModal(L('Restaurar copia','Restore backup'),L(`<p>La copia tiene ${st.accounts.length} cuentas y ${st.tx.length} movimientos. Sustituirá lo que hay en este dispositivo.</p>`,`<p>The backup has ${st.accounts.length} accounts and ${st.tx.length} transactions. It will replace what is on this device.</p>`)); if(!ok)return; const keep=S.secret; S=st; S.secret=keep||{}; REC=null; save(); toast(L('Copia restaurada','Backup restored')); location.hash='#resumen'; route(); }catch(e){ toast(e.code==='notbackup'?e.message:L('Contraseña incorrecta o archivo dañado','Wrong password or damaged file')); } };
+  $('#rGo').onclick=async()=>{ let txt=$('#rT').value.trim(); const f=$('#rF').files[0]; if(f) txt=await f.text(); if(!txt) return toast(L('Elige un archivo o pega la copia','Choose a file or paste the backup')); try{ const st=sanitizeState(await decryptBackup(txt,$('#rP').value)); const ok=await confirmModal(L('Restaurar copia','Restore backup'),L(`<p>La copia tiene ${st.accounts.length} cuentas y ${st.tx.length} movimientos. Sustituirá lo que hay en este dispositivo.</p>`,`<p>The backup has ${st.accounts.length} accounts and ${st.tx.length} transactions. It will replace what is on this device.</p>`)); if(!ok)return; const keep=S.secret; S=st; S.secret=keep||{}; REC=null; migrateCats(); migrateUncat(); save(); toast(L('Copia restaurada','Backup restored')); location.hash='#resumen'; route(); }catch(e){ toast(e.code==='notbackup'?e.message:L('Contraseña incorrecta o archivo dañado','Wrong password or damaged file')); } };
   $('#sSave').onclick=()=>{ const n=parseInt($('#sEM').value); if(n>0) S.settings.emergencyMonths=n; S.settings.context=$('#sCtx').value.trim(); S.settings.hideNames=$('#sHide').value.trim(); S.settings.autoClaude=$('#sAuto').checked; save(); toast(L('Guardado','Saved')); };
   el.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{ S.rules.splice(+b.dataset.r,1); save(); route(); });
   $('#sLock').onchange=e=>{ S.settings.lockMin=+e.target.value; save(); bumpLock(); toast(L('Guardado','Saved')); };
@@ -2871,7 +2878,7 @@ async function createVault(pass){
   VAULT.meta={v:1,created:new Date().toISOString(),pw:{salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),raw)},rec:{salt:b64(rsalt),it:REC_ITER,wrap:await seal(await kdfPass(normRec(rec),rsalt,REC_ITER),raw)},pk:[]};
   S=blankState(); await persist(); return rec;
 }
-async function loadState(){ const raw=await unseal(VAULT.dk,VAULT.meta.data); S=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); migrateCats(); }
+async function loadState(){ const raw=await unseal(VAULT.dk,VAULT.meta.data); S=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); migrateCats(); migrateUncat(); }
 async function unlockWithPassword(pass){ const p=VAULT.meta.pw; const raw=await unseal(await kdfPass(pass,unb64(p.salt),p.it),p.wrap); await setDK(raw); await loadState(); }
 async function unlockWithRecovery(code){ const r=VAULT.meta.rec; const raw=await unseal(await kdfPass(normRec(code),unb64(r.salt),r.it),r.wrap); await setDK(raw); await loadState(); }
 async function setPassword(pass){ const salt=rnd(16); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)}; await persist(); }

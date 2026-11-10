@@ -358,6 +358,17 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
     const tx=S.tx.filter(t=>t.acc==='rcA'); return {a,b,c,n:tx.length,pdf:tx.filter(t=>t.src==='pdf').length,sum:tx.reduce((s,t)=>s+t.amount,0)}; });
   ok(rcx.a.added===3&&rcx.b.repl===2&&rcx.b.gone===1&&rcx.b.added===2&&rcx.c.added===1&&rcx.c.dup===2&&rcx.n===5&&rcx.pdf===4&&Math.abs(rcx.sum+100.25)<0.01,'la actividad reciente del banco se sustituye por el extracto sin duplicar ('+JSON.stringify(rcx)+')');
   await pg.evaluate(()=>{ deleteAccount('cvA'); deleteAccount('rcA'); save(); });
+  // "Sin categoría" separado de "Otros"
+  const uc=await pg.evaluate(()=>{ closeModal(); S.accounts.push({id:'ucA',kind:'cash',name:'Banco Categorías Prueba'}); const d=today();
+    importTxInto('ucA',[{date:d,desc:'QWXZ PLKJ 9981',amount:-77.5}],'csv'); const t=S.tx.find(x=>x.acc==='ucA');
+    const cf=cashflowByMonth()[ym(d)]; return {id:t.id,cat:t.cat,unc:isUncat(t),inExp:(cf.cats[UNCAT]||0)>=77.5}; });
+  await pg.evaluate(id=>txSheet(id),uc.id); await pg.waitForSelector('#tsCat');
+  const ucSel=await pg.$eval('#tsCat',e=>e.value); await pg.selectOption('#tsCat','Otros gastos'); await pg.waitForTimeout(150); await pg.evaluate(()=>closeModal());
+  const uc2=await pg.evaluate(id=>{ const t=S.tx.find(x=>x.id===id); return {cat:t.cat,unc:isUncat(t)}; },uc.id);
+  ok(uc.cat==='Sin categoría'&&uc.unc&&uc.inExp&&ucSel==='Sin categoría'&&uc2.cat==='Otros gastos'&&!uc2.unc,'lo no reconocido queda "Sin categoría" (no "Otros") y se resuelve eligiendo cualquiera, también Otros');
+  ok(await pg.evaluate(()=>{ S.tx.push({id:'ucM1',acc:'ucA',date:today(),desc:'ZZQQ AUTO',amount:-5,cat:'Otros gastos'},{id:'ucM2',acc:'ucA',date:today(),desc:'ZZQQ ELEGIDO',amount:-6,cat:'Otros gastos',manual:true}); S.settings.catVer=2; migrateUncat();
+    return S.tx.find(t=>t.id==='ucM1').cat===UNCAT&&S.tx.find(t=>t.id==='ucM2').cat==='Otros gastos'&&S.settings.catVer===3; }),'migración: lo automático que estaba en Otros pasa a Sin categoría; lo que elegiste se queda');
+  await pg.evaluate(()=>{ deleteAccount('ucA'); save(); });
   // Hipoteca ↔ inmueble: no puede quedar una hipoteca suelta
   await pg.evaluate(()=>{ closeModal(); S.accounts.push({id:'hpA',kind:'property',name:'Piso Alquiler Prueba',rental:true}); editAccount(null,'mortgage'); });
   await pg.selectOption('#xPr','__new'); await pg.fill('#eN','Hipoteca Prueba H'); await pg.fill('#xPnN','Casa Prueba H'); await pg.fill('#xPnV','650000'); await pg.uncheck('#xPnR'); await pg.fill('#xR','6'); await pg.fill('#xP','2000'); await pg.fill('#eB','400000'); await pg.click('#eOk');
