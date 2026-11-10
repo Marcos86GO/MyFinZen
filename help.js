@@ -193,6 +193,9 @@ window.HELP = {
     en: { t: 'Ask Claude', d: ['AI analysis using only a summary of figures (balances, totals by category, mortgages). Your statements, individual transactions and account numbers are never sent.', 'It needs your Anthropic API key; you pay per use (a few cents per question).'], steps: ['Pick one of the quick questions or type your own.', '"See exactly what is sent" shows the data.'] } },
 
   /* ---------- Ajustes ---------- */
+  payshift: {
+    es: { t: 'Tu nómina', d: ['Si cobras a final de mes (por ejemplo el día 25) y ese dinero es el que gastas el mes siguiente, activa esta opción: la nómina cobrada desde el día que elijas cuenta como ingreso del mes siguiente.', 'Así el ahorro del mes compara lo que cobraste para ese mes con lo que llevas gastado, en vez de salir siempre negativo hasta que llega la nómina. En Movimientos verás "incl. nómina del 25 oct" debajo de los ingresos.', 'Solo cambia el cálculo de ingresos, gastos y ahorro por mes. La lista de movimientos y los impuestos siguen usando la fecha real.'], steps: ['Marca la casilla.', 'Elige el día desde el que la nómina cuenta para el mes siguiente (el día en que sueles cobrar o uno antes).', 'Comprueba el ahorro del mes en Movimientos.'] },
+    en: { t: 'Your paycheck', d: ['If you get paid at the end of the month (for example on the 25th) and that is the money you spend the next month, turn this on: paychecks received from the day you choose count as income for the following month.', 'That way the month\'s savings compare what you earned for that month with what you have spent so far, instead of always being negative until the paycheck arrives. In Transactions you will see "incl. paycheck of Oct 25" under income.', 'It only changes the income, expenses and savings per month. The transaction list and taxes keep using the real date.'], steps: ['Tick the box.', 'Choose the day from which the paycheck counts for the next month (the day you usually get paid, or one before).', 'Check the month\'s savings in Transactions.'] } },
   lang: {
     es: { t: 'Idioma', d: ['Cambia el idioma de toda la aplicación entre español e inglés. Tus datos no cambian.'], steps: ['Elige el idioma en el desplegable. También puedes cambiarlo en la pantalla de desbloqueo.'] },
     en: { t: 'Language', d: ['Switches the whole app between Spanish and English. Your data doesn\'t change.'], steps: ['Choose the language in the dropdown. You can also change it on the unlock screen.'] } },
@@ -229,7 +232,7 @@ window.HELP_GROUPS = [
 { es: 'Impuestos', en: 'Taxes', keys: ['taxes', 'tax_agi', 'tax_docs', 'tax_year', 'tax_fed', 'tax_item', 'tax_sche', 'tax_prep', 'prof_home', 'prof_kids', 'prof_pay', 'prof_save', 'opt_total', 'opt_recs', 'opt_ai', 'turbo'] },
 { es: 'Casa en alquiler', en: 'Rental', keys: ['rental'] },
 { es: 'Claude', en: 'Claude', keys: ['claude'] },
-{ es: 'Copia y ajustes', en: 'Backup & settings', keys: ['lang', 'backup', 'restore', 'prefs', 'rules', 'security', 'apikey', 'wipe'] }
+{ es: 'Copia y ajustes', en: 'Backup & settings', keys: ['lang', 'payshift', 'backup', 'restore', 'prefs', 'rules', 'security', 'apikey', 'wipe'] }
 ];
 
 // Capítulos generales del manual (HTML)

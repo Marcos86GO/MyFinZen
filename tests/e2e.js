@@ -326,6 +326,17 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>{ const d=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10); S.accounts.push({id:'hpX',kind:'property',name:'Casa Prueba Valor'}); S.snapshots.push({id:'hpS',acc:'hpX',date:d(60),value:500000});
     const has=re=>computeAlerts().some(x=>re.test(x.key)&&/Casa Prueba Valor/.test(x.t)); const r1=!has(/^stale:/)&&!has(/^val:/);
     S.snapshots.find(x=>x.id==='hpS').date=d(400); const r2=has(/^val:/)&&!has(/^stale:/); deleteAccount('hpX'); return r1&&r2; }),'una casa no pide el saldo cada mes, solo revisar su valor una vez al año');
+  // Nómina a final de mes → cuenta para el mes siguiente
+  const ps=await pg.evaluate(()=>{ closeModal(); const cur=ym(today()), prev=isoAddMonths(today(),-1).slice(0,7), p2=isoAddMonths(today(),-2).slice(0,7), p3=isoAddMonths(today(),-3).slice(0,7);
+    S.tx.filter(isPay).forEach(t=>{ t.cat='Otros ingresos'; t._ps=1; }); S.settings.payShift=0; delete S.settings.payShiftAsked; S.accounts.push({id:'psA',kind:'cash',name:'Banco Nómina Prueba'});
+    [p3,p2,prev].forEach((m,i)=>S.tx.push({id:'psN'+i,acc:'psA',date:m+'-25',desc:'NOMINA PRUEBA',amount:9000,cat:'Nómina'})); S.tx.push({id:'psG',acc:'psA',date:cur+'-01',desc:'GASTO PRUEBA',amount:-7000,cat:'Compras'});
+    const b=cashflowByMonth()[cur]; flujoFilter.month=cur; flujoFilter.cat='all'; location.hash='#flujo'; route(); return {cur,inc0:b.income,guess:payShiftGuess()}; });
+  await pg.waitForSelector('#payAsk [data-pay="25"]'); await pg.click('#payAsk [data-pay="25"]'); await pg.waitForTimeout(150);
+  const ps2=await pg.evaluate(c=>{ const b=cashflowByMonth()[c]; return {inc:b.income,carried:b.carried.length,note:/incl\. nómina del/.test(document.querySelector('.tiles').textContent),ask:!!document.querySelector('#payAsk')}; },ps.cur);
+  ok(ps.guess===25&&ps2.inc-ps.inc0===9000&&ps2.carried===1&&ps2.note&&!ps2.ask,'nómina de final de mes: la app lo detecta y, al aceptarlo, cuenta para el mes siguiente ('+JSON.stringify([ps,ps2])+')');
+  await pg.evaluate(()=>{ location.hash='#ajustes'; }); await pg.waitForSelector('#psOn'); await pg.uncheck('#psOn'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(c=>!S.settings.payShift&&cashflowByMonth()[c].carried.length===0,ps.cur),'la opción de la nómina se puede quitar en Ajustes');
+  await pg.evaluate(()=>{ deleteAccount('psA'); S.tx.filter(t=>t._ps).forEach(t=>{ t.cat='Nómina'; delete t._ps; }); delete S.settings.payShiftAsked; save(); });
   // Hipoteca ↔ inmueble: no puede quedar una hipoteca suelta
   await pg.evaluate(()=>{ closeModal(); S.accounts.push({id:'hpA',kind:'property',name:'Piso Alquiler Prueba',rental:true}); editAccount(null,'mortgage'); });
   await pg.selectOption('#xPr','__new'); await pg.fill('#eN','Hipoteca Prueba H'); await pg.fill('#xPnN','Casa Prueba H'); await pg.fill('#xPnV','650000'); await pg.uncheck('#xPnR'); await pg.fill('#xR','6'); await pg.fill('#xP','2000'); await pg.fill('#eB','400000'); await pg.click('#eOk');

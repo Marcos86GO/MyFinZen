@@ -230,6 +230,7 @@ function sanitizeState(st){
   if(s.mortCalc&&typeof s.mortCalc==='object'){ const c=s.mortCalc, n=(k,lo,hi)=>{ const v=numStrict(c[k]); return v==null?null:Math.max(lo,Math.min(hi,v)); };
     S2.mortCalc={price:n('price',0,1e8),down:n('down',0,1e8),term:[15,20,30].includes(+c.term)?+c.term:30,fico:FICO_T.some(f=>f[0]===c.fico)?c.fico:'GE740',rate:n('rate',0.01,29.99),tax:n('tax',0,5),ins:n('ins',0,1e6),hoa:n('hoa',0,1e5),pmi:n('pmi',0,5),limit:n('limit',0,1e8)}; }
   if(s.newsSort==='rec') S2.newsSort='rec';
+  { const d=numStrict(s.payShift); if(d!=null&&d>=1&&d<=31) S2.payShift=Math.round(d); } if(s.payShiftAsked===true) S2.payShiftAsked=true;
   if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
@@ -322,11 +323,19 @@ function fixedMortgages(){
   S.accounts.filter(p=>p.kind==='property'&&p.rental&&p.mortgagePay>0&&!S.accounts.some(m=>m.kind==='mortgage'&&m.propertyId===p.id)).forEach(p=>out.push({id:p.id,cat:'Hipoteca alquiler',monthly:p.mortgagePay,name:p.name}));
   return out;
 }
+/* Mes de la nómina: quien cobra a final de mes gasta ese dinero el mes siguiente. Con settings.payShift = día (0 = no),
+   la nómina cobrada desde ese día cuenta como ingreso del mes siguiente (solo para ingresos/gastos/ahorro por mes). */
+const ymNext=k=>{ const [y,m]=k.split('-').map(Number); return m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,'0')}`; };
+const isPay=t=>t.cat==='Nómina'&&t.amount>0;
+function payMonth(t){ const d=S.settings.payShift|0; return d>0&&isPay(t)&&+t.date.slice(8,10)>=d?ymNext(ym(t.date)):ym(t.date); }
+// Sugerencia: las últimas nóminas llegan a final de mes (día ≥ 20) → propone el día desde el que contarlas en el mes siguiente
+function payShiftGuess(){ const p=S.tx.filter(isPay).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3); const late=p.filter(t=>+t.date.slice(8,10)>=20);
+  return p.length>=2&&late.length>=Math.ceil(p.length*2/3)?Math.min(...late.map(t=>+t.date.slice(8,10))):0; }
 function cashflowByMonth(){
   const fixed=fixedMortgages(); const fixedCats=new Set(fixed.map(f=>f.cat));
   const map={};
-  for(const t of S.tx){ const k=ym(t.date); const ty=catType(t.cat); if(ty==='neutral') continue; map[k]=map[k]||{income:0,expense:0,cats:{}};
-    if(ty==='income'){ map[k].income+=t.amount; continue; }
+  for(const t of S.tx){ const ty=catType(t.cat); if(ty==='neutral') continue; const k=ty==='income'?payMonth(t):ym(t.date); map[k]=map[k]||{income:0,expense:0,cats:{},carried:[]};
+    if(ty==='income'){ map[k].income+=t.amount; if(k!==ym(t.date)) map[k].carried.push(t); continue; }
     if(fixedCats.has(t.cat)) continue; // se cuenta abajo como cuota fija
     map[k].expense+=-t.amount; map[k].cats[t.cat]=(map[k].cats[t.cat]||0)+(-t.amount); }
   for(const k of Object.keys(map)) for(const f of fixed){ map[k].expense+=f.monthly; map[k].cats[f.cat]=(map[k].cats[f.cat]||0)+f.monthly; }
@@ -699,7 +708,8 @@ VIEWS.flujo=(el)=>{
   if(flujoFilter.q) { const q=flujoFilter.q.toLowerCase(); list=list.filter(t=>t.desc.toLowerCase().includes(q)); }
   const shown=list.slice(0,flujoFilter.limit);
   // Mes del resumen: el elegido o el último con datos
-  const sm=sel||Object.keys(cf).sort().pop(); const c=sm&&cf[sm];
+  const sm=sel||Object.keys(cf).filter(m=>m<=ym(today())).sort().pop(); const c=sm&&cf[sm];
+  const pg=!S.settings.payShift&&!S.settings.payShiftAsked?payShiftGuess():0;
   const days=[]; shown.forEach(t=>{ const d=days[days.length-1]; if(d&&d.date===t.date) d.tx.push(t); else days.push({date:t.date,tx:[t]}); });
   const nI=L('Ingresos','Income'), nG=L('Gastos','Expenses'), nN=L('Ahorro neto','Net savings');
   const R=lastRec(); const nUnc=S.tx.filter(isUncat).length;
@@ -712,7 +722,8 @@ VIEWS.flujo=(el)=>{
   </div>
   <div class="stack">
     <div class="card">${helpBtn('cat_chart')}<h2>${L('Gasto por categoría','Spending by category')}</h2><p class="sub">${sel?ymLabel(sel):L('Media mensual de los últimos 12 meses','Monthly average over the last 12 months')}</p>
-      ${c?`<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 14px"><div class="stat"><div class="note">${nI}${sel?'':' · '+ymLabel(sm)}</div><div class="val pos" style="font-size:18px">${fmt(c.income)}</div></div><div class="stat"><div class="note">${nG}</div><div class="val" style="font-size:18px">${fmt(c.expense)}</div></div><div class="stat"><div class="note">${L('Ahorro','Saved')}</div><div class="val ${c.income-c.expense>=0?'pos':'neg'}" style="font-size:18px">${fmt(c.income-c.expense)}</div></div></div>`:''}
+      ${c?`<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 14px"><div class="stat"><div class="note">${nI}${sel?'':' · '+ymLabel(sm)}</div><div class="val pos" style="font-size:18px">${fmt(c.income)}</div>${c.carried&&c.carried.length?`<div class="note">${L('incl. nómina del','incl. paycheck of')} ${c.carried.map(t=>esc(dLabel(t.date))).join(', ')}</div>`:''}</div><div class="stat"><div class="note">${nG}</div><div class="val" style="font-size:18px">${fmt(c.expense)}</div></div><div class="stat"><div class="note">${L('Ahorro','Saved')}</div><div class="val ${c.income-c.expense>=0?'pos':'neg'}" style="font-size:18px">${fmt(c.income-c.expense)}</div></div></div>`:''}
+      ${pg?`<div class="alert info" id="payAsk" style="margin-bottom:14px"><span class="ic">i</span><div style="flex:1">${L(`<b>Cobras a final de mes.</b> ¿Cuento cada nómina cobrada desde el día ${pg} como ingreso del mes siguiente, que es cuando la gastas? Así el ahorro del mes compara lo que cobraste con lo que gastas.`,`<b>You get paid at the end of the month.</b> Should each paycheck received from day ${pg} on count as income for the following month, when you spend it? That way the month's savings compare what you earned with what you spend.`)}<div class="row" style="margin-top:8px;justify-content:flex-start"><button class="sm pri" data-pay="${pg}">${L('Sí, contarla el mes siguiente','Yes, count it next month')}</button><button class="sm" data-pay="0">${L('No','No')}</button></div></div></div>`:''}
       ${catItems.length?hbars(catItems,'var(--s2)'):`<p class="muted">${L('Sin gastos todavía.','No spending yet.')}</p>`}</div>
     <div class="card">${helpBtn('cf_chart')}<h2>${L('Ingresos, gastos y ahorro','Income, expenses and savings')}</h2><p class="sub">${L('Últimos 12 meses','Last 12 months')}</p>${legend([{n:nI,c:'var(--s3)'},{n:nG,c:'var(--s2)'},{n:nN,c:'var(--s1)'}])}<div id="cCF"></div></div>
     ${S.tx.length?`<div class="card" id="recBox">${helpBtn('rec')}<h2>${L('Conciliación entre cuentas','Reconciliation between accounts')}</h2>${recHTML(R)}</div>`:''}
@@ -732,6 +743,7 @@ VIEWS.flujo=(el)=>{
   $('#fCat').onchange=e=>{flujoFilter.cat=e.target.value;flujoFilter.limit=200;route();};
   $('#fQ').onchange=e=>{flujoFilter.q=e.target.value;flujoFilter.limit=200;route();};
   $('#catMgr').onclick=()=>manageCats();
+  el.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{ const d=+b.dataset.pay; if(d) S.settings.payShift=d; else S.settings.payShiftAsked=true; save(); route(); toast(d?L('Hecho: la nómina de final de mes cuenta para el mes siguiente. Lo puedes cambiar en Ajustes.','Done: end-of-month paychecks count for the next month. You can change it in Settings.'):L('Entendido. Lo puedes cambiar en Ajustes.','Got it. You can change it in Settings.')); });
   if($('#uncGo')) $('#uncGo').onclick=()=>{ flujoFilter.cat='__none'; flujoFilter.month='all'; flujoFilter.limit=200; route(); setTimeout(()=>{ const e=$('#txHead'); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); },30); };
   if($('#fSort')) $('#fSort').onchange=e=>{ flujoFilter.sort=e.target.value; flujoFilter.limit=200; route(); setTimeout(()=>{ const x=$('#fSort'); if(x) x.scrollIntoView({block:'center'}); },30); };
   if($('#uncAll')) $('#uncAll').onclick=()=>{ flujoFilter.cat='all'; route(); };
@@ -2711,6 +2723,10 @@ VIEWS.ajustes=(el)=>{
   const lb=S.settings.lastBackup;
   el.innerHTML=`
   <div class="card" style="margin-bottom:12px">${helpBtn('lang')}<h2>${L('Idioma','Language')}</h2><p class="sub">${L('Elige el idioma de la aplicación. Se guarda en este dispositivo.','Choose the app language. It is saved on this device.')}</p><div class="row" style="justify-content:flex-start"><select id="sLang" style="max-width:220px"><option value="es" ${LANG==='es'?'selected':''}>Español</option><option value="en" ${LANG==='en'?'selected':''}>English</option></select></div></div>
+  <div class="card" style="margin-bottom:12px">${helpBtn('payshift')}<h2>${L('Tu nómina','Your paycheck')}</h2><p class="sub">${L('Si cobras a final de mes y ese dinero lo gastas el mes siguiente, cuenta la nómina en el mes siguiente para que el ahorro de cada mes sea real.','If you get paid at the end of the month and spend that money the next month, count the paycheck in the next month so each month\'s savings are real.')}</p>
+   <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="psOn" style="width:auto" ${S.settings.payShift?'checked':''}> ${L('Contar la nómina en el mes siguiente si la cobro a partir del día','Count the paycheck in the next month if I get it from day')}</label>
+   <div class="row" style="justify-content:flex-start"><select id="psDay" style="max-width:120px" ${S.settings.payShift?'':'disabled'}>${Array.from({length:17},(_,i)=>i+15).map(d=>`<option value="${d}" ${(S.settings.payShift||payShiftGuess()||25)===d?'selected':''}>${d}</option>`).join('')}</select></div>
+   <p class="muted">${L('Solo afecta a los movimientos de la categoría Nómina y al cálculo de ingresos, gastos y ahorro por mes; la lista de movimientos sigue con su fecha real.','It only affects transactions in the Salary category and the income, expenses and savings per month; the transaction list keeps the real dates.')}</p></div>
   <div class="grid g2">
    <div class="card">${helpBtn('backup')}<h2>${L('Copia de seguridad cifrada','Encrypted backup')}</h2><p class="sub">${L('Tus datos solo están en este navegador. Haz una copia cada mes y guárdala en Dropbox o donde quieras: va cifrada con tu contraseña. También sirve para <b>pasar los datos del ordenador al móvil</b>.','Your data only lives in this browser. Make a backup every month and keep it in Dropbox or wherever you like: it is encrypted with your password. It is also how you <b>move your data from computer to phone</b>.')}</p>
      <p>${lb?`${L('Última copia','Last backup')}: <b>${dLabel(lb.slice(0,10))}</b>`:`<span class="neg"><b>${L('Aún no has hecho ninguna copia.','You haven\'t made any backup yet.')}</b></span>`}</p>
@@ -2753,6 +2769,8 @@ VIEWS.ajustes=(el)=>{
   <div class="card">${helpBtn('wipe')}<h2>${L('Borrar todo','Delete everything')}</h2><p class="sub">${L('Elimina todos los datos de este dispositivo. Haz antes una copia.','Removes all data from this device. Make a backup first.')}</p><button class="dan" id="wipe">${L('Borrar todos los datos','Delete all data')}</button></div>
   <p class="muted" style="margin-top:14px">${L(`Datos: ${S.accounts.length} cuentas · ${S.snapshots.length} saldos · ${S.tx.length} movimientos.`,`Data: ${S.accounts.length} accounts · ${S.snapshots.length} balances · ${S.tx.length} transactions.`)}</p>`;
   $('#sLang').onchange=e=>setLang(e.target.value);
+  const psSet=()=>{ const on=$('#psOn').checked; $('#psDay').disabled=!on; S.settings.payShift=on?+$('#psDay').value:0; S.settings.payShiftAsked=true; save(); toast(on?L('La nómina desde el día ','Paychecks from day ')+$('#psDay').value+L(' cuenta para el mes siguiente',' count for the next month'):L('La nómina cuenta en el mes en que la cobras','Paychecks count in the month you get them')); };
+  $('#psOn').onchange=psSet; $('#psDay').onchange=psSet;
   $('#sCats').onclick=()=>manageCats();
   $('#bExp').onclick=async()=>{ const p=$('#bP').value; if(p.length<BK_MIN) return toast(L(`Usa una contraseña de ${BK_MIN} caracteres o más (mejor una frase)`,`Use a password of ${BK_MIN}+ characters (a phrase is best)`)); $('#bExp').disabled=true; $('#bExp').textContent=L('Cifrando…','Encrypting…'); const txt=await encryptState(p); const fn=`myfinzen-${today()}.json`; const box=$('#bOut');
     const saved=downloadFile(fn,txt);
