@@ -14,7 +14,7 @@ App web instalable (PWA) de finanzas personales para un único usuario, con todo
 
 ## Arquitectura
 
-`index.html` lleva el HTML y el CSS; todo el código está en `app.js` (≈1.950 líneas; fuera del HTML para que la CSP prohíba scripts incrustados) y los textos de ayuda y el manual, en `help.js`. Secciones de `app.js` en orden:
+`index.html` lleva el HTML y el CSS; el código está en `app.js` (≈3.000 líneas; fuera del HTML para que la CSP prohíba scripts incrustados), la sincronización en `sync.js` (se carga después de `app.js`; el arranque espera a `DOMContentLoaded` antes de `syncBoot`) y los textos de ayuda y el manual, en `help.js`. Secciones de `app.js` en orden:
 
 | Zona | Qué contiene |
 |---|---|
@@ -38,6 +38,7 @@ App web instalable (PWA) de finanzas personales para un único usuario, con todo
 | Jubilación | Pestaña de Inversiones (`#jubilacion`, `NAV_PARENT`). `retireData()` (saldo de las cuentas `retirement`, aportación anual de `a.contrib401` leída del extracto con `empowerContrib`, `settings.retire={by,age,ret,contrib,ss,goal}`), `retireAt()` (proyección en dólares de hoy con rentabilidad real; ingreso por la regla del 4 % + Seguridad Social ajustada con `SS_F`), `needExtra()` (aportación para un ingreso objetivo) y `retireTips()` (máximo del IRS con `LIM[año].k401/catch50/catch6063`, aportación de la empresa, acciones/bonos frente a una senda de fecha objetivo, internacional, fondos activos, solapes, tradicional/Roth por `computeTaxes().marginal`, 59½). Cuentas de jubilación sin fondos: tarjeta para importar su extracto (`data-impf`) |
 | Optimizador | `LIM` (401k, IRA, HSA, DCFSA y límites de ingresos por año), `CA_BR`, perfil familiar `prof(year)`, `recommendations(year)` (ahorro estimado con `savingsOf` = what-if de `computeTaxes`), `taxTurbo` (guía TurboTax con las cifras del usuario) |
 | Ajustes | Copia cifrada (`encryptState`/`decryptBackup`, formato v2, ver Seguridad; restaura también v1 y las copias de la versión antigua), seguridad, clave de API |
+| Sincronización (`sync.js`) | **Tus dispositivos** (tarjeta en Ajustes, `syncCardHTML`/`wireSyncCard`; botón nube `#syncBtn` en la barra, `syncUI`/`syncBtnClick`). El archivo `MyFinZen.mfz` es la bóveda tal cual (`buildSyncFile`: `pw`, `rec`, `pk`, `pkDel`, `kt`, `data` cifrado con DK) y se valida con `parseSyncFile`. **Nunca se sincroniza `S.secret`** (clave de API, token y `dev`). Fusión a tres bandas por registro (`merge3`, `arrKey`: `id`, `acc|date`, reglas, categorías propias, listas simples; borrado frente a cambio → gana el cambio) contra la última versión común (`VAULT.meta.sync.base`, cifrada con DK, no se sube). `S.sv={rev,dev,at}` dentro de los datos cifrados: un archivo más antiguo que la base no deshace nada (`stale`). Contraseña/recuperación más reciente por `meta.kt`; passkeys: unión menos `pkDel`. `syncNow` (lee, fusiona, sube con control de versión; reintenta si hay conflicto o si cambiaste algo mientras), `syncSoon` tras cada `save()`, cada 5 min y al volver a la app. Proveedores (`PROVIDERS`): **Dropbox** (`CLOUD.dropbox.key` = app key pública; OAuth PKCE con redirección: verificador y estado en `sessionStorage` solo durante la ida y vuelta, `syncBoot` canjea el código, el token de refresco va a `S.secret.sync.rt` al desbloquear; ruta `/MyFinZen/MyFinZen.mfz`), **archivo** (File System Access en el ordenador; el *handle* se guarda en IndexedDB como `syncHandle`, sin datos) y **a mano** (`manualUpload` comparte o descarga `MyFinZen-sync.txt`; `manualImport` lo fusiona). Dispositivo nuevo: «Ya uso MyFinZen en otro dispositivo» (`showGate('join')`, `joinWith`) guarda la bóveda de la nube y pide la contraseña; después ofrece passkey. Otra bóveda en la nube: `otherVaultModal` (no se mezcla). Entrega 2 pendiente: compartir con otra persona con permisos |
 | Bóveda | Ver "Seguridad". `createVault`, `unlockWith{Password,Passkey,Recovery}`, `addPasskey`, `lockNow`, `showGate(mode)` |
 | Claude | `claudeCall(prompt,{modelTier,onText,stream,maxTokens})` → API de Anthropic con la clave del usuario. `getSample()` devuelve una función compatible con la interfaz antigua (`f(prompt,opts)` y `f.json(prompt)`). Modelos en `MODELS` |
 | Boot | Abre IndexedDB, muestra `setup` o `unlock`, registra `sw.js` y la barra de "versión nueva" |
@@ -54,13 +55,13 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 - Bloqueo: `lockNow()` borra `S` y la DK de la memoria. Hay bloqueo automático por inactividad (`settings.lockMin`) y al volver de segundo plano.
 - La clave de API vive en `S.secret` y se excluye de las copias (`encryptState`).
 - Copias cifradas (`encryptState`/`decryptBackup`): formato v2 `{app:'misfinanzas',v:2,kdf,it:600000,salt,iv,data}`, PBKDF2-SHA256 600.000 iteraciones, AES-256-GCM con la cabecera como datos adicionales autenticados (`bkAAD`); contraseña mínima de 10 caracteres. v1 (250.000 iteraciones) se sigue pudiendo restaurar.
-- Fuera de la bóveda solo hay: el idioma en `localStorage` y el código de la app en la caché del service worker. Los archivos compartidos con la app viven solo en memoria (en el service worker y en la página) hasta importarlos: nunca en la caché ni en IndexedDB. Cualquier exportación en claro (p. ej. el resumen fiscal .txt) debe avisar antes de descargarse.
+- Fuera de la bóveda solo hay: el idioma en `localStorage`, el código de la app en la caché del service worker y, si se sincroniza con un archivo, su *handle* (`syncHandle` en IndexedDB, sin datos); durante la conexión con Dropbox, el verificador PKCE y el estado en `sessionStorage` (se borran al volver). El archivo de sincronización en la nube es la bóveda cifrada (sin `S.secret`): su seguridad depende de la contraseña maestra. Los archivos compartidos con la app viven solo en memoria (en el service worker y en la página) hasta importarlos: nunca en la caché ni en IndexedDB. Cualquier exportación en claro (p. ej. el resumen fiscal .txt) debe avisar antes de descargarse.
 - Usa siempre WebCrypto con algoritmos estándar (NIST/FIPS, BSI, ENISA); no implementes criptografía propia.
 - **No hay scripts incrustados**: `script-src 'self'` sin `'unsafe-inline'`. No añadas `<script>` en línea ni atributos `onclick=`; todo va en `app.js` con `addEventListener`/`.onclick`. Escapa con `esc()` todo texto que vaya a `innerHTML`, también en atributos.
 - La app se niega a ejecutarse dentro de un marco (clickjacking). `persist()` encola las escrituras; `lockNow()` y `pagehide` guardan lo pendiente con `flushSave()`.
 - **Origen compartido**: en GitHub Pages, `marcos86go.github.io` es el mismo origen para todos los repositorios del usuario. No publiques otros sitios de Pages en esta cuenta (podrían leer el almacenamiento de la app). Si se necesita, mover MyFinZen a un dominio propio.
 - GitHub Actions: acciones fijadas por SHA, `persist-credentials: false` y permisos mínimos (`contents: read`; `write` solo en el job de noticias).
-- CSP en `<meta>`: solo `'self'`, `https://api.anthropic.com` y `https://raw.githubusercontent.com` (titulares públicos de la rama `news`). Si añades un servicio (por ejemplo Dropbox), amplía `connect-src` solo con sus dominios exactos.
+- CSP en `<meta>`: solo `'self'`, `https://api.anthropic.com`, `https://raw.githubusercontent.com` (titulares públicos de la rama `news`) y Dropbox (`https://api.dropboxapi.com`, `https://content.dropboxapi.com`). Si añades un servicio, amplía `connect-src` solo con sus dominios exactos.
 - No añadas analítica, CDNs ni dependencias remotas. pdf.js está copiado en `vendor/`.
 
 ## Noticias (servidor)
@@ -78,7 +79,7 @@ Estado global: `S` (objeto del usuario, `null` cuando está bloqueado). Forma: `
 ```bash
 npm i && npx playwright install chromium
 npm run fixtures   # genera PDFs/CSVs inventados en tests/fixtures
-npm test           # 13 pruebas del recolector de noticias y de los tipos + 142 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
+npm test           # 13 pruebas del recolector de noticias y de los tipos + 154 end-to-end (passkey con autenticador virtual PRF, API de Claude simulada; también comprueba que todas las pantallas salen en inglés)
 ```
 
 Antes de cada commit, pasa `npm test`. Para cambios visuales, haz capturas con Playwright en móvil (412×900) y en escritorio (1200×900), en los dos idiomas, y revísalas (`SHOTS=/ruta npm test` guarda capturas).
@@ -102,7 +103,8 @@ Comprueba las cifras en fuentes oficiales (irs.gov, ftb.ca.gov) antes de cambiar
 
 ## Pendiente / ideas
 
-- **Sincronización con Dropbox**: OAuth PKCE en el navegador (app de Dropbox con permiso "App folder"), subir y bajar `vault` (ya está cifrado) a `/Apps/MyFinZen/vault.json`, resolución de conflictos por `meta.updated`. Hace falta el *App key* del usuario y añadir `https://api.dropboxapi.com https://content.dropboxapi.com https://www.dropbox.com` a la CSP.
+- **Compartir con otra persona (entrega 2)**: roles cootitular / solo sus cuentas (ve todo, edita lo suyo) / solo ver. Las carpetas de aplicación de Dropbox no se pueden compartir (hace falta acceso "Full Dropbox") y los miembros de solo lectura exigen un plan de pago, así que los permisos se harán en la app: cada miembro con su par de claves y firmas sobre lo que escribe.
+- Google Drive y OneDrive automáticos: sin servidor no hay tokens de larga duración en el navegador (Google exige secreto de cliente o volver a iniciar sesión cada hora; los tokens de refresco de OneDrive para SPA duran 24 h). Por ahora, archivo en su carpeta o a mano.
 - Estimación del impuesto de California (ahora solo compara deducción detallada y estándar, y el tipo marginal).
 - Lectores locales específicos para extractos de Chase, Amex, BofA y M1 (ahora: heurística genérica + Claude opcional).
 - Historial de posiciones (`S.holdingsHist`) → gráfico de evolución por activo.

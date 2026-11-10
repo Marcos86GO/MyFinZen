@@ -444,6 +444,63 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   if(await pg.evaluate(()=>S===null)){ await pg.fill('#gP','otra frase segura 22'); await pg.click('#gGo'); } await pg.waitForFunction(()=>S&&BATCH&&!BATCH.running&&BATCH.res.length&&BATCH.res[0].name==='compartido.csv',null,{timeout:15000});
   ok(await pg.evaluate(()=>location.hash==='#importar'&&SHARED_FILES===null),'al desbloquear, importa lo compartido');
   await ctx.setOffline(true); await pg.reload(); await pg.waitForTimeout(800); ok(await pg.evaluate(()=>document.title==='MyFinZen'),'carga sin conexión'); await ctx.setOffline(false);
+  // ---------- Sincronización entre dispositivos (Dropbox simulado) ----------
+  { const DBX={file:null,rev:0,codes:0,log:[]}, H={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-expose-headers':'Dropbox-API-Result'};
+    const P2='frase sincronizada larga 9';
+    const dev=async(name)=>{ const c=await b.newContext({viewport:{width:412,height:900},locale:'es-ES',serviceWorkers:'block'}); const p=await c.newPage(); const e=[]; p.on('pageerror',x=>e.push(name+': '+x.message)); p.on('dialog',d=>d.dismiss());
+      await c.route('**/sync.js',async r=>{ const res=await r.fetch(); const body=(await res.text()).replace("const CLOUD={dropbox:{key:''}};","const CLOUD={dropbox:{key:'clave-de-prueba'}};"); r.fulfill({response:res,body}); });
+      await c.route('https://www.dropbox.com/oauth2/authorize**',r=>{ const u=new URL(r.request().url()); DBX.log.push('auth:'+u.searchParams.get('code_challenge_method')+':'+u.searchParams.get('token_access_type')); r.fulfill({status:302,headers:{location:u.searchParams.get('redirect_uri')+'?code=C'+(++DBX.codes)+'&state='+u.searchParams.get('state')}}); });
+      await c.route('https://api.dropboxapi.com/oauth2/token',r=>{ if(r.request().method()==='OPTIONS') return r.fulfill({status:204,headers:H}); const q=new URLSearchParams(r.request().postData()); DBX.log.push('token:'+q.get('grant_type')+':'+(q.get('code_verifier')?'pkce':'')); r.fulfill({status:200,headers:H,contentType:'application/json',body:JSON.stringify({access_token:'AT-'+Math.random(),expires_in:14400,refresh_token:'RT-prueba-123456',token_type:'bearer'})}); });
+      await c.route('https://content.dropboxapi.com/2/files/download',r=>{ if(r.request().method()==='OPTIONS') return r.fulfill({status:204,headers:H}); if(!DBX.file) return r.fulfill({status:409,headers:H,contentType:'application/json',body:'{"error_summary":"path/not_found/"}'}); r.fulfill({status:200,headers:Object.assign({'Dropbox-API-Result':JSON.stringify({rev:'r'+DBX.rev})},H),body:DBX.file}); });
+      await c.route('https://content.dropboxapi.com/2/files/upload',r=>{ if(r.request().method()==='OPTIONS') return r.fulfill({status:204,headers:H}); const arg=JSON.parse(r.request().headers()['dropbox-api-arg']); const m=arg.mode['.tag'];
+        if((m==='update'&&arg.mode.update!=='r'+DBX.rev)||(m==='add'&&DBX.file)) return r.fulfill({status:409,headers:H,contentType:'application/json',body:'{"error_summary":"path/conflict/file/"}'});
+        DBX.file=r.request().postData(); DBX.rev++; r.fulfill({status:200,headers:H,contentType:'application/json',body:JSON.stringify({rev:'r'+DBX.rev})}); });
+      await p.goto(U); await p.waitForTimeout(500); return {c,p,e}; };
+    const unlock=async(p,pass)=>{ await p.waitForSelector('#gP'); await p.fill('#gP',pass); await p.click('#gGo'); await p.waitForFunction(()=>!!S,null,{timeout:15000}); await p.waitForTimeout(300); if(await p.$('#modalBg.show')) await p.evaluate(()=>closeModal()); };
+    const settle=p=>p.waitForFunction(()=>!SYNC.busy,null,{timeout:15000});
+    // Dispositivo A: crea su bóveda y conecta Dropbox
+    const A=await dev('A'); await A.p.fill('#g1',P2); await A.p.fill('#g2',P2); await A.p.click('#gGo'); await A.p.waitForSelector('.reccode',{timeout:20000}); await A.p.check('#gOk'); await A.p.click('#gNext'); await A.p.waitForTimeout(300); if(await A.p.$('#gSkip')) await A.p.click('#gSkip'); await A.p.waitForTimeout(300); if(await A.p.$('#mc')) await A.p.click('#mc');
+    await A.p.evaluate(()=>{ S.accounts.push({id:'syA',kind:'cash',name:'Cuenta Sincronizada Prueba'}); S.tx.push({id:'syT1',acc:'syA',date:today(),desc:'COMPRA DISPOSITIVO A',amount:-11,cat:'Compras'}); S.secret.apiKey='sk-ant-prueba-no-se-sincroniza'; save(); location.hash='#ajustes'; });
+    await A.p.waitForSelector('#syDbx'); await A.p.click('#syDbx'); await unlock(A.p,P2); await settle(A.p);
+    const fa=await A.p.evaluate(()=>({conf:!!(S.secret.sync&&S.secret.sync.p==='dropbox'&&S.secret.sync.rt),url:location.href}));
+    ok(fa.conf&&DBX.file&&DBX.log.includes('auth:S256:offline')&&DBX.log.includes('token:authorization_code:pkce')&&!/code=/.test(fa.url),'conectar Dropbox: PKCE, token guardado en la bóveda, dirección limpia y primera subida');
+    ok(!/Cuenta Sincronizada|COMPRA DISPOSITIVO|sk-ant|RT-prueba/.test(DBX.file)&&/"app":"myfinzen-sync"/.test(DBX.file),'la nube solo recibe datos cifrados (sin la clave de API ni el token)');
+    ok(await A.p.evaluate(async t=>{ const rf=parseSyncFile(t); const st=JSON.parse(TD.decode(await unseal(VAULT.dk,rf.meta.data))); return !st.secret&&st.accounts.some(a=>a.id==='syA'); },DBX.file),'dentro del archivo: los datos, sin S.secret');
+    // Dispositivo B: «Ya uso MyFinZen en otro dispositivo» → Dropbox → contraseña
+    const B=await dev('B'); await B.p.click('#gJoin'); await B.p.waitForSelector('#jDbx'); await B.p.click('#jDbx'); await B.p.waitForSelector('#gP');
+    const jn=await B.p.evaluate(()=>/Datos traídos de tu nube/.test(document.querySelector('#gate').textContent)); await unlock(B.p,P2); await settle(B.p);
+    ok(jn&&await B.p.evaluate(()=>S.accounts.some(a=>a.id==='syA')&&S.tx.some(t=>t.id==='syT1')&&!S.secret.apiKey&&S.secret.sync.p==='dropbox'),'dispositivo nuevo: trae los datos de Dropbox y se desbloquea con la contraseña de siempre');
+    // Cambios en los dos a la vez y un borrado
+    await B.p.evaluate(()=>{ S.tx.push({id:'syT2',acc:'syA',date:today(),desc:'COMPRA DISPOSITIVO B',amount:-22,cat:'Compras'}); S.accounts.find(a=>a.id==='syA').name='Cuenta Renombrada en B'; });
+    await A.p.evaluate(()=>{ S.tx.push({id:'syT3',acc:'syA',date:today(),desc:'COMPRA A SIN SINCRONIZAR',amount:-33,cat:'Compras'}); S.tx=S.tx.filter(t=>t.id!=='syT1'); });
+    await B.p.evaluate(()=>syncNow()); await A.p.evaluate(()=>syncNow()); await B.p.evaluate(()=>syncNow());
+    const ma=await A.p.evaluate(()=>({ids:S.tx.filter(t=>t.acc==='syA').map(t=>t.id).sort().join(),name:S.accounts.find(a=>a.id==='syA').name,rev:S.sv.rev,key:S.secret.apiKey}));
+    const mb=await B.p.evaluate(()=>({ids:S.tx.filter(t=>t.acc==='syA').map(t=>t.id).sort().join(),name:S.accounts.find(a=>a.id==='syA').name,rev:S.sv.rev}));
+    ok(ma.ids==='syT2,syT3'&&mb.ids==='syT2,syT3'&&ma.name==='Cuenta Renombrada en B'&&mb.name===ma.name&&ma.rev===mb.rev&&ma.key==='sk-ant-prueba-no-se-sincroniza','cambios a la vez en dos dispositivos: se juntan registro a registro, el borrado se propaga y la clave de API se queda en su dispositivo ('+JSON.stringify([ma,mb])+')');
+    // Una versión vieja en la nube no deshace nada
+    const old=DBX.file; await A.p.evaluate(()=>{ S.tx.push({id:'syT4',acc:'syA',date:today(),desc:'DESPUES',amount:-4,cat:'Compras'}); return syncNow(); }); await B.p.evaluate(()=>syncNow());
+    DBX.file=old; DBX.rev++; await B.p.evaluate(()=>syncNow());
+    ok(await B.p.evaluate(()=>S.tx.some(t=>t.id==='syT4')&&S.tx.some(t=>t.id==='syT2'))&&/"app"/.test(DBX.file)&&DBX.file!==old,'una versión antigua en la nube no deshace cambios: se vuelve a subir la buena');
+    // A mano: el archivo exportado en A se suma en B
+    await A.p.evaluate(()=>{ S.tx.push({id:'syT5',acc:'syA',date:today(),desc:'A MANO',amount:-5,cat:'Compras'}); });
+    const man=await A.p.evaluate(async()=>buildSyncFile(bumpSv(syncState(S))));
+    await B.p.evaluate(t=>manualImport(new File([t],'MyFinZen-sync.txt',{type:'text/plain'})),man); await B.p.waitForTimeout(200);
+    ok(await B.p.evaluate(()=>S.tx.some(t=>t.id==='syT5')),'a mano: abrir el archivo de otro dispositivo suma sus cambios');
+    // Cambiar la contraseña en un dispositivo llega a los demás
+    await A.p.evaluate(async()=>{ await setPassword('contrasena nueva sincronizada'); await syncNow(); }); await B.p.evaluate(()=>syncNow());
+    ok(await A.p.evaluate(()=>VAULT.meta.pw.salt)===await B.p.evaluate(()=>VAULT.meta.pw.salt),'cambiar la contraseña maestra en un dispositivo llega a los demás');
+    // Dispositivo nuevo sin Dropbox: abrir el archivo de sincronización
+    const D=await dev('D'); await D.p.click('#gJoin'); await D.p.waitForSelector('#jIn'); await D.p.setInputFiles('#jIn',{name:'MyFinZen-sync.txt',mimeType:'text/plain',buffer:Buffer.from(DBX.file)});
+    await unlock(D.p,'contrasena nueva sincronizada');
+    ok(await D.p.evaluate(()=>S.tx.some(t=>t.id==='syT4')&&S.secret.sync&&S.secret.sync.p==='manual'&&!!document.querySelector('#syncBtn:not([hidden])')),'dispositivo nuevo a mano: abre el archivo, desbloquea y queda en modo manual con la nube arriba'); await D.c.close();
+    // Otra bóveda en la misma nube: no se mezcla, pregunta
+    const C=await dev('C'); await C.p.fill('#g1','otra boveda distinta 7'); await C.p.fill('#g2','otra boveda distinta 7'); await C.p.click('#gGo'); await C.p.waitForSelector('.reccode',{timeout:20000}); await C.p.check('#gOk'); await C.p.click('#gNext'); await C.p.waitForTimeout(300); if(await C.p.$('#gSkip')) await C.p.click('#gSkip'); await C.p.waitForTimeout(300); if(await C.p.$('#mc')) await C.p.click('#mc');
+    await C.p.evaluate(()=>{ location.hash='#ajustes'; }); await C.p.waitForSelector('#syDbx'); const before=DBX.file; await C.p.click('#syDbx'); await unlock(C.p,'otra boveda distinta 7'); await settle(C.p); await C.p.waitForTimeout(300);
+    ok(await C.p.evaluate(()=>!!document.querySelector('#ovCloud')&&!S.accounts.some(a=>a.id==='syA'))&&DBX.file===before,'otra bóveda en la nube: no se mezcla ni se sobrescribe; pregunta qué hacer');
+    // Cifrado: lo que hay en IndexedDB de B sigue cifrado y la base de la fusión no se sube
+    ok(await B.p.evaluate(async()=>{ const v=await IDB.get('vault'); const t=JSON.stringify(v); return !!v.sync&&!!v.sync.base&&!/COMPRA DISPOSITIVO/.test(t); })&&!/"sync"/.test(DBX.file),'IndexedDB sigue cifrado y la base de la fusión no sale del dispositivo');
+    const se=[].concat(A.e,B.e,C.e); ok(se.length===0,'sincronización sin errores en consola'+(se.length?': '+se.join(' | '):''));
+    await A.c.close(); await B.c.close(); await C.c.close(); }
   ok(errs.length===0,'sin errores en consola'+(errs.length?': '+errs.join(' | '):''));
   await b.close(); srv.close(); console.log(failed?`\n${failed} prueba(s) fallida(s)`:'\nTodo OK'); process.exit(failed?1:0);
 })().catch(e=>{ console.error(e); srv.close(); process.exit(1); });

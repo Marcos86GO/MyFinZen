@@ -14,7 +14,7 @@ function setLang(l,keep){ LANG=l==='en'?'en':'es'; if(!keep) try{ localStorage.s
 function bil(o){ const r={}; for(const k of Object.keys(o)) Object.defineProperty(r,k,{enumerable:true,get(){ const v=o[k]; return Array.isArray(v)?L(v[0],v[1]):v; }}); return r; }
 /* ---------- Iconos SVG propios (sin dependencias externas) ---------- */
 const ICONS={
-  menu:'M4 6h16M4 12h16M4 18h16', home:'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+  menu:'M4 6h16M4 12h16M4 18h16', cloud:'M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4.25 4.25 0 0 1-.5 8.5z', home:'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
   flow:'M7 4v16M7 4L4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3',
   wallet:'M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M16 15h2',
   trend:'M3 17l6-6 4 4 8-8M15 7h6v6', house:'M4 10l8-6 8 6M6 9v11h12V9M10 20v-5h4v5',
@@ -257,7 +257,10 @@ function sanitizeState(st){
   o.imports=arr(o.imports).map(e=>{ e=obj(e); const x={id:cleanId(e.id)||uid(),acc:e.acc?cleanId(e.acc):null,kind:str(e.kind,12),fp:str(e.fp,300),hash:str(e.hash,64),name:str(e.name,160),date:isoDate(e.date),added:isoDate(e.added)||today()};
     if(e.doc) x.doc=cleanId(e.doc); const c=numStrict(e.contrib); if(c) x.contrib=c; return x; }).filter(e=>e.fp||e.hash).slice(-2000);
   o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,40),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
-  o.secret=o.secret&&typeof o.secret.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(o.secret.apiKey)?{apiKey:o.secret.apiKey}:{};
+  { const sec=obj(o.secret), out={}; if(typeof sec.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(sec.apiKey)) out.apiKey=sec.apiKey;
+    const y=obj(sec.sync); if(['dropbox','file','manual'].includes(y.p)){ out.sync={p:y.p,dev:cleanId(y.dev)||uid()}; if(typeof y.rt==='string'&&/^[\w.~+/=-]{8,400}$/.test(y.rt)) out.sync.rt=y.rt; if(typeof y.last==='string'&&!isNaN(Date.parse(y.last))) out.sync.last=y.last.slice(0,30); }
+    o.secret=out; }
+  { const v=obj(o.sv), rev=numStrict(v.rev); if(rev!=null&&rev>=0) o.sv={rev:Math.round(rev),dev:str(v.dev,40),at:str(v.at,30)}; else delete o.sv; }
   o.v=1; o.created=typeof o.created==='string'?o.created:new Date().toISOString();
   return o;
 }
@@ -265,16 +268,17 @@ function sanitizeState(st){
 let S = null; // state
 function blankState(){
   return {v:1, accounts:[], snapshots:[], tx:[], rules:[],
-          settings:{emergencyMonths:6, lastBackup:null, lastAI:null}, created:new Date().toISOString()};
+          settings:{emergencyMonths:6, lastBackup:null, lastAI:null}, secret:{}, created:new Date().toISOString()};
 }
 const IDB = {
   db:null, mem:null,
   open(){ return new Promise((res)=>{ try{ const r=indexedDB.open('misfinanzas',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>{this.db=r.result;res(true)}; r.onerror=()=>res(false);}catch(e){res(false)} }); },
   get(k){ if(!this.db) return Promise.resolve(this.mem&&this.mem[k]); return new Promise(res=>{ try{const t=this.db.transaction('kv').objectStore('kv').get(k); t.onsuccess=()=>res(t.result); t.onerror=()=>res(null);}catch(e){res(null)} }); },
-  set(k,v){ if(!this.db){ this.mem=this.mem||{}; this.mem[k]=v; return Promise.resolve(true); } return new Promise(res=>{ try{const tx=this.db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=()=>res(true); tx.onerror=tx.onabort=()=>res(false);}catch(e){res(false)} }); }
+  set(k,v){ if(!this.db){ this.mem=this.mem||{}; this.mem[k]=v; return Promise.resolve(true); } return new Promise(res=>{ try{const tx=this.db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=()=>res(true); tx.onerror=tx.onabort=()=>res(false);}catch(e){res(false)} }); },
+  del(k){ if(!this.db){ if(this.mem) delete this.mem[k]; return Promise.resolve(true); } return new Promise(res=>{ try{const tx=this.db.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete=()=>res(true); tx.onerror=()=>res(false);}catch(e){res(false)} }); }
 };
 let saveTimer=null;
-function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ saveTimer=null; persist(); },200); }
+function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ saveTimer=null; persist(); if(typeof syncSoon==='function') syncSoon(); },200); }
 function flushSave(){ if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; } return persist(); }
 
 /* ============================================================
@@ -2768,12 +2772,13 @@ VIEWS.ajustes=(el)=>{
   const lb=S.settings.lastBackup;
   el.innerHTML=`
   <div class="card" style="margin-bottom:12px">${helpBtn('lang')}<h2>${L('Idioma','Language')}</h2><p class="sub">${L('Elige el idioma de la aplicación. Se guarda en este dispositivo.','Choose the app language. It is saved on this device.')}</p><div class="row" style="justify-content:flex-start"><select id="sLang" style="max-width:220px"><option value="es" ${LANG==='es'?'selected':''}>Español</option><option value="en" ${LANG==='en'?'selected':''}>English</option></select></div></div>
+  ${typeof syncCardHTML==='function'?syncCardHTML():''}
   <div class="card" style="margin-bottom:12px">${helpBtn('payshift')}<h2>${L('Tu nómina','Your paycheck')}</h2><p class="sub">${L('Si cobras a final de mes y ese dinero lo gastas el mes siguiente, cuenta la nómina en el mes siguiente para que el ahorro de cada mes sea real.','If you get paid at the end of the month and spend that money the next month, count the paycheck in the next month so each month\'s savings are real.')}</p>
    <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="psOn" style="width:auto" ${S.settings.payShift?'checked':''}> ${L('Contar la nómina en el mes siguiente si la cobro a partir del día','Count the paycheck in the next month if I get it from day')}</label>
    <div class="row" style="justify-content:flex-start"><select id="psDay" style="max-width:120px" ${S.settings.payShift?'':'disabled'}>${Array.from({length:17},(_,i)=>i+15).map(d=>`<option value="${d}" ${(S.settings.payShift||payShiftGuess()||25)===d?'selected':''}>${d}</option>`).join('')}</select></div>
    <p class="muted">${L('Solo afecta a los movimientos de la categoría Nómina y al cálculo de ingresos, gastos y ahorro por mes; la lista de movimientos sigue con su fecha real.','It only affects transactions in the Salary category and the income, expenses and savings per month; the transaction list keeps the real dates.')}</p></div>
   <div class="grid g2">
-   <div class="card">${helpBtn('backup')}<h2>${L('Copia de seguridad cifrada','Encrypted backup')}</h2><p class="sub">${L('Tus datos solo están en este navegador. Haz una copia cada mes y guárdala en Dropbox o donde quieras: va cifrada con tu contraseña. También sirve para <b>pasar los datos del ordenador al móvil</b>.','Your data only lives in this browser. Make a backup every month and keep it in Dropbox or wherever you like: it is encrypted with your password. It is also how you <b>move your data from computer to phone</b>.')}</p>
+   <div class="card">${helpBtn('backup')}<h2>${L('Copia de seguridad cifrada','Encrypted backup')}</h2><p class="sub">${L('Tus datos solo están en este navegador. Haz una copia cada mes y guárdala en Dropbox o donde quieras: va cifrada con tu contraseña. Para usar los mismos datos en varios dispositivos, mejor <b>Tus dispositivos</b> (arriba).','Your data only lives in this browser. Make a backup every month and keep it in Dropbox or wherever you like: it is encrypted with your password. To use the same data on several devices, <b>Your devices</b> (above) is better.')}</p>
      <p>${lb?`${L('Última copia','Last backup')}: <b>${dLabel(lb.slice(0,10))}</b>`:`<span class="neg"><b>${L('Aún no has hecho ninguna copia.','You haven\'t made any backup yet.')}</b></span>`}</p>
      <label class="f">${L('Contraseña de la copia','Backup password')}<input type="password" id="bP" autocomplete="new-password"></label>
      <p class="muted">${L('Mínimo 10 caracteres; mejor una frase de varias palabras. Si la olvidas, no hay forma de recuperar la copia. Se cifra con AES-256-GCM y PBKDF2-SHA256 (600.000 iteraciones).','At least 10 characters; a phrase of several words is best. If you forget it, the backup cannot be recovered. It is encrypted with AES-256-GCM and PBKDF2-SHA256 (600,000 iterations).')}</p>
@@ -2813,7 +2818,7 @@ VIEWS.ajustes=(el)=>{
   <div class="spacer"></div>
   <div class="card">${helpBtn('wipe')}<h2>${L('Borrar todo','Delete everything')}</h2><p class="sub">${L('Elimina todos los datos de este dispositivo. Haz antes una copia.','Removes all data from this device. Make a backup first.')}</p><button class="dan" id="wipe">${L('Borrar todos los datos','Delete all data')}</button></div>
   <p class="muted" style="margin-top:14px">${L(`Datos: ${S.accounts.length} cuentas · ${S.snapshots.length} saldos · ${S.tx.length} movimientos.`,`Data: ${S.accounts.length} accounts · ${S.snapshots.length} balances · ${S.tx.length} transactions.`)}</p>`;
-  $('#sLang').onchange=e=>setLang(e.target.value);
+  $('#sLang').onchange=e=>setLang(e.target.value); if(typeof wireSyncCard==='function') wireSyncCard(el);
   const psSet=()=>{ const on=$('#psOn').checked; $('#psDay').disabled=!on; S.settings.payShift=on?+$('#psDay').value:0; S.settings.payShiftAsked=true; save(); toast(on?L('La nómina desde el día ','Paychecks from day ')+$('#psDay').value+L(' cuenta para el mes siguiente',' count for the next month'):L('La nómina cuenta en el mes en que la cobras','Paychecks count in the month you get them')); };
   $('#psOn').onchange=psSet; $('#psDay').onchange=psSet;
   $('#sCats').onclick=()=>manageCats();
@@ -2823,11 +2828,11 @@ VIEWS.ajustes=(el)=>{
     const c=$('#bCopy'); if(c) c.onclick=async()=>{try{await navigator.clipboard.writeText(txt);toast(L('Copiado','Copied'))}catch(e){toast(L('Selecciona el texto y cópialo','Select the text and copy it'))}};
     $('#bExp').disabled=false; $('#bExp').textContent=L('Crear copia cifrada','Create encrypted backup');
     S.settings.lastBackup=new Date().toISOString(); save(); };
-  $('#rGo').onclick=async()=>{ let txt=$('#rT').value.trim(); const f=$('#rF').files[0]; if(f) txt=await f.text(); if(!txt) return toast(L('Elige un archivo o pega la copia','Choose a file or paste the backup')); try{ const st=sanitizeState(await decryptBackup(txt,$('#rP').value)); const ok=await confirmModal(L('Restaurar copia','Restore backup'),L(`<p>La copia tiene ${st.accounts.length} cuentas y ${st.tx.length} movimientos. Sustituirá lo que hay en este dispositivo.</p>`,`<p>The backup has ${st.accounts.length} accounts and ${st.tx.length} transactions. It will replace what is on this device.</p>`)); if(!ok)return; const keep=S.secret; S=st; S.secret=keep||{}; REC=null; migrateCats(); migrateUncat(); save(); toast(L('Copia restaurada','Backup restored')); location.hash='#resumen'; route(); }catch(e){ toast(e.code==='notbackup'?e.message:L('Contraseña incorrecta o archivo dañado','Wrong password or damaged file')); } };
+  $('#rGo').onclick=async()=>{ let txt=$('#rT').value.trim(); const f=$('#rF').files[0]; if(f) txt=await f.text(); if(!txt) return toast(L('Elige un archivo o pega la copia','Choose a file or paste the backup')); try{ const st=sanitizeState(await decryptBackup(txt,$('#rP').value)); const ok=await confirmModal(L('Restaurar copia','Restore backup'),L(`<p>La copia tiene ${st.accounts.length} cuentas y ${st.tx.length} movimientos. Sustituirá lo que hay en este dispositivo.</p>`,`<p>The backup has ${st.accounts.length} accounts and ${st.tx.length} transactions. It will replace what is on this device.</p>`)); if(!ok)return; const keep=S.secret; S=st; S.secret=keep||{}; REC=null; migrateCats(); migrateUncat(); if(VAULT.meta.sync) delete VAULT.meta.sync.base; save(); toast(L('Copia restaurada','Backup restored')); location.hash='#resumen'; route(); }catch(e){ toast(e.code==='notbackup'?e.message:L('Contraseña incorrecta o archivo dañado','Wrong password or damaged file')); } };
   $('#sSave').onclick=()=>{ const n=parseInt($('#sEM').value); if(n>0) S.settings.emergencyMonths=n; S.settings.context=$('#sCtx').value.trim(); S.settings.hideNames=$('#sHide').value.trim(); S.settings.autoClaude=$('#sAuto').checked; save(); toast(L('Guardado','Saved')); };
   el.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{ S.rules.splice(+b.dataset.r,1); save(); route(); });
   $('#sLock').onchange=e=>{ S.settings.lockMin=+e.target.value; save(); bumpLock(); toast(L('Guardado','Saved')); };
-  el.querySelectorAll('[data-pk]').forEach(b=>b.onclick=async()=>{ if(await confirmModal(L('¿Quitar passkey?','Remove passkey?'),`<p>${L('Podrás seguir entrando con la contraseña maestra.','You can still sign in with the master password.')}</p>`)){ VAULT.meta.pk.splice(+b.dataset.pk,1); await persist(); route(); } });
+  el.querySelectorAll('[data-pk]').forEach(b=>b.onclick=async()=>{ if(await confirmModal(L('¿Quitar passkey?','Remove passkey?'),`<p>${L('Podrás seguir entrando con la contraseña maestra.','You can still sign in with the master password.')}</p>`)){ const gone=VAULT.meta.pk.splice(+b.dataset.pk,1)[0]; if(gone) VAULT.meta.pkDel=(VAULT.meta.pkDel||[]).concat(gone.id).slice(-50); await persist(); if(typeof syncSoon==='function') syncSoon(); route(); } });
   if($('#sPkAdd')) $('#sPkAdd').onclick=async()=>{ try{ await addPasskey(); toast(L('Passkey añadida','Passkey added')); route(); }catch(e){ $('#sSecMsg').textContent=e.code==='noprf'?e.message:(e.name==='NotAllowedError'?L('Cancelado.','Cancelled.'):e.message); } };
   $('#sPw').onclick=()=>{ openModal(`<h2>${L('Cambiar contraseña maestra','Change master password')}</h2><label class="f">${L('Contraseña actual','Current password')}<input type="password" id="cp0"></label><label class="f">${L('Nueva (mín. 10)','New (min. 10)')}<input type="password" id="cp1" autocomplete="new-password"></label><label class="f">${L('Repítela','Repeat it')}<input type="password" id="cp2" autocomplete="new-password"></label><div class="row"><button id="mc">${L('Cancelar','Cancel')}</button><button class="pri" id="cpOk">${L('Cambiar','Change')}</button></div>`); $('#mc').onclick=closeModal;
     $('#cpOk').onclick=async()=>{ const a=$('#cp1').value; if(a.length<10) return toast(L('Mínimo 10 caracteres','At least 10 characters')); if(a!==$('#cp2').value) return toast(L('No coinciden','They don\'t match')); try{ const p=VAULT.meta.pw; await unseal(await kdfPass($('#cp0').value,unb64(p.salt),p.it),p.wrap); }catch(e){ return toast(L('La contraseña actual no es correcta','The current password is wrong')); } await setPassword(a); closeModal(); toast(L('Contraseña cambiada','Password changed')); }; };
@@ -2836,7 +2841,7 @@ VIEWS.ajustes=(el)=>{
   $('#sKeyTest').onclick=async()=>{ const m=$('#sKeyMsg'); m.textContent=L('Probando…','Testing…'); try{ const r=await claudeCall('Responde solo: OK',{modelTier:'quick',maxTokens:10,stream:false}); m.textContent=L('Funciona ✓ (','Works ✓ (')+r.text.trim()+')'; }catch(e){ m.textContent=e.message; } };
   if($('#sKeyDel')) $('#sKeyDel').onclick=()=>{ if(S.secret) delete S.secret.apiKey; save(); route(); };
   $('#reCat').onclick=()=>{ let n=0; S.tx.forEach(t=>{ if(t.manual||t.rec) return; const c=categorize(t.desc,t.amount)||otherCat(t.amount); if(c!==t.cat){t.cat=c;n++;} }); save(); toast(L(`${n} movimientos recategorizados`,`${n} transactions recategorized`)); };
-  $('#wipe').onclick=async()=>{ if(await confirmModal(L('¿Borrar todo?','Delete everything?'),`<p>${L('Se borrarán los datos, la contraseña y las passkeys de este dispositivo. No se puede deshacer.','The data, password and passkeys on this device will be deleted. This cannot be undone.')}</p>`)){ clearTimeout(saveTimer); saveTimer=null; await persistQ; VAULT.dk=null; S=null; await IDB.set('vault',null); try{ localStorage.removeItem('mfz-lang'); }catch(e){} location.hash=''; location.reload(); } };
+  $('#wipe').onclick=async()=>{ if(await confirmModal(L('¿Borrar todo?','Delete everything?'),`<p>${L('Se borrarán los datos, la contraseña y las passkeys de este dispositivo. No se puede deshacer.','The data, password and passkeys on this device will be deleted. This cannot be undone.')}</p>`)){ clearTimeout(saveTimer); saveTimer=null; await persistQ; VAULT.dk=null; S=null; await IDB.set('vault',null); await IDB.del('syncHandle'); try{ localStorage.removeItem('mfz-lang'); }catch(e){} location.hash=''; location.reload(); } };
 };
 
 /* ---------- Modal helpers ---------- */
@@ -2881,8 +2886,8 @@ async function createVault(pass){
 async function loadState(){ const raw=await unseal(VAULT.dk,VAULT.meta.data); S=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); migrateCats(); migrateUncat(); }
 async function unlockWithPassword(pass){ const p=VAULT.meta.pw; const raw=await unseal(await kdfPass(pass,unb64(p.salt),p.it),p.wrap); await setDK(raw); await loadState(); }
 async function unlockWithRecovery(code){ const r=VAULT.meta.rec; const raw=await unseal(await kdfPass(normRec(code),unb64(r.salt),r.it),r.wrap); await setDK(raw); await loadState(); }
-async function setPassword(pass){ const salt=rnd(16); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)}; await persist(); }
-async function newRecovery(){ const rec=makeRecovery(), rsalt=rnd(16); VAULT.meta.rec={salt:b64(rsalt),it:REC_ITER,wrap:await seal(await kdfPass(normRec(rec),rsalt,REC_ITER),VAULT.dkRaw)}; await persist(); return rec; }
+async function setPassword(pass){ const salt=rnd(16); VAULT.meta.kt=new Date().toISOString(); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)}; await persist(); }
+async function newRecovery(){ const rec=makeRecovery(), rsalt=rnd(16); VAULT.meta.kt=new Date().toISOString(); VAULT.meta.rec={salt:b64(rsalt),it:REC_ITER,wrap:await seal(await kdfPass(normRec(rec),rsalt,REC_ITER),VAULT.dkRaw)}; await persist(); return rec; }
 function passkeyCapable(){ return !!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext); }
 function deviceName(){ const u=navigator.userAgent; if(/Android/.test(u)) return 'Android'; if(/iPhone|iPad/.test(u)) return 'iPhone/iPad'; if(/Mac/.test(u)) return 'Mac'; if(/Windows/.test(u)) return 'Windows'; return 'Dispositivo'; }
 async function addPasskey(){
@@ -2909,7 +2914,7 @@ async function unlockWithPasskey(){
 }
 /* ---------- Bloqueo ---------- */
 let lockTimer=null, hiddenAt=0;
-function lockNow(){ SHARED_FILES=null; if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
+function lockNow(){ SHARED_FILES=null; if(typeof syncOnLock==='function') syncOnLock(); if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
 function bumpLock(){ clearTimeout(lockTimer); if(!S) return; const m=(S.settings&&S.settings.lockMin)||5; lockTimer=setTimeout(()=>{ if(S) lockNow(); },m*60000); }
 ['pointerdown','keydown','scroll','touchstart'].forEach(ev=>window.addEventListener(ev,()=>{ if(S) bumpLock(); },{passive:true}));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden){ hiddenAt=Date.now(); if(S) flushSave(); } else if(S&&hiddenAt&&Date.now()-hiddenAt>((S.settings.lockMin||5)*60000)) lockNow(); });
@@ -2921,10 +2926,13 @@ function showGate(mode,extra){
   if(mode==='setup'){
     box(`<h2>${L('Crea tu contraseña maestra','Create your master password')}</h2><p class="muted">${L('Cifra todos tus datos en este dispositivo. Nadie puede recuperarla por ti: ni el creador de la app, ni GitHub, ni Anthropic. Mejor una frase de varias palabras (mínimo 10 caracteres).','It encrypts all your data on this device. Nobody can recover it for you: not the app\'s author, not GitHub, not Anthropic. A phrase of several words works best (at least 10 characters).')}</p>
       <label class="f">${L('Contraseña maestra','Master password')}<input type="password" id="g1" autocomplete="new-password"></label><label class="f">${L('Repítela','Repeat it')}<input type="password" id="g2" autocomplete="new-password"></label>
-      <div id="gStr" class="muted"></div><button class="pri" id="gGo" style="width:100%;margin-top:8px">${L('Crear y cifrar','Create and encrypt')}</button>`);
+      <div id="gStr" class="muted"></div><button class="pri" id="gGo" style="width:100%;margin-top:8px">${L('Crear y cifrar','Create and encrypt')}</button>
+      ${typeof joinGateHTML==='function'?`<p style="margin-top:14px;text-align:center"><a href="#" id="gJoin">${L('Ya uso MyFinZen en otro dispositivo','I already use MyFinZen on another device')}</a></p>`:''}`);
+    if($('#gJoin')) $('#gJoin').onclick=e=>{ e.preventDefault(); showGate('join'); };
     $('#g1').oninput=()=>{ const v=$('#g1').value; const s=v.length>=20?L('muy buena','very good'):v.length>=14?L('buena','good'):v.length>=10?L('aceptable','acceptable'):L('demasiado corta','too short'); $('#gStr').textContent=L('Longitud: ','Length: ')+s; };
     $('#gGo').onclick=async()=>{ const a=$('#g1').value, b=$('#g2').value; if(a.length<10) return toast(tooShort); if(a!==b) return toast(noMatch); $('#gGo').disabled=true; $('#gGo').textContent=L('Cifrando…','Encrypting…'); const rec=await createVault(a); showGate('recovery',rec); };
   }
+  else if(mode==='join'){ box(joinGateHTML()); wireJoinGate(); }
   else if(mode==='recovery'){
     box(`<h2>${L('Tu clave de recuperación','Your recovery key')}</h2><p class="muted">${L('Si olvidas la contraseña y pierdes tus dispositivos, es la única forma de recuperar los datos. Escríbela en papel y guárdala en un sitio seguro. No se volverá a mostrar.','If you forget the password and lose your devices, this is the only way to recover your data. Write it on paper and keep it somewhere safe. It won\'t be shown again.')}</p>
       <div class="reccode">${extra}</div><button class="sm" id="gCopy">${L('Copiar','Copy')}</button>
@@ -2942,13 +2950,14 @@ function showGate(mode,extra){
   }
   else if(mode==='unlock'){
     const hasPk=VAULT.meta.pk.length>0&&passkeyCapable();
-    box(`<h2>${L('Desbloquear','Unlock')}</h2>${hasPk?`<button class="pri" id="gPk" style="width:100%">${L('Usar huella / passkey','Use fingerprint / passkey')}</button><div class="muted" style="text-align:center;margin:10px 0">${L('o','or')}</div>`:''}
+    const jn=typeof SYNC!=='undefined'&&SYNC.joinNote?`<div class="alert good" style="margin-bottom:12px"><span class="ic">✓</span><div>${L('Datos traídos de tu nube. Desbloquea con la contraseña maestra de tu otro dispositivo.','Data brought from your cloud. Unlock with your other device\'s master password.')}</div></div>`:'';
+    box(`<h2>${L('Desbloquear','Unlock')}</h2>${jn}${hasPk&&!jn?`<button class="pri" id="gPk" style="width:100%">${L('Usar huella / passkey','Use fingerprint / passkey')}</button><div class="muted" style="text-align:center;margin:10px 0">${L('o','or')}</div>`:''}
       <label class="f">${L('Contraseña maestra','Master password')}<input type="password" id="gP" autocomplete="current-password"></label>
-      <button class="${hasPk?'':'pri'}" id="gGo" style="width:100%">${L('Desbloquear','Unlock')}</button>
+      <button class="${hasPk&&!jn?'':'pri'}" id="gGo" style="width:100%">${L('Desbloquear','Unlock')}</button>
       <div id="gMsg" class="neg" style="margin-top:8px;min-height:1em"></div>
       <p style="margin-top:14px"><a href="#" id="gRec">${L('Usar la clave de recuperación','Use the recovery key')}</a></p>`);
     const fail=m=>{ $('#gMsg').textContent=m; };
-    if(hasPk){ const tryPk=async(auto)=>{ try{ await unlockWithPasskey(); enterApp(); }catch(e){ if(!auto) fail(e.name==='NotAllowedError'?cancelled:e.message); } }; $('#gPk').onclick=()=>tryPk(false); if(!extra&&!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) setTimeout(()=>tryPk(true),300); }
+    if(hasPk&&!jn){ const tryPk=async(auto)=>{ try{ await unlockWithPasskey(); enterApp(); }catch(e){ if(!auto) fail(e.name==='NotAllowedError'?cancelled:e.message); } }; $('#gPk').onclick=()=>tryPk(false); if(!extra&&!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) setTimeout(()=>tryPk(true),300); }
     const go=async()=>{ $('#gGo').disabled=true; $('#gGo').textContent=L('Comprobando…','Checking…'); try{ await unlockWithPassword($('#gP').value); enterApp(); }catch(e){ fail(L('Contraseña incorrecta','Wrong password')); $('#gGo').disabled=false; $('#gGo').textContent=L('Desbloquear','Unlock'); } };
     $('#gGo').onclick=go; $('#gP').onkeydown=e=>{ if(e.key==='Enter') go(); };
     $('#gRec').onclick=e=>{ e.preventDefault(); showGate('recover'); };
@@ -2961,7 +2970,7 @@ function showGate(mode,extra){
       try{ await unlockWithRecovery($('#gR').value); await setPassword(a); const rec=await newRecovery(); showGate('recovery',rec); }catch(e){ $('#gMsg').textContent=L('Clave de recuperación incorrecta','Wrong recovery key'); } };
   }
 }
-function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); if(first&&!location.hash) location.hash='#resumen'; route(); if(first) setTimeout(()=>openModal(`<h2>${L('Todo listo','All set')}</h2><p>${L('Tus datos se guardan cifrados en este dispositivo.','Your data is stored encrypted on this device.')}</p><ul><li>${L('Toca el icono <b>i</b> azul de cada sección para ver qué es y cómo usarla, o abre el <b>Manual</b>.','Tap the blue <b>i</b> icon on each section to see what it is and how to use it, or open the <b>Manual</b>.')}</li><li>${L('Si vienes de la versión de claude.ai: <b>Copia y ajustes → Restaurar copia</b>.','If you come from the claude.ai version: <b>Backup & settings → Restore backup</b>.')}</li><li>${L('Haz copias cifradas de vez en cuando y guárdalas en Dropbox.','Make encrypted backups now and then and keep them in Dropbox.')}</li><li>${L('Para usar Claude, pega tu clave de API en <b>Copia y ajustes</b> (opcional).','To use Claude, paste your API key in <b>Backup & settings</b> (optional).')}</li></ul><div class="row"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`)||($('#mc').onclick=closeModal),200); }
+function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); if(typeof syncAfterUnlock==='function') setTimeout(syncAfterUnlock,0); if(first&&!location.hash) location.hash='#resumen'; route(); if(first) setTimeout(()=>openModal(`<h2>${L('Todo listo','All set')}</h2><p>${L('Tus datos se guardan cifrados en este dispositivo.','Your data is stored encrypted on this device.')}</p><ul><li>${L('Toca el icono <b>i</b> azul de cada sección para ver qué es y cómo usarla, o abre el <b>Manual</b>.','Tap the blue <b>i</b> icon on each section to see what it is and how to use it, or open the <b>Manual</b>.')}</li><li>${L('Si vienes de la versión de claude.ai: <b>Copia y ajustes → Restaurar copia</b>.','If you come from the claude.ai version: <b>Backup & settings → Restore backup</b>.')}</li><li>${L('Haz copias cifradas de vez en cuando y guárdalas en Dropbox.','Make encrypted backups now and then and keep them in Dropbox.')}</li><li>${L('Para usar Claude, pega tu clave de API en <b>Copia y ajustes</b> (opcional).','To use Claude, paste your API key in <b>Backup & settings</b> (optional).')}</li></ul><div class="row"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`)||($('#mc').onclick=closeModal),200); }
 /* ---------- Claude con la clave del usuario ---------- */
 const MODELS={quick:'claude-haiku-5-5',default:'claude-sonnet-5-5',complex:'claude-opus-5-5'};
 function parseJSONLoose(t){ const s=String(t||'').replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,''); const a=s.indexOf('{'), b=s.lastIndexOf('}'); return JSON.parse(a>=0?s.slice(a,b+1):s); }
@@ -2996,7 +3005,10 @@ function downloadFile(name,text,type='application/json'){ try{ const a=document.
   let stored=null; try{ stored=localStorage.getItem('mfz-lang'); }catch(e){}
   if(VAULT.meta&&!stored) LANG='es';
   applyStatic();
-  showGate(VAULT.meta?'unlock':'setup');
+  if(document.readyState==='loading') await new Promise(r=>document.addEventListener('DOMContentLoaded',r,{once:true})); // sync.js ya cargado
+  if(typeof syncBoot==='function') await syncBoot();
+  $('#syncBtn').onclick=()=>{ if(S&&typeof syncBtnClick==='function') syncBtnClick(); };
+  showGate(VAULT.meta?'unlock':'setup',typeof SYNC!=='undefined'&&SYNC.joinNote?true:undefined);
   if('serviceWorker' in navigator){ try{ const reg=await navigator.serviceWorker.register('sw.js');
     const ready=w=>{ $('#updBar').style.display='flex'; $('#updGo').onclick=()=>{ persist().finally(()=>w.postMessage('skipWaiting')); }; };
     if(reg.waiting&&navigator.serviceWorker.controller) ready(reg.waiting);
