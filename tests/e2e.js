@@ -232,6 +232,8 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   const nAcc=await pg.evaluate(()=>S.accounts.length);
   await pg.setInputFiles('#fAll',['bofa_card_aug.pdf','bofa_card_sep.pdf','bofa_checking.pdf','bofa_savings.pdf','m1_cash.pdf','empower_q3.pdf','wf_mortgage.pdf'].map(fx).concat([{name:'copia.pdf',mimeType:'application/pdf',buffer:fs.readFileSync(path.join(FX,'wf_mortgage.pdf'))}]));
   await pg.waitForFunction(()=>BATCH&&!BATCH.running&&BATCH.res.length===8,null,{timeout:60000}); await pg.waitForTimeout(200);
+  { const asked=await pg.evaluate(()=>!!document.querySelector('#modal #kPr')&&$('#kPr').value==='__new'); await pg.fill('#kPnN','Casa Lote Prueba'); await pg.uncheck('#kPnR'); await pg.fill('#kPnV','900000'); await pg.click('#kOk'); await pg.waitForTimeout(150);
+    ok(asked&&await pg.evaluate(()=>{ const m=acc(BATCH.res.find(r=>r.name==='wf_mortgage.pdf').acc); const p=propOf(m); return !!p&&!p.rental&&lastSnap(p.id).value===900000; }),'al importar una hipoteca nueva pregunta de qué inmueble es y lo crea'); }
   const rb=await pg.evaluate(()=>{ const by=n=>BATCH.res.find(r=>r.name===n); const A=n=>{const r=by(n);return r&&r.acc?acc(r.acc):null;}; const R=reconcile();
     return {st:BATCH.res.map(r=>r.status).join(','),created:BATCH.res.filter(r=>r.created).length,card:A('bofa_card_sep.pdf'),same:A('bofa_card_aug.pdf')&&A('bofa_card_aug.pdf').id===A('bofa_card_sep.pdf').id,
       chk:A('bofa_checking.pdf'),sav:A('bofa_savings.pdf'),m1:A('m1_cash.pdf'),emp:A('empower_q3.pdf'),wf:A('wf_mortgage.pdf'),dupSkip:by('copia.pdf').status==='skip',
@@ -239,7 +241,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
       payRec:S.tx.some(t=>t.acc===A('bofa_checking.pdf').id&&t.amount===-2000&&t.rec&&t.rec.type==='card'),xfer:S.tx.some(t=>t.acc===A('bofa_checking.pdf').id&&t.amount===-1500&&t.rec&&t.rec.type==='xfer'),
       mort:S.tx.some(t=>t.acc===A('bofa_checking.pdf').id&&t.amount===-3000&&t.rec&&t.rec.type==='mortgage'),
       bal:R.issues.filter(i=>/^bal:/.test(i.key)&&[A('bofa_card_sep.pdf').id,A('bofa_checking.pdf').id].some(id=>i.t.includes(acc(id).name))).length,n:S.accounts.length}; });
-  ok(rb.st==='ok,ok,ok,ok,ok,ok,ok,skip'&&rb.created===6&&rb.n===nAcc+6&&rb.same&&rb.dupSkip,'extractos reales: crea cada cuenta una vez y salta el archivo repetido ('+rb.st+')');
+  ok(rb.st==='ok,ok,ok,ok,ok,ok,ok,skip'&&rb.created===6&&rb.n===nAcc+7&&rb.same&&rb.dupSkip,'extractos reales: crea cada cuenta una vez y salta el archivo repetido ('+rb.st+')');
   ok(rb.card.kind==='credit'&&rb.card.last4==='4321'&&/BofA Visa Signature ···4321/.test(rb.card.name)&&rb.chk.kind==='cash'&&rb.chk.last4==='9876'&&rb.sav.kind==='cash'&&rb.m1.kind==='cash'&&rb.m1.last4==='7777'&&rb.emp.kind==='retirement'&&rb.wf.kind==='mortgage'&&rb.wf.payment===2500&&rb.wf.escrow===500,
     'tipo, nombre y últimos 4 dígitos de cada cuenta ('+[rb.card.name,rb.chk.name,rb.sav.name,rb.m1.name,rb.emp.name,rb.wf.name].join(' | ')+')');
   ok(rb.cardTx==='2026-07-21 -2000,2026-08-06 -250,2026-08-11 -1000,2026-08-20 2000'&&rb.cardBal===1250&&rb.bal===0,'tarjeta: fecha de anotación, importe en la línea siguiente y saldo que cuadra ('+rb.cardTx+')');
@@ -324,6 +326,20 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   ok(await pg.evaluate(()=>{ const d=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10); S.accounts.push({id:'hpX',kind:'property',name:'Casa Prueba Valor'}); S.snapshots.push({id:'hpS',acc:'hpX',date:d(60),value:500000});
     const has=re=>computeAlerts().some(x=>re.test(x.key)&&/Casa Prueba Valor/.test(x.t)); const r1=!has(/^stale:/)&&!has(/^val:/);
     S.snapshots.find(x=>x.id==='hpS').date=d(400); const r2=has(/^val:/)&&!has(/^stale:/); deleteAccount('hpX'); return r1&&r2; }),'una casa no pide el saldo cada mes, solo revisar su valor una vez al año');
+  // Hipoteca ↔ inmueble: no puede quedar una hipoteca suelta
+  await pg.evaluate(()=>{ closeModal(); S.accounts.push({id:'hpA',kind:'property',name:'Piso Alquiler Prueba',rental:true}); editAccount(null,'mortgage'); });
+  await pg.selectOption('#xPr','__new'); await pg.fill('#eN','Hipoteca Prueba H'); await pg.fill('#xPnN','Casa Prueba H'); await pg.fill('#xPnV','650000'); await pg.uncheck('#xPnR'); await pg.fill('#xR','6'); await pg.fill('#xP','2000'); await pg.fill('#eB','400000'); await pg.click('#eOk');
+  const hp1=await pg.evaluate(()=>{ const m=S.accounts.find(a=>a.name==='Hipoteca Prueba H'), p=m&&propOf(m); return {ok:!!p&&p.name==='Casa Prueba H'&&!p.rental&&lastSnap(p.id).value===650000, mid:m&&m.id, pid:p&&p.id}; });
+  ok(hp1.ok,'una hipoteca nueva pide su inmueble y puede crearlo en el momento (nombre, valor, vivienda)');
+  await pg.evaluate(()=>{ S.accounts.push({id:'hpM',kind:'mortgage',name:'Hipoteca Suelta Prueba',rate:5,payment:1500}); S.snapshots.push({id:'hpMs',acc:'hpM',date:today(),value:300000}); goAlert(computeAlerts().find(x=>x.key==='mprop:hpM').go); });
+  await pg.waitForSelector('#kPr'); await pg.selectOption('#kPr','hpA'); await pg.click('#kOk'); await pg.waitForTimeout(150);
+  ok(await pg.evaluate(()=>acc('hpM').propertyId==='hpA'&&!computeAlerts().some(x=>x.key==='mprop:hpM')&&isRentalMortgage(acc('hpM'))),'una hipoteca suelta avisa y se une a su inmueble desde el aviso (y cuenta como alquiler)');
+  await pg.evaluate(id=>accountSheet(id),hp1.pid); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(()=>/Hipoteca Prueba H/.test($('#modal .plink').textContent)&&/250,000/.test($('#modal .plink').textContent)),'la ficha del inmueble muestra su hipoteca y el capital propio');
+  await pg.evaluate(()=>{ closeModal(); editAccount('hpA'); }); await pg.click('#eDel'); await pg.waitForTimeout(100);
+  const delTxt=await pg.$eval('#modal',e=>e.textContent); await pg.click('#dOk'); await pg.waitForTimeout(100);
+  ok(/Hipoteca Suelta Prueba/.test(delTxt)&&await pg.evaluate(()=>!acc('hpA')&&!acc('hpM')&&!S.snapshots.some(x=>x.acc==='hpM')),'al borrar un inmueble se borra también su hipoteca (y lo avisa antes)');
+  await pg.evaluate(ids=>{ deleteAccount(ids.mid); deleteAccount(ids.pid); save(); },hp1);
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;

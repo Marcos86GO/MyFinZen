@@ -546,6 +546,7 @@ function computeAlerts(){
   const slowStale=S.accounts.filter(a=>{ if(!SLOW.has(a.kind)) return false; const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>365;});
   if(slowStale.length) A.push({lvl:'info',key:'val:'+hashKey(slowStale.map(a=>a.id+(lastSnap(a.id)||{}).date).join()),go:slowStale.length===1?{h:'cuentas',acc:slowStale[0].id}:{h:'cuentas'},t:`<b>${L('Valor por revisar (una vez al año):','Value to review (once a year):')}</b> ${slowStale.slice(0,4).map(a=>esc(a.name)).join(', ')}${slowStale.length>4?L(` y ${slowStale.length-4} más`,` and ${slowStale.length-4} more`):''}. ${L('Pon lo que valdría hoy; cuenta en tu patrimonio.','Enter what it would be worth today; it counts in your net worth.')}`});
   if(stale.length) A.push({lvl:'warn',key:'stale:'+hashKey(stale.map(a=>a.id).join()),go:stale.length===1?{h:'cuentas',acc:stale[0].id}:{h:'cuentas'},t:`<b>${L('Saldos por actualizar:','Balances to update:')}</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?L(` y ${stale.length-4} más`,` and ${stale.length-4} more`):''}.`});
+  orphanMorts().forEach(m=>A.push({lvl:'warn',key:'mprop:'+m.id,go:{h:'hipotecas',link:m.id},t:`<b>${L('Hipoteca sin inmueble:','Mortgage without a property:')}</b> ${esc(m.name)}. ${L('Toca para decir de qué casa es.','Tap to say which home it is for.')}`}));
   // conciliación entre cuentas
   const RC=lastRec(); const rn=RC?RC.issues.filter(i=>i.lvl!=='info'):[];
   if(rn.length) A.push({lvl:rn.some(i=>i.lvl==='crit')?'crit':'warn',key:'rec:'+hashKey(rn.map(i=>i.key).join()),go:{h:'flujo',el:'recBox'},t:L(`<b>Conciliación: ${rn.length} diferencia${rn.length>1?'s':''} entre tus cuentas.</b> Revísala${rn.length>1?'s':''} en <a href="#flujo">Movimientos</a>.`,`<b>Reconciliation: ${rn.length} difference${rn.length>1?'s':''} between your accounts.</b> Review ${rn.length>1?'them':'it'} in <a href="#flujo">Transactions</a>.`)});
@@ -576,7 +577,7 @@ function computeAlerts(){
 function alertsHTML(A){ const IC={good:'✓',warn:'!',crit:'!',info:'i'}; return A.map((a,i)=>`<div class="alert ${a.lvl}${a.go?' act':''}"><span class="ic">${IC[a.lvl]}</span>${a.go?`<button class="ab" data-ago="${i}"><span>${a.t.replace(/<\/?a\b[^>]*>/g,'')}</span>${ic('right','chev')}</button>`:`<div style="flex:1">${a.t}</div>`}${a.key?`<button class="ax" data-aign="${esc(a.key)}" title="${L('Ignorar','Ignore')}" aria-label="${L('Ignorar este aviso','Ignore this alert')}">${ic('close')}</button>`:''}</div>`).join(''); }
 function goAlert(go){ if(!go) return;
   if(go.h==='flujo'){ flujoFilter.month=go.month||'all'; flujoFilter.cat=go.cat||'all'; flujoFilter.q=''; flujoFilter.limit=200; }
-  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.el){ const e=document.getElementById(go.el); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); } };
+  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.link&&acc(go.link)) linkPropModal(go.link); if(go.el){ const e=document.getElementById(go.el); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); } };
   if(location.hash==='#'+go.h) route(); else { location.hash='#'+go.h; } setTimeout(after,60); }
 function wireAlerts(root,A,refresh){
   root.querySelectorAll('[data-ago]').forEach(b=>b.onclick=()=>goAlert(A[+b.dataset.ago].go));
@@ -823,7 +824,8 @@ function renderMortgage(m){
   const dn=base.n-curr.n;
   const nSin=L('Sin extra','No extra'), nAct=L('Extra actual','Current extra'), nSim=L('Simulado','Simulated');
   box.innerHTML=`${helpBtn('mortgage')}
-   <div class="row" style="align-items:flex-start"><div><h2>${esc(m.name)}</h2><p class="sub">${esc(m.institution||'')}${prop?' · '+esc(prop.name):''} · ${L('saldo a','balance as of')} ${snap?dLabel(snap.date):'—'}</p></div><button class="sm" data-edit="${m.id}">${L('Editar','Edit')}</button></div>
+   <div class="row" style="align-items:flex-start"><div><h2>${esc(m.name)}</h2><p class="sub">${esc(m.institution||'')} · ${L('saldo a','balance as of')} ${snap?dLabel(snap.date):'—'}</p></div><button class="sm" data-edit="${m.id}">${L('Editar','Edit')}</button></div>
+   ${propLinkHTML(m)}
    <div class="grid g4">
      <div class="stat"><div class="lbl">${L('Saldo pendiente','Outstanding balance')}</div><div class="val">${fmt(bal)}</div><div class="note">${rate}% ${L('fijo','fixed')}</div></div>
      <div class="stat"><div class="lbl">${L('Cuota (capital + intereses)','Payment (principal + interest)')}</div><div class="val">${fmt(pay,2)}</div><div class="note">+ ${fmt(extra,2)} ${L('extra al mes','extra per month')}</div></div>
@@ -841,7 +843,7 @@ function renderMortgage(m){
   const sd=new Date(start+'T12:00:00'); const lab=idx.map(i=>String(sd.getFullYear()+Math.floor((sd.getMonth()+i)/12)));
   const pick=(r)=>idx.map(i=>i<r.pts.length?r.pts[i].b:0);
   lineChart(box.querySelector('.mchart'),{labels:lab,zero:true,series:[{name:nSin,color:'var(--muted)',values:pick(base),dash:true},{name:nAct,color:'var(--s1)',values:pick(curr)},{name:nSim,color:'var(--s2)',values:pick(alt)}]});
-  box.querySelector('[data-edit]').onclick=()=>editAccount(m.id);
+  box.querySelector('[data-edit]').onclick=()=>editAccount(m.id); wirePropLinks(box);
   const r=box.querySelector('[data-sim]'); r.oninput=()=>{ extraSim[m.id]=+r.value; renderMortgage(m); const nr=$('#m_'+m.id).querySelector('[data-sim]'); nr.focus(); };
 }
 
@@ -1296,10 +1298,45 @@ VIEWS.cuentas=(el)=>{
   el.querySelectorAll('[data-acc]').forEach(b=>b.onclick=()=>accountSheet(b.dataset.acc));
 };
 // Ficha de una cuenta: saldo, últimos movimientos y acciones
+/* ---------- Hipoteca ↔ inmueble ----------
+   Toda hipoteca va unida a un inmueble (vivienda o alquiler). Selector común con "+ Inmueble nuevo"
+   (nombre, valor estimado, alquilada) para la ficha, la revisión del extracto y el aviso. */
+const propOf=m=>{ const p=m&&m.propertyId?acc(m.propertyId):null; return p&&p.kind==='property'?p:null; };
+const mortsOf=pid=>S.accounts.filter(x=>x.kind==='mortgage'&&x.propertyId===pid);
+const orphanMorts=()=>S.accounts.filter(a=>a.kind==='mortgage'&&!propOf(a));
+function propGuess(m){ if(propOf(m)) return m.propertyId; const props=S.accounts.filter(a=>a.kind==='property');
+  const free=props.filter(p=>!S.accounts.some(x=>x.kind==='mortgage'&&x!==m&&x.propertyId===p.id));
+  return free.length===1?free[0].id:free.length?'':'__new'; }
+function propPickHTML(p,sel){ const props=S.accounts.filter(a=>a.kind==='property'); const home=!props.some(x=>!x.rental);
+  return `<label class="f">${L('Inmueble de esta hipoteca','Property for this mortgage')}<select id="${p}Pr">${sel===''?`<option value="" selected disabled>${L('Elige el inmueble…','Choose the property…')}</option>`:''}${props.map(x=>`<option value="${esc(x.id)}" ${sel===x.id?'selected':''}>${esc(x.name)}${x.rental?L(' (alquiler)',' (rental)'):''}</option>`).join('')}<option value="__new" ${sel==='__new'?'selected':''}>${L('+ Inmueble nuevo','+ New property')}</option></select></label>
+   <div id="${p}PrNew" ${sel==='__new'?'':'hidden'}><div class="row"><label class="f">${L('Nombre del inmueble','Property name')}<input id="${p}PnN" value="${esc(home?L('Vivienda habitual','Home'):'')}" placeholder="${L('Casa en alquiler','Rental house')}"></label><label class="f">${L('Valor estimado hoy (opcional)','Estimated value today (optional)')}<input id="${p}PnV" inputmode="decimal"></label></div>
+   <label class="f" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="${p}PnR" style="width:auto" ${home?'':'checked'}> ${L('La tengo alquilada','I rent it out')}</label></div>`; }
+function propPickWire(p){ const s=$('#'+p+'Pr'); if(s) s.onchange=()=>{ $('#'+p+'PrNew').hidden=s.value!=='__new'; }; }
+function propPickRead(p){ const s=$('#'+p+'Pr'); const v=s?s.value:''; if(!v){ toast(L('Elige el inmueble de la hipoteca','Choose the mortgage\'s property')); if(s) s.focus(); return null; }
+  if(v!=='__new') return acc(v)?v:null;
+  const o={id:uid(),kind:'property',name:$('#'+p+'PnN').value.trim()||($('#'+p+'PnR').checked?L('Casa en alquiler','Rental house'):L('Vivienda habitual','Home')),institution:'',rental:$('#'+p+'PnR').checked}; S.accounts.push(o);
+  const val=num($('#'+p+'PnV').value); if(!isNaN(val)&&val>0) S.snapshots.push({id:uid(),acc:o.id,date:today(),value:val}); return o.id; }
+function linkPropModal(mid,after){ const m=acc(mid); if(!m||m.kind!=='mortgage') return;
+  openModal(`<h2>${L('¿De qué inmueble es esta hipoteca?','Which property is this mortgage for?')}</h2><p class="muted">${esc(m.name)}${m.institution?' · '+esc(m.institution):''}. ${L('Cada hipoteca va unida a su casa: así ves el capital que tienes en ella y los impuestos usan el inmueble correcto (vivienda o alquiler).','Every mortgage goes with its home: that way you see your equity in it and taxes use the right property (home or rental).')}</p>
+   ${propPickHTML('k',propGuess(m))}<div class="row" style="margin-top:12px"><button id="mc">${L('Más tarde','Later')}</button><button class="pri" id="kOk">${L('Guardar','Save')}</button></div>`);
+  propPickWire('k'); $('#mc').onclick=closeModal;
+  $('#kOk').onclick=()=>{ const pid=propPickRead('k'); if(!pid) return; m.propertyId=pid; save(); closeModal(); toast(L('Hipoteca unida a ','Mortgage linked to ')+acc(pid).name); if(after) after(); else route(); }; }
+function propLinkHTML(a){
+  if(a.kind==='mortgage'){ const p=propOf(a);
+    const pv=p?(lastSnap(p.id)||{}).value:0, owe=p?mortsOf(p.id).reduce((t,x)=>t+(balanceOf(x)||0),0):0;
+    return p?`<div class="plink">${ic('house')}<span>${L('Inmueble','Property')}: <b>${esc(p.name)}</b>${pv>0?` · ${L('vale','worth')} ${fmtK(pv)} · ${L('capital propio','equity')} <b>${fmtK(pv-owe)}</b>`:''}</span><button class="sm" data-plink="${esc(a.id)}">${L('Cambiar','Change')}</button></div>`
+      :`<div class="alert warn plink"><span>${L('Esta hipoteca no está unida a ningún inmueble.','This mortgage isn\'t linked to any property.')}</span><button class="sm pri" data-plink="${esc(a.id)}">${L('Elegir inmueble','Choose property')}</button></div>`; }
+  if(a.kind==='property'){ const ms=mortsOf(a.id); const val=(lastSnap(a.id)||{}).value; const owe=ms.reduce((t,m)=>t+(balanceOf(m)||0),0);
+    return ms.length?`<div class="plink">${ic('house')}<span>${L('Hipoteca','Mortgage')}: <b>${ms.map(m=>esc(m.name)).join(', ')}</b>${val>0?` · ${L('capital propio','equity')} <b>${fmt(val-owe)}</b>`:''}</span></div>`
+      :`<div class="plink">${ic('house')}<span class="muted">${L('Sin hipoteca','No mortgage')}</span><button class="sm" data-pmort="${esc(a.id)}">${L('+ Añadir su hipoteca','+ Add its mortgage')}</button></div>`; }
+  return ''; }
+function wirePropLinks(root,after){ root.querySelectorAll('[data-plink]').forEach(b=>b.onclick=()=>linkPropModal(b.dataset.plink,after));
+  root.querySelectorAll('[data-pmort]').forEach(b=>b.onclick=()=>editAccount(null,'mortgage',{propertyId:b.dataset.pmort})); }
 function accountSheet(id){ const a=acc(id); if(!a) return; const s=lastSnap(a.id);
   const recent=S.tx.filter(t=>t.acc===id).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,5);
   openModal(`<div class="sheet-head">${accAv(a)}<div style="min-width:0"><h2 style="overflow-wrap:anywhere">${esc(a.name)}</h2><div class="muted">${KINDS[a.kind].label}${a.institution?' · '+esc(a.institution):''}${a.last4?' · ···'+esc(a.last4):''}</div></div></div>
     <div class="sheet-big">${s?fmt(s.value,2):'—'}</div><div class="muted">${s?L('Saldo del ','Balance on ')+dLabel(s.date):L('Sin saldo todavía','No balance yet')}</div>
+    ${propLinkHTML(a)}
     <div class="actgrid">${a.kind==='property'?'':`<button data-imp="${esc(a.id)}">${ic('upload')}${L('Importar','Import')}</button>`}<button data-snap="${esc(a.id)}">${ic('refresh')}${L('Actualizar saldo','Update balance')}</button><button data-edit="${esc(a.id)}">${ic('edit')}${L('Editar','Edit')}</button><button data-hist="${esc(a.id)}">${ic('clock')}${L('Historial','History')}</button></div>
     ${recent.length?`<h3 class="sec" style="margin-top:4px">${L('Últimos movimientos','Latest transactions')}</h3><div class="list" style="margin:0 -20px">${recent.map(t=>txRow(t,true)).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button id="mc">${L('Cerrar','Close')}</button></div>`);
@@ -1308,6 +1345,7 @@ function accountSheet(id){ const a=acc(id); if(!a) return; const s=lastSnap(a.id
   const imp=m.querySelector('[data-imp]'); if(imp) imp.onclick=()=>{ closeModal(); const f=$('#fAcc'); if(f){ f.dataset.target=id; f.click(); } };
   m.querySelector('[data-snap]').onclick=()=>addSnapshot(id); m.querySelector('[data-edit]').onclick=()=>editAccount(id); m.querySelector('[data-hist]').onclick=()=>showHistory(id);
   m.querySelectorAll('[data-tx]').forEach(b=>b.onclick=()=>txSheet(b.dataset.tx));
+  wirePropLinks(m,()=>{ route(); accountSheet(id); });
 }
 // Alta de cuenta: la misma hoja que el botón + (primero desde un extracto; a mano solo si no hay documento).
 function addAccountModal(){ addSheet({account:true}); }
@@ -1324,22 +1362,25 @@ function editAccount(id, kind='cash', preset={}){
    <div id="eExtra"></div>
    <div class="row" style="margin-top:12px">${id?`<button class="dan" id="eDel">${L('Borrar','Delete')}</button>`:''}<button id="mc">${L('Cancelar','Cancel')}</button><button class="pri" id="eOk">${L('Guardar','Save')}</button></div>`);
   const extra=()=>{ const kk=$('#eK').value; let h='';
-    if(kk==='mortgage') h=`<div class="row"><label class="f">${L('Tipo de interés %','Interest rate %')}<input id="xR" inputmode="decimal" value="${a.rate??''}"></label><label class="f">${L('Cuota capital+intereses','Principal + interest payment')}<input id="xP" inputmode="decimal" value="${a.payment??''}"></label></div><div class="row"><label class="f">${L('Principal extra mensual','Monthly extra principal')}<input id="xE" inputmode="decimal" value="${a.extra??0}"></label><label class="f">${L('Escrow mensual (si lo hay)','Monthly escrow (if any)')}<input id="xS" inputmode="decimal" value="${a.escrow??0}"></label></div><label class="f">${L('Inmueble asociado','Linked property')}<select id="xPr"><option value="">—</option>${props.map(p=>`<option value="${p.id}" ${a.propertyId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>${ck('xPre',a.pre2017,L('Préstamo firmado antes del 16/12/2017 (límite de deducción $1M)','Loan taken out before 12/16/2017 ($1M deduction limit)'))}`;
+    if(kk==='mortgage') h=`<div class="row"><label class="f">${L('Tipo de interés %','Interest rate %')}<input id="xR" inputmode="decimal" value="${a.rate??''}"></label><label class="f">${L('Cuota capital+intereses','Principal + interest payment')}<input id="xP" inputmode="decimal" value="${a.payment??''}"></label></div><div class="row"><label class="f">${L('Principal extra mensual','Monthly extra principal')}<input id="xE" inputmode="decimal" value="${a.extra??0}"></label><label class="f">${L('Escrow mensual (si lo hay)','Monthly escrow (if any)')}<input id="xS" inputmode="decimal" value="${a.escrow??0}"></label></div>${propPickHTML('x',a.propertyId&&propOf(a)?a.propertyId:propGuess(a))}${ck('xPre',a.pre2017,L('Préstamo firmado antes del 16/12/2017 (límite de deducción $1M)','Loan taken out before 12/16/2017 ($1M deduction limit)'))}`;
     if(kk==='property') h=`${ck('xRent',a.rental,L('La tengo alquilada','I rent it out'))}<div class="row"><label class="f">${L('Renta mensual','Monthly rent')}<input id="xRn" inputmode="decimal" value="${a.rent??''}"></label><label class="f">${L('HOA mensual','Monthly HOA')}<input id="xH" inputmode="decimal" value="${a.hoa??''}"></label></div><div class="row"><label class="f">${L('Impuestos propiedad / año','Property tax / year')}<input id="xT" inputmode="decimal" value="${a.taxYear??''}"></label><label class="f">${L('Seguro / año','Insurance / year')}<input id="xIn" inputmode="decimal" value="${a.insYear??''}"></label></div><div class="row"><label class="f">${L('Mantenimiento / mes (reserva)','Maintenance / month (reserve)')}<input id="xM" inputmode="decimal" value="${a.maint??''}"></label><label class="f">${L('Otros gastos / mes','Other costs / month')}<input id="xO" inputmode="decimal" value="${a.otherMonthly??''}"></label></div><div class="row"><label class="f">${L('Valor de la construcción, sin terreno (para impuestos)','Building value, without land (for taxes)')}<input id="xBB" inputmode="decimal" value="${a.buildingBasis??''}"></label><label class="f">${L('Año en que empezaste a alquilarla','Year you started renting it out')}<input id="xIS" inputmode="numeric" value="${a.inService??''}"></label></div><label class="f">${L('Cuota hipoteca (solo si no la añades como hipoteca)','Mortgage payment (only if you don\'t add it as a mortgage)')}<input id="xMP" inputmode="decimal" value="${a.mortgagePay??''}"></label><p class="muted">${L('El saldo de un inmueble es su valor de mercado estimado.','A property\'s balance is its estimated market value.')}</p>`;
     if(kk==='credit') h=`<label class="f">${L('APR % (opcional)','APR % (optional)')}<input id="xA" inputmode="decimal" value="${a.apr??''}"></label>`;
     if(['brokerage','retirement','kids'].includes(kk)) h=`<label class="f">${L('Total aportado de tu bolsillo (opcional, para ver la ganancia)','Total contributed out of pocket (optional, to see your gain)')}<input id="xC" inputmode="decimal" value="${a.contributed??''}"></label>`;
-    $('#eExtra').innerHTML=h; };
+    $('#eExtra').innerHTML=h; propPickWire('x'); };
   extra(); $('#eK').onchange=extra; $('#mc').onclick=closeModal;
-  if(id) $('#eDel').onclick=()=>{ const n=accountFootprint(id);
+  if(id) $('#eDel').onclick=()=>{ const n=accountFootprint(id); const ms=a.kind==='property'?mortsOf(id):[];
     openModal(`<h2>${L('¿Borrar','Delete')} ${esc(a.name)}?</h2><p>${L('Se borra todo lo que viene de esta cuenta, como si nunca la hubieras importado:','Everything that comes from this account is deleted, as if you had never imported it:')}</p>
       <ul>${[[n.tx,L('movimientos','transactions')],[n.snap,L('saldos','balances')],[n.hold,L('fotos de posiciones','position snapshots')],[n.docs,L('documentos fiscales vinculados','linked tax documents')],[n.imp,L('extractos registrados','registered statements')]].filter(x=>x[0]).map(([k,t])=>`<li><b>${k}</b> ${t}</li>`).join('')}${n.contrib?`<li>${L('aportaciones y fondos de la cuenta','the account\'s contributions and funds')}</li>`:''}</ul>
+      ${ms.length?`<div class="alert warn">${L('También se borra su hipoteca','Its mortgage is deleted too')} (<b>${ms.map(m=>esc(m.name)).join(', ')}</b>): ${L('una hipoteca siempre va con su inmueble. Si solo quieres pasarla a otro inmueble, edita la hipoteca.','a mortgage always goes with its property. If you only want to move it to another property, edit the mortgage.')}</div>`:''}
       <p class="muted">${L('Los pagos y transferencias de otras cuentas que se emparejaban con ella vuelven a su categoría. No se puede deshacer, salvo restaurando una copia.','Payments and transfers in other accounts that were matched with it go back to their category. This can\'t be undone, except by restoring a backup.')}</p>
       <div class="row"><button id="mc">${L('Cancelar','Cancel')}</button><button class="dan" id="dOk">${L('Borrar todo','Delete everything')}</button></div>`);
-    $('#mc').onclick=closeModal; $('#dOk').onclick=()=>{ deleteAccount(id); save(); closeModal(); toast(L('Cuenta borrada con todos sus datos','Account deleted with all its data')); route(); }; };
+    $('#mc').onclick=closeModal; $('#dOk').onclick=()=>{ ms.forEach(m=>deleteAccount(m.id)); deleteAccount(id); save(); closeModal(); toast(L('Cuenta borrada con todos sus datos','Account deleted with all its data')); route(); }; };
   $('#eOk').onclick=()=>{
     const v=x=>{const e=$(x); if(!e)return undefined; const n=num(e.value); return isNaN(n)?null:n;};
+    if(id&&a.kind==='property'&&$('#eK').value!=='property'&&mortsOf(id).length) return toast(L('Este inmueble tiene una hipoteca: cámbiala antes de inmueble.','This property has a mortgage: move it to another property first.'));
+    let pid=null; if($('#eK').value==='mortgage'){ pid=propPickRead('x'); if(!pid) return; }
     const o=id?a:{id:uid()}; o.kind=$('#eK').value; o.name=$('#eN').value.trim()||KINDS[o.kind].label; o.institution=$('#eI').value.trim(); o.last4=$('#eL').value.replace(/\D/g,'').slice(-4);
-    if(o.kind==='mortgage'){ o.rate=v('#xR'); o.payment=v('#xP'); o.extra=v('#xE')||0; o.escrow=v('#xS')||0; o.propertyId=$('#xPr').value||null; o.pre2017=$('#xPre').checked; }
+    if(o.kind==='mortgage'){ o.rate=v('#xR'); o.payment=v('#xP'); o.extra=v('#xE')||0; o.escrow=v('#xS')||0; o.propertyId=pid; o.pre2017=$('#xPre').checked; }
     if(o.kind==='property'){ o.rental=$('#xRent').checked; o.rent=v('#xRn'); o.hoa=v('#xH'); o.taxYear=v('#xT'); o.insYear=v('#xIn'); o.maint=v('#xM'); o.otherMonthly=v('#xO'); o.mortgagePay=v('#xMP'); o.buildingBasis=v('#xBB'); o.inService=v('#xIS'); }
     if(o.kind==='credit') o.apr=v('#xA');
     if(['brokerage','retirement','kids'].includes(o.kind)) o.contributed=v('#xC');
@@ -1771,13 +1812,15 @@ function renderMortgagePDF(r,name,text){
    <div class="row"><label class="f">${L('Cuota capital+intereses','Principal + interest payment')}<input id="pP" value="${r.pi||''}"></label><label class="f">${L('Principal extra mensual','Monthly extra principal')}<input id="pE" value="${r.extra||0}"></label></div>
    <div class="row"><label class="f">${L('Escrow mensual','Monthly escrow')}<input id="pS" value="${r.escrow||0}"></label><label class="f">${L('Fecha del saldo','Balance date')}<input type="date" id="pD" value="${r.date||today()}"></label></div>
    <div class="row"><label class="f">${L('Guardar en','Save to')}<select id="pAcc">${ms.map(a=>`<option value="${a.id}" ${match&&match.id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}<option value="__new" ${match?'':'selected'}>${L('+ Hipoteca nueva','+ New mortgage')}</option></select></label><label class="f">${L('Nombre (si es nueva)','Name (if new)')}<input id="pN" value="${esc(stmtAccName({institution:r.institution,product:L('Hipoteca','Mortgage'),last4:r.last4}))}"></label></div>
-   <label class="f">${L('Inmueble asociado','Linked property')}<select id="pPr"><option value="">${L('— (casa familiar)','— (family home)')}</option>${props.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+   ${propPickHTML('p',match?propGuess(match):propGuess(null))}
    <div class="row" style="margin-top:6px"><button id="pCancel">${L('Cancelar','Cancel')}</button><button class="pri" id="pOk">${L('Guardar','Save')}</button></div>
    <details style="margin-top:10px"><summary>${L('Ver el texto leído del PDF','See the text read from the PDF')}</summary><pre>${esc(text.slice(0,4000))}</pre></details></div>`;
-  $('#pCancel').onclick=()=>pdfDone('');
+  $('#pCancel').onclick=()=>pdfDone(''); propPickWire('p');
+  $('#pAcc').onchange=()=>{ const mm=acc($('#pAcc').value), sel=$('#pPr'); if(mm&&propOf(mm)&&sel){ sel.value=mm.propertyId; $('#pPrNew').hidden=true; } };
   $('#pOk').onclick=()=>{ const bal=num($('#pB').value); if(isNaN(bal)) return toast(L('Pon el saldo pendiente','Enter the outstanding balance')); let id=$('#pAcc').value; let m;
+    const pid=propPickRead('p'); if(!pid) return;
     if(id==='__new'){ m={id:uid(),kind:'mortgage',name:$('#pN').value.trim()||L('Hipoteca','Mortgage'),institution:r.institution,last4:r.last4}; S.accounts.push(m); } else m=acc(id);
-    if($('#pPr').value) m.propertyId=$('#pPr').value;
+    m.propertyId=pid;
     saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull($('#pR').value),pi:finOrNull($('#pP').value),extra:finOrNull($('#pE').value)||0,escrow:finOrNull($('#pS').value)||0}),bal,isoDate($('#pD').value)||today()); regImport({acc:m.id,kind:'mortgage',date:isoDate($('#pD').value)||today()}); save();
     const R=reconcile(); const mr=R.mort[m.id]; const LP=mr&&mr.last;
     pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Hipoteca guardada.</b> Cuota mensual total ${fmt(mortMonthly(m),2)}${LP?`; último pago encontrado en tus cuentas: ${fmt(-LP.amount,2)} el ${dLabel(LP.date)}`:''}. Mírala en <a href="#hipotecas">Hipotecas</a>.`,`<b>Mortgage saved.</b> Total monthly payment ${fmt(mortMonthly(m),2)}${LP?`; last payment found in your accounts: ${fmt(-LP.amount,2)} on ${dLabel(LP.date)}`:''}. See it in <a href="#hipotecas">Mortgages</a>.`)}</div></div>`); };
@@ -1917,7 +1960,7 @@ async function autoPDF(file){
     if(!m) return {status:'review',kind:'mortgage',msg:L('Hipoteca sin número de préstamo: revísala y elige la cuenta','A mortgage without a loan number: review it and choose the account')+' ('+esc(r.institution||'?')+')'};
     if(isNaN(r.balance)||!r.pi) return {status:'review',kind:'mortgage',msg:L('No encontré el saldo o la cuota','I couldn\'t find the balance or the payment')};
     saveMortgageStatement(m,Object.assign({},r,{rate:finOrNull(r.rate)}),r.balance,r.date||today()); regImport({acc:m.id,kind:'mortgage',date:r.date||today()});
-    return {status:'ok',kind:'mortgage',acc:m.id,bal:r.balance,date:r.date,created}; }
+    return {status:'ok',kind:'mortgage',acc:m.id,bal:r.balance,date:r.date,created,needProp:propOf(m)?null:m.id}; }
   const tf=detectTaxForm(text);
   if(tf){ const yr=taxYearOf(text), ty=taxYear(yr); if(ty.docs.some(d=>d.src===file.name&&d.type===tf)) return {status:'skip',kind:'tax',msg:L('Ya estaba guardado','Already saved')};
     const fields=localTaxFields(tf,text); if(!Object.keys(fields).length) return {status:'review',kind:'tax',msg:L('No encontré las cifras del formulario','I couldn\'t find the form\'s figures')};
@@ -1987,6 +2030,7 @@ async function importBatch(files,opt={}){
     r.file=f; r.name=f.name; BATCH.res.push(r); }
   BATCH.running=false; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch(); renderRoutine();
   if(opt.autoReview&&BATCH.res.length===1&&BATCH.res[0].status==='review'){ const b=$('#batchOut [data-brev="0"]'); if(b) b.click(); }
+  else { const np=BATCH.res.map(r=>r.needProp).filter(id=>id&&acc(id)&&!propOf(acc(id))); if(np.length===1) linkPropModal(np[0],()=>{ renderBatch(); renderRoutine(); }); }
 }
 function renderBatch(){
   const box=$('#batchOut'); if(!box||!BATCH) return; const res=BATCH.res; const n=s=>res.filter(r=>r.status===s).length;
@@ -2000,10 +2044,11 @@ function renderBatch(){
     if(r.msg) parts.push(esc(r.msg)); return parts.join(' · '); };
   const R=BATCH.rec; const nIss=R?R.issues.filter(i=>i.lvl!=='info').length:0;
   box.innerHTML=`<div style="margin-top:12px"><p><b>${L(`${res.length} archivos`,`${res.length} files`)}:</b> ${n('ok')} ${L('guardados','saved')} · ${n('review')} ${L('para revisar','to review')} · ${n('skip')} ${L('sin cambios','unchanged')}${n('error')?` · ${n('error')} ${L('con error','with errors')}`:''}</p>
-    ${res.map((r,i)=>{ const [c,s]=ic[r.status]||ic.error; return `<div class="alert ${c}" style="margin-bottom:6px"><span class="ic">${s}</span><div style="flex:1;min-width:0"><div style="overflow-wrap:anywhere"><b>${esc(r.name)}</b></div><div class="muted">${detail(r)}</div>${r.dupOf?`<button class="sm" style="margin-top:6px" data-bforce="${i}">${L('Importar de nuevo (reemplaza el anterior)','Import again (replaces the previous one)')}</button>`:''}${r.status==='review'?`<button class="sm" style="margin-top:6px" data-brev="${i}">${r.opened?L('Abierto abajo ↓','Opened below ↓'):L('Revisar','Review')}</button>`:''}</div></div>`; }).join('')}
+    ${res.map((r,i)=>{ const [c,s]=ic[r.status]||ic.error; return `<div class="alert ${c}" style="margin-bottom:6px"><span class="ic">${s}</span><div style="flex:1;min-width:0"><div style="overflow-wrap:anywhere"><b>${esc(r.name)}</b></div><div class="muted">${detail(r)}</div>${r.dupOf?`<button class="sm" style="margin-top:6px" data-bforce="${i}">${L('Importar de nuevo (reemplaza el anterior)','Import again (replaces the previous one)')}</button>`:''}${r.needProp&&acc(r.needProp)&&!propOf(acc(r.needProp))?`<button class="sm pri" style="margin-top:6px" data-bprop="${esc(r.needProp)}">${L('¿De qué inmueble es? Elegir','Which property is it for? Choose')}</button>`:''}${r.status==='review'?`<button class="sm" style="margin-top:6px" data-brev="${i}">${r.opened?L('Abierto abajo ↓','Opened below ↓'):L('Revisar','Review')}</button>`:''}</div></div>`; }).join('')}
     ${R?`<p class="muted">${L(`Conciliación: ${R.stats.card+R.stats.xfer} pagos y transferencias emparejados, ${R.stats.mort} cuotas de hipoteca${nIss?`, <b>${nIss} diferencia${nIss>1?'s':''} para revisar</b> en <a href="#flujo">Movimientos</a>`:''}.`,`Reconciliation: ${R.stats.card+R.stats.xfer} payments and transfers matched, ${R.stats.mort} mortgage payments${nIss?`, <b>${nIss} difference${nIss>1?'s':''} to review</b> in <a href="#flujo">Transactions</a>`:''}.`)}</p>`:''}</div>`;
   box.querySelectorAll('[data-bforce]').forEach(b=>b.onclick=async()=>{ const i=+b.dataset.bforce, f=res[i].file; b.disabled=true; let r;
     try{ r=await importOne(f,true); }catch(e){ IMP_CTX=null; r={status:'error',msg:String(e&&e.message||e)}; } r.file=f; r.name=f.name; res[i]=r; save(); const R=reconcile(); if(R.changed) save(); BATCH.rec=R; renderBatch(); renderRoutine(); });
+  box.querySelectorAll('[data-bprop]').forEach(b=>b.onclick=()=>linkPropModal(b.dataset.bprop,()=>{ renderBatch(); renderRoutine(); }));
   box.querySelectorAll('[data-brev]').forEach(b=>b.onclick=()=>{ const r=res[+b.dataset.brev]; r.opened=true; renderBatch(); if(isPdfFile(r.file)){ pdfBusy=false; pdfQueue.length=0; queuePDF(r.file); } else handleCSV(r.file); setTimeout(()=>{ const o=$('#impOut'); if(o) o.scrollIntoView({behavior:'smooth'}); },300); });
 }
 
