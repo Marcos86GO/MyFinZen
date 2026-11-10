@@ -83,11 +83,14 @@ function applyState(next){ const keep=S.secret; S=sanitizeState(Object.assign({}
 function bumpSv(next,rs){ const sv={rev:Math.max((S.sv&&S.sv.rev)||0,(next&&next.sv&&next.sv.rev)||0,(rs&&rs.sv&&rs.sv.rev)||0)+1,dev:devId(),at:new Date().toISOString()}; next.sv=sv; S.sv=sv; return next; }
 
 /* ---------- Proveedores ---------- */
+// Detalle del error que devuelve Dropbox (JSON con error_description/error_summary o texto), sin datos personales
+async function dbxDetail(r){ let t=''; try{ t=await r.text(); }catch(e){} let d=t; try{ const j=JSON.parse(t); d=j.error_description||j.error_summary||(typeof j.error==='string'?j.error:j.error&&j.error['.tag'])||t; }catch(e){}
+  return 'Dropbox HTTP '+r.status+(d?': '+String(d).replace(/\s+/g,' ').slice(0,160):''); }
 const redirectURI=()=>location.origin+location.pathname.replace(/index\.html$/,'');
 async function dbxToken(force){ const sec=(S&&S.secret&&S.secret.sync)||SYNC.pending||{}; if(!sec.rt) throw syncErr('noauth',L('Vuelve a conectar Dropbox','Reconnect Dropbox'));
   if(!force&&SYNC.at&&SYNC.at.exp>Date.now()+60000) return SYNC.at.tok;
   const r=await fetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:sec.rt,client_id:CLOUD.dropbox.key})});
-  if(!r.ok) throw syncErr(r.status===400||r.status===401?'noauth':'net',L('Dropbox no ha aceptado la conexión: vuelve a conectarlo','Dropbox didn\'t accept the connection: reconnect it'));
+  if(!r.ok) throw syncErr(r.status===400||r.status===401?'noauth':'net',L('Dropbox no ha aceptado la conexión: vuelve a conectarlo','Dropbox didn\'t accept the connection: reconnect it')+' ('+await dbxDetail(r)+')');
   const j=await r.json(); if(typeof j.access_token!=='string') throw syncErr('net','Dropbox'); SYNC.at={tok:j.access_token,exp:Date.now()+Math.max(60,Number(j.expires_in)||3600)*1000}; return j.access_token; }
 async function dbxFetch(url,opt){ for(let i=0;i<2;i++){ const tok=await dbxToken(i>0); let r;
     try{ r=await fetch(url,Object.assign({method:'POST'},opt,{headers:Object.assign({Authorization:'Bearer '+tok},opt.headers)})); }catch(e){ throw syncErr('net',L('Sin conexión con Dropbox','No connection to Dropbox')); }
@@ -96,13 +99,13 @@ async function dbxFetch(url,opt){ for(let i=0;i<2;i++){ const tok=await dbxToken
 const PROVIDERS={
   dropbox:{ name:'Dropbox', auto:true,
     async read(){ const r=await dbxFetch('https://content.dropboxapi.com/2/files/download',{headers:{'Dropbox-API-Arg':JSON.stringify({path:DBX_PATH})}});
-      if(r.status===409){ const t=await r.text(); if(/not_found/.test(t)) return null; throw syncErr('net','Dropbox: '+t.slice(0,120)); }
-      if(!r.ok) throw syncErr('net','Dropbox HTTP '+r.status);
+      if(r.status===409){ const t=await r.text(); if(/not_found/.test(t)) return null; throw syncErr('net','Dropbox: '+t.slice(0,160)); }
+      if(!r.ok) throw syncErr('net',await dbxDetail(r));
       let rev=null; try{ rev=JSON.parse(r.headers.get('Dropbox-API-Result')||'{}').rev||null; }catch(e){}
       const text=await r.text(); return {text,rev}; },
     async write(text,rev,force){ const arg={path:DBX_PATH,mode:force?{'.tag':'overwrite'}:rev?{'.tag':'update',update:rev}:{'.tag':'add'},autorename:false,mute:true,strict_conflict:true};
       const r=await dbxFetch('https://content.dropboxapi.com/2/files/upload',{headers:{'Dropbox-API-Arg':JSON.stringify(arg),'Content-Type':'application/octet-stream'},body:text});
-      if(r.status===409) throw syncErr('conflict','conflict'); if(!r.ok) throw syncErr('net','Dropbox HTTP '+r.status); return (await r.json()).rev; } },
+      if(r.status===409) throw syncErr('conflict','conflict'); if(!r.ok) throw syncErr('net',await dbxDetail(r)); return (await r.json()).rev; } },
   file:{ get name(){ return L('Archivo en tu nube','File in your cloud'); }, auto:true,
     async handle(){ if(!SYNC.fh) SYNC.fh=await IDB.get('syncHandle'); if(!SYNC.fh) throw syncErr('noauth',L('Vuelve a elegir el archivo','Choose the file again')); return SYNC.fh; },
     async perm(ask){ const h=await this.handle(); let s=await h.queryPermission({mode:'readwrite'}); if(s!=='granted'&&ask){ try{ s=await h.requestPermission({mode:'readwrite'}); }catch(e){} }
@@ -156,7 +159,7 @@ async function syncBoot(){ const q=new URLSearchParams(location.search); if(!q.h
   const code=q.get('code'), st=q.get('state'); history.replaceState(null,'',location.pathname+(o&&o.mode==='link'?'#ajustes':''));
   if(!o||!code||st!==o.st||Date.now()-o.t>20*60000){ if(o) setTimeout(()=>toast(L('No se pudo conectar Dropbox. Prueba otra vez.','Couldn\'t connect Dropbox. Try again.')),600); return; }
   try{ const r=await fetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',code,client_id:CLOUD.dropbox.key,code_verifier:o.ver,redirect_uri:redirectURI()})});
-    const j=await r.json(); if(!r.ok||typeof j.refresh_token!=='string') throw new Error(j.error_description||('HTTP '+r.status));
+    if(!r.ok) throw new Error(await dbxDetail(r)); const j=await r.json(); if(typeof j.refresh_token!=='string') throw new Error(L('Dropbox no ha dado acceso permanente','Dropbox didn\'t grant offline access'));
     SYNC.pending={p:'dropbox',rt:j.refresh_token.slice(0,400),dev:devId()}; SYNC.at=typeof j.access_token==='string'?{tok:j.access_token,exp:Date.now()+(Number(j.expires_in)||3600)*1000}:null;
     if(o.mode==='join'&&!VAULT.meta){ const rem=await PROVIDERS.dropbox.read(); if(!rem){ SYNC.pending=null; setTimeout(()=>toast(L('No hay datos de MyFinZen en tu Dropbox. Crea tu contraseña aquí o súbelos desde tu otro dispositivo.','There is no MyFinZen data in your Dropbox. Create your password here or upload it from your other device.')),600); return; }
       await joinWith(rem.text); }
