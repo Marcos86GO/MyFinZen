@@ -259,6 +259,7 @@ function sanitizeState(st){
   o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,40),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
   { const sec=obj(o.secret), out={}; if(typeof sec.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(sec.apiKey)) out.apiKey=sec.apiKey;
     const y=obj(sec.sync); if(['dropbox','file','manual'].includes(y.p)){ out.sync={p:y.p,dev:cleanId(y.dev)||uid()}; if(typeof y.rt==='string'&&/^[\w.~+/=-]{8,400}$/.test(y.rt)) out.sync.rt=y.rt; if(typeof y.last==='string'&&!isNaN(Date.parse(y.last))) out.sync.last=y.last.slice(0,30); }
+    if(typeof sec.sk==='string'&&/^[0-9A-Z]{26}$/.test(sec.sk)) out.sk=sec.sk;
     o.secret=out; }
   { const v=obj(o.sv), rev=numStrict(v.rev); if(rev!=null&&rev>=0) o.sv={rev:Math.round(rev),dev:str(v.dev,40),at:str(v.at,30)}; else delete o.sv; }
   o.v=1; o.created=typeof o.created==='string'?o.created:new Date().toISOString();
@@ -588,6 +589,7 @@ function computeAlerts(){
   const slowStale=S.accounts.filter(a=>{ if(!SLOW.has(a.kind)) return false; const s=lastSnap(a.id); return !s || daysBetween(s.date,today())>365;});
   if(slowStale.length) A.push({lvl:'info',key:'val:'+hashKey(slowStale.map(a=>a.id+(lastSnap(a.id)||{}).date).join()),go:slowStale.length===1?{h:'cuentas',acc:slowStale[0].id}:{h:'cuentas'},t:`<b>${L('Valor por revisar (una vez al año):','Value to review (once a year):')}</b> ${slowStale.slice(0,4).map(a=>esc(a.name)).join(', ')}${slowStale.length>4?L(` y ${slowStale.length-4} más`,` and ${slowStale.length-4} more`):''}. ${L('Pon lo que valdría hoy; cuenta en tu patrimonio.','Enter what it would be worth today; it counts in your net worth.')}`});
   if(stale.length) A.push({lvl:'warn',key:'stale:'+hashKey(stale.map(a=>a.id).join()),go:stale.length===1?{h:'cuentas',acc:stale[0].id}:{h:'cuentas'},t:`<b>${L('Saldos por actualizar:','Balances to update:')}</b> ${stale.slice(0,4).map(a=>esc(a.name)).join(', ')}${stale.length>4?L(` y ${stale.length-4} más`,` and ${stale.length-4} more`):''}.`});
+  if(SK_MISS) A.push({lvl:'warn',key:'sk:'+VAULT.meta.skid,go:{h:'ajustes',sk:1},t:`<b>${L('Falta la clave secreta en este dispositivo.','This device is missing the secret key.')}</b> ${L('Añádela para poder entrar aquí con la contraseña.','Add it so you can sign in here with the password.')}`});
   orphanMorts().forEach(m=>A.push({lvl:'warn',key:'mprop:'+m.id,go:{h:'hipotecas',link:m.id},t:`<b>${L('Hipoteca sin inmueble:','Mortgage without a property:')}</b> ${esc(m.name)}. ${L('Toca para decir de qué casa es.','Tap to say which home it is for.')}`}));
   // conciliación entre cuentas
   const RC=lastRec(); const rn=RC?RC.issues.filter(i=>i.lvl!=='info'):[];
@@ -619,7 +621,7 @@ function computeAlerts(){
 function alertsHTML(A){ const IC={good:'✓',warn:'!',crit:'!',info:'i'}; return A.map((a,i)=>`<div class="alert ${a.lvl}${a.go?' act':''}"><span class="ic">${IC[a.lvl]}</span>${a.go?`<button class="ab" data-ago="${i}"><span>${a.t.replace(/<\/?a\b[^>]*>/g,'')}</span>${ic('right','chev')}</button>`:`<div style="flex:1">${a.t}</div>`}${a.key?`<button class="ax" data-aign="${esc(a.key)}" title="${L('Ignorar','Ignore')}" aria-label="${L('Ignorar este aviso','Ignore this alert')}">${ic('close')}</button>`:''}</div>`).join(''); }
 function goAlert(go){ if(!go) return;
   if(go.h==='flujo'){ flujoFilter.month=go.month||'all'; flujoFilter.cat=go.cat||'all'; flujoFilter.q=''; flujoFilter.limit=200; }
-  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.link&&acc(go.link)) linkPropModal(go.link); if(go.el){ const e=document.getElementById(go.el); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); } };
+  const after=()=>{ if(go.acc&&acc(go.acc)) accountSheet(go.acc); if(go.link&&acc(go.link)) linkPropModal(go.link); if(go.sk) skEnterModal(); if(go.el){ const e=document.getElementById(go.el); if(e) window.scrollTo(0,e.getBoundingClientRect().top+window.scrollY-70); } };
   if(location.hash==='#'+go.h) route(); else { location.hash='#'+go.h; } setTimeout(after,60); }
 function wireAlerts(root,A,refresh){
   root.querySelectorAll('[data-ago]').forEach(b=>b.onclick=()=>goAlert(A[+b.dataset.ago].go));
@@ -2810,6 +2812,7 @@ VIEWS.ajustes=(el)=>{
      <p class="sub" style="margin-bottom:6px">${L('Passkeys (huella, cara o PIN):','Passkeys (fingerprint, face or PIN):')}</p>
      ${VAULT.meta.pk.length?`<table><tbody>${VAULT.meta.pk.map((p,i)=>`<tr><td>${esc(p.name)}<div class="muted">${L('creada','created')} ${esc(p.created)}</div></td><td class="n"><button class="sm dan" data-pk="${i}">${L('Quitar','Remove')}</button></td></tr>`).join('')}</tbody></table>`:`<p class="muted">${L('Ninguna en este dispositivo.','None on this device.')}</p>`}
      <div class="row" style="margin-top:8px">${passkeyCapable()?`<button id="sPkAdd">${L('+ Añadir passkey de este dispositivo','+ Add a passkey for this device')}</button>`:''}<button id="sPw">${L('Cambiar contraseña maestra','Change master password')}</button><button id="sRec">${L('Nueva clave de recuperación','New recovery key')}</button></div>
+     ${skSectionHTML()}
      <div id="sSecMsg" class="muted" style="margin-top:6px"></div></div>
    <div class="card">${helpBtn('apikey')}<h2>${L('Claude (opcional)','Claude (optional)')}</h2><p class="sub">${L('Con tu clave de API de Anthropic se activan el análisis, el plan de impuestos y la lectura de PDFs difíciles. La clave se guarda cifrada en este dispositivo y no se incluye en las copias. Créala en console.anthropic.com → API Keys. Se paga por uso.','Your Anthropic API key turns on the analysis, the tax plan and reading difficult PDFs. The key is stored encrypted on this device and is not included in backups. Create it at console.anthropic.com → API Keys. You pay per use.')}</p>
      <label class="f">${L('Clave de API','API key')}<input type="password" id="sKey" autocomplete="off" placeholder="sk-ant-…" value="${S.secret&&S.secret.apiKey?'••••••••••••':''}"></label>
@@ -2818,7 +2821,7 @@ VIEWS.ajustes=(el)=>{
   <div class="spacer"></div>
   <div class="card">${helpBtn('wipe')}<h2>${L('Borrar todo','Delete everything')}</h2><p class="sub">${L('Elimina todos los datos de este dispositivo. Haz antes una copia.','Removes all data from this device. Make a backup first.')}</p><button class="dan" id="wipe">${L('Borrar todos los datos','Delete all data')}</button></div>
   <p class="muted" style="margin-top:14px">${L(`Datos: ${S.accounts.length} cuentas · ${S.snapshots.length} saldos · ${S.tx.length} movimientos.`,`Data: ${S.accounts.length} accounts · ${S.snapshots.length} balances · ${S.tx.length} transactions.`)}</p>`;
-  $('#sLang').onchange=e=>setLang(e.target.value); if(typeof wireSyncCard==='function') wireSyncCard(el);
+  $('#sLang').onchange=e=>setLang(e.target.value); if(typeof wireSyncCard==='function') wireSyncCard(el); wireSK(el);
   const psSet=()=>{ const on=$('#psOn').checked; $('#psDay').disabled=!on; S.settings.payShift=on?+$('#psDay').value:0; S.settings.payShiftAsked=true; save(); toast(on?L('La nómina desde el día ','Paychecks from day ')+$('#psDay').value+L(' cuenta para el mes siguiente',' count for the next month'):L('La nómina cuenta en el mes en que la cobras','Paychecks count in the month you get them')); };
   $('#psOn').onchange=psSet; $('#psDay').onchange=psSet;
   $('#sCats').onclick=()=>manageCats();
@@ -2835,7 +2838,7 @@ VIEWS.ajustes=(el)=>{
   el.querySelectorAll('[data-pk]').forEach(b=>b.onclick=async()=>{ if(await confirmModal(L('¿Quitar passkey?','Remove passkey?'),`<p>${L('Podrás seguir entrando con la contraseña maestra.','You can still sign in with the master password.')}</p>`)){ const gone=VAULT.meta.pk.splice(+b.dataset.pk,1)[0]; if(gone) VAULT.meta.pkDel=(VAULT.meta.pkDel||[]).concat(gone.id).slice(-50); await persist(); if(typeof syncSoon==='function') syncSoon(); route(); } });
   if($('#sPkAdd')) $('#sPkAdd').onclick=async()=>{ try{ await addPasskey(); toast(L('Passkey añadida','Passkey added')); route(); }catch(e){ $('#sSecMsg').textContent=e.code==='noprf'?e.message:(e.name==='NotAllowedError'?L('Cancelado.','Cancelled.'):e.message); } };
   $('#sPw').onclick=()=>{ openModal(`<h2>${L('Cambiar contraseña maestra','Change master password')}</h2><label class="f">${L('Contraseña actual','Current password')}<input type="password" id="cp0"></label><label class="f">${L('Nueva (mín. 10)','New (min. 10)')}<input type="password" id="cp1" autocomplete="new-password"></label><label class="f">${L('Repítela','Repeat it')}<input type="password" id="cp2" autocomplete="new-password"></label><div class="row"><button id="mc">${L('Cancelar','Cancel')}</button><button class="pri" id="cpOk">${L('Cambiar','Change')}</button></div>`); $('#mc').onclick=closeModal;
-    $('#cpOk').onclick=async()=>{ const a=$('#cp1').value; if(a.length<10) return toast(L('Mínimo 10 caracteres','At least 10 characters')); if(a!==$('#cp2').value) return toast(L('No coinciden','They don\'t match')); try{ const p=VAULT.meta.pw; await unseal(await kdfPass($('#cp0').value,unb64(p.salt),p.it),p.wrap); }catch(e){ return toast(L('La contraseña actual no es correcta','The current password is wrong')); } await setPassword(a); closeModal(); toast(L('Contraseña cambiada','Password changed')); }; };
+    $('#cpOk').onclick=async()=>{ const a=$('#cp1').value; if(a.length<10) return toast(L('Mínimo 10 caracteres','At least 10 characters')); if(a!==$('#cp2').value) return toast(L('No coinciden','They don\'t match')); try{ await checkPassword($('#cp0').value); }catch(e){ return toast(e.code==='nosk'?e.message:L('La contraseña actual no es correcta','The current password is wrong')); } await setPassword(a); closeModal(); toast(L('Contraseña cambiada','Password changed')); }; };
   $('#sRec').onclick=async()=>{ if(!await confirmModal(L('Nueva clave de recuperación','New recovery key'),`<p>${L('La clave anterior dejará de funcionar.','The previous key will stop working.')}</p>`)) return; const rec=await newRecovery(); openModal(`<h2>${L('Nueva clave de recuperación','New recovery key')}</h2><p class="muted">${L('Guárdala en papel en un sitio seguro.','Keep it on paper somewhere safe.')}</p><div class="reccode">${rec}</div><div class="row"><button class="pri" id="mc">${L('La he guardado','I\'ve saved it')}</button></div>`); $('#mc').onclick=closeModal; };
   $('#sKeySave').onclick=()=>{ const v=$('#sKey').value.trim(); if(!v||/^•+$/.test(v)) return toast(L('Pega la clave','Paste the key')); if(!/^sk-ant-/.test(v)) return toast(L('La clave debe empezar por sk-ant-','The key must start with sk-ant-')); S.secret=Object.assign({},S.secret,{apiKey:v}); save(); toast(L('Clave guardada','Key saved')); route(); };
   $('#sKeyTest').onclick=async()=>{ const m=$('#sKeyMsg'); m.textContent=L('Probando…','Testing…'); try{ const r=await claudeCall('Responde solo: OK',{modelTier:'quick',maxTokens:10,stream:false}); m.textContent=L('Funciona ✓ (','Works ✓ (')+r.text.trim()+')'; }catch(e){ m.textContent=e.message; } };
@@ -2884,9 +2887,79 @@ async function createVault(pass){
   S=blankState(); await persist(); return rec;
 }
 async function loadState(){ const raw=await unseal(VAULT.dk,VAULT.meta.data); S=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); migrateCats(); migrateUncat(); }
-async function unlockWithPassword(pass){ const p=VAULT.meta.pw; const raw=await unseal(await kdfPass(pass,unb64(p.salt),p.it),p.wrap); await setDK(raw); await loadState(); }
+/* ---------- Clave secreta de la bóveda (dos secretos, como la Secret Key de 1Password) ----------
+   Con la clave secreta activada (meta.pw.sk=1), la contraseña sola no abre la bóveda: la clave de envoltura sale de
+   PBKDF2(contraseña) y de 128 bits aleatorios que viven solo en tus dispositivos (IndexedDB 'devkey' como CryptoKey
+   no exportable; copia legible en S.secret.sk, dentro de la bóveda y sin sincronizar, para enseñarla). Nunca se sube:
+   quien consiga el archivo de la nube no puede ni intentar adivinar la contraseña. meta.skid la identifica (HKDF) sin
+   revelarla. La clave de recuperación y las passkeys no la necesitan. */
+const SK_ALPHA='0123456789ABCDEFGHJKMNPQRSTVWXYZ'; // base32 de Crockford: sin I, L, O ni U
+function skEncode(bytes){ let bits=0,val=0,out=''; for(const b of bytes){ val=((val<<8)|b)&0xffff; bits+=8; while(bits>=5){ out+=SK_ALPHA[(val>>>(bits-5))&31]; bits-=5; } } if(bits>0) out+=SK_ALPHA[(val<<(5-bits))&31]; return out; }
+const normSK=s=>String(s||'').toUpperCase().replace(/^MFZSK:/,'').replace(/[OI L]/g,c=>c==='O'?'0':c===' '?'':'1').replace(/[^0-9A-Z]/g,'');
+function skDecode(str){ const s=normSK(str); if(s.length!==26) return null; let bits=0,val=0; const out=[];
+  for(const ch of s){ const v=SK_ALPHA.indexOf(ch); if(v<0) return null; val=((val<<5)|v)&0xffff; bits+=5; if(bits>=8){ out.push((val>>>(bits-8))&255); bits-=8; } } return new Uint8Array(out.slice(0,16)); }
+const fmtSK=s=>[s.slice(0,5),s.slice(5,10),s.slice(10,15),s.slice(15,20),s.slice(20)].join('-');
+const skKey=bytes=>crypto.subtle.importKey('raw',bytes,'HKDF',false,['deriveKey','deriveBits']);
+async function skId(key){ return b64u(new Uint8Array(await crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256',salt:new Uint8Array(0),info:TE.encode('myfinzen-sk-id-v1')},key,64))); }
+async function kdfPassSK(pass,salt,it,key){ const k=await crypto.subtle.importKey('raw',TE.encode(pass),'PBKDF2',false,['deriveBits']);
+  const pb=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:it,hash:'SHA-256'},k,256));
+  const kek=await crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:pb,info:TE.encode('myfinzen-pw+sk-v1')},key,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); pb.fill(0); return kek; }
+let DEVKEY=null, SK_PENDING=null, SK_NEW=null, SK_MISS=false; // {id,key} de este dispositivo; SK_PENDING = bytes escritos al desbloquear (hasta guardarlos en S.secret.sk)
+async function devKey(){ if(DEVKEY) return DEVKEY; const d=await IDB.get('devkey'); if(d&&d.key&&typeof d.id==='string') DEVKEY=d; return DEVKEY; }
+async function skFromText(text){ const bytes=skDecode(text); if(!bytes) throw Object.assign(new Error(L('La clave secreta tiene 26 letras y números','The secret key has 26 letters and numbers')),{code:'badsk'}); const key=await skKey(bytes); return {bytes,key,id:await skId(key)}; }
+async function saveDevKey(k){ DEVKEY={id:k.id,key:k.key}; await IDB.set('devkey',DEVKEY); if(S){ S.secret.sk=skEncode(k.bytes); save(); } }
+const skMissing=async()=>{ if(!VAULT.meta||!VAULT.meta.skid) return false; const d=await devKey(); return !d||d.id!==VAULT.meta.skid; };
+async function pwKEK(pass,p,salt){ if(!p.sk) return kdfPass(pass,salt,p.it); const d=await devKey();
+  if(!d||d.id!==VAULT.meta.skid) throw Object.assign(new Error(L('Falta la clave secreta de la bóveda en este dispositivo','This device is missing the vault\'s secret key')),{code:'nosk'}); return kdfPassSK(pass,salt,p.it,d.key); }
+async function checkPassword(pass){ const p=VAULT.meta.pw; const raw=await unseal(await pwKEK(pass,p,unb64(p.salt)),p.wrap); raw.fill(0); }
+async function unlockWithPassword(pass){ const p=VAULT.meta.pw; const raw=await unseal(await pwKEK(pass,p,unb64(p.salt)),p.wrap); await setDK(raw); await loadState();
+  if(SK_PENDING&&DEVKEY){ await IDB.set('devkey',DEVKEY); S.secret.sk=skEncode(SK_PENDING); SK_PENDING=null; save(); } }
+// Activa la clave secreta (pide la contraseña para volver a envolver la DK) y la devuelve para enseñarla
+// Código QR (vendor/qrcode.js, MIT) dibujado como SVG
+function qrSVG(text){ if(typeof qrcode!=='function') return ''; const q=qrcode(0,'M'); q.addData(text); q.make(); const n=q.getModuleCount(); let d='';
+  for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(q.isDark(r,c)) d+=`M${c+2} ${r+2}h1v1h-1z`;
+  return `<svg class="qr" viewBox="0 0 ${n+4} ${n+4}" role="img" aria-label="QR"><rect width="${n+4}" height="${n+4}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`; }
+// Escáner con la cámara (BarcodeDetector, Chrome en Android). Se dibuja dentro de `box` (también en la pantalla de acceso).
+async function scanSK(cb,box){ if(!('BarcodeDetector' in window)) return toast(L('Este navegador no puede escanear: escribe la clave','This browser can\'t scan: type the key'));
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}); }catch(e){ return toast(L('Sin acceso a la cámara','No camera access')); }
+  const host=box||document.querySelector('#gSKw')||document.body, w=document.createElement('div'); w.className='skscan';
+  w.innerHTML=`<video playsinline muted></video><button class="sm" type="button">${L('Cancelar','Cancel')}</button>`; host.appendChild(w);
+  const v=w.querySelector('video'); v.srcObject=stream; await v.play().catch(()=>{}); const det=new BarcodeDetector({formats:['qr_code']}); let on=true;
+  const stop=()=>{ on=false; stream.getTracks().forEach(t=>t.stop()); w.remove(); }; w.querySelector('button').onclick=stop;
+  const tick=async()=>{ if(!on) return; try{ const r=await det.detect(v); const hit=r.map(x=>x.rawValue).find(x=>/^MFZSK:/i.test(x)||normSK(x).length===26); if(hit){ stop(); cb(hit); return; } }catch(e){} setTimeout(tick,250); }; tick(); }
+function showSKModal(sk){ openModal(`<h2>${L('Tu clave secreta','Your secret key')}</h2><p>${L('Junto con tu contraseña protege el archivo de tu nube: quien lo consiga no podrá ni intentar adivinar la contraseña.','Together with your password it protects your cloud file: whoever gets it can\'t even try to guess the password.')}</p>
+    <div class="reccode" id="skTxt">${esc(fmtSK(sk))}</div><div style="text-align:center">${qrSVG('MFZSK:'+sk)}</div>
+    <p class="muted">${L('Cada dispositivo nuevo te la pide una vez: escanea este código o escríbela. Guárdala con tu clave de recuperación (por ejemplo, en tu gestor de contraseñas). Nunca se sube a la nube.','Each new device asks for it once: scan this code or type it. Keep it with your recovery key (for example, in your password manager). It is never uploaded to the cloud.')}</p>
+    <div class="row" style="margin-top:8px"><button id="skCopy">${L('Copiar','Copy')}</button><button class="pri" id="mc">${L('Hecho','Done')}</button></div>`);
+  $('#mc').onclick=()=>{ closeModal(); route(); }; $('#skCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(fmtSK(sk)); toast(L('Copiada','Copied')); }catch(e){ toast(L('Cópiala a mano','Copy it by hand')); } }; }
+function skPassModal(title,body,okLbl,run){ openModal(`<h2>${title}</h2>${body}<label class="f">${L('Contraseña maestra','Master password')}<input type="password" id="skP" autocomplete="current-password"></label><div class="row" style="margin-top:12px"><button id="mc">${L('Cancelar','Cancel')}</button><button class="pri" id="skOk">${okLbl}</button></div>`);
+  $('#mc').onclick=closeModal; $('#skOk').onclick=async()=>{ $('#skOk').disabled=true; try{ await run($('#skP').value); }catch(e){ $('#skOk').disabled=false; toast(e.code==='nosk'?e.message:L('La contraseña no es correcta','The password is wrong')); } }; }
+function skEnterModal(){ openModal(`<h2>${L('Añadir la clave secreta','Add the secret key')}</h2><p class="muted">${L('Está en tu otro dispositivo: Ajustes → Seguridad → Clave secreta. La necesitas para entrar aquí con la contraseña.','It\'s on your other device: Settings → Security → Secret key. You need it to sign in here with the password.')}</p>
+    <label class="f">${L('Clave secreta','Secret key')}<input id="skIn" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXXX"></label><div id="skScanBox"></div>
+    <div class="row" style="margin-top:12px">${'BarcodeDetector' in window?`<button id="skScan">${L('Escanear','Scan')}</button>`:''}<button id="mc">${L('Cancelar','Cancel')}</button><button class="pri" id="skOk">${L('Guardar','Save')}</button></div>`);
+  $('#mc').onclick=closeModal; if($('#skScan')) $('#skScan').onclick=()=>scanSK(v=>{ $('#skIn').value=fmtSK(normSK(v)); },$('#skScanBox'));
+  $('#skOk').onclick=async()=>{ try{ const k=await skFromText($('#skIn').value); if(k.id!==VAULT.meta.skid) return toast(L('Esa clave secreta no es la de esta bóveda','That secret key isn\'t this vault\'s')); await saveDevKey(k); SK_MISS=false; closeModal(); toast(L('Clave secreta guardada en este dispositivo','Secret key saved on this device')); route(); }catch(e){ toast(e.message); } }; }
+function skSectionHTML(){ const on=!!VAULT.meta.skid;
+  return `<p class="sub" style="margin:14px 0 6px">${L('Clave secreta de la bóveda:','Vault secret key:')}</p>
+    ${!on?`<p class="muted" style="margin:0 0 8px">${L('Desactivada. Actívala si sincronizas con la nube: el archivo necesitará tu contraseña y una clave que solo está en tus dispositivos.','Off. Turn it on if you sync with the cloud: the file will need your password and a key that is only on your devices.')}</p><button data-skon>${L('Activar clave secreta','Turn on secret key')}</button>`
+      :SK_MISS?`<div class="alert warn"><span class="ic">!</span><div style="flex:1">${L('Activada, pero este dispositivo no la tiene: no podrás entrar aquí solo con la contraseña.','On, but this device doesn\'t have it: you can\'t sign in here with just the password.')}</div></div><button class="pri" id="skAdd">${L('Añadir clave secreta','Add secret key')}</button>`
+      :`<p class="muted" style="margin:0 0 8px">${L('Activada. El archivo de tu nube necesita tu contraseña y esta clave.','On. Your cloud file needs your password and this key.')}</p><div class="row" style="justify-content:flex-start">${S.secret.sk?`<button id="skShow">${L('Ver la clave secreta','Show secret key')}</button>`:''}<button id="skOff">${L('Desactivar','Turn off')}</button></div>`}`; }
+function wireSK(el){ const on=(id,f)=>{ const b=el.querySelector('#'+id); if(b) b.onclick=f; };
+  el.querySelectorAll('[data-skon]').forEach(b=>b.onclick=()=>skPassModal(L('Activar clave secreta','Turn on secret key'),`<p class="muted">${L('Se crea una clave aleatoria que se guarda solo en tus dispositivos. Tendrás que guardarla y ponerla una vez en cada dispositivo nuevo.','A random key is created and kept only on your devices. You\'ll need to save it and enter it once on each new device.')}</p>`,L('Activar','Turn on'),async p=>{ const sk=await enableSK(p); SK_MISS=false; showSKModal(sk); }));
+  on('skOff',()=>skPassModal(L('Desactivar clave secreta','Turn off secret key'),`<p class="muted">${L('El archivo de tu nube quedará protegido solo por la contraseña.','Your cloud file will be protected only by the password.')}</p>`,L('Desactivar','Turn off'),async p=>{ await disableSK(p); closeModal(); toast(L('Clave secreta desactivada','Secret key turned off')); route(); }));
+  on('skShow',()=>showSKModal(S.secret.sk)); on('skAdd',()=>skEnterModal()); }
+async function enableSK(pass){ await checkPassword(pass); const bytes=rnd(16), key=await skKey(bytes), id=await skId(key);
+  const salt=rnd(16); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPassSK(pass,salt,PW_ITER,key),VAULT.dkRaw),sk:1}; VAULT.meta.skid=id; VAULT.meta.kt=new Date().toISOString();
+  await saveDevKey({bytes,key,id}); await persist(); if(typeof syncSoon==='function') syncSoon(); return skEncode(bytes); }
+async function disableSK(pass){ await checkPassword(pass); const salt=rnd(16); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)}; delete VAULT.meta.skid; VAULT.meta.kt=new Date().toISOString();
+  DEVKEY=null; await IDB.del('devkey'); if(S&&S.secret) delete S.secret.sk; await persist(); if(typeof syncSoon==='function') syncSoon(); }
 async function unlockWithRecovery(code){ const r=VAULT.meta.rec; const raw=await unseal(await kdfPass(normRec(code),unb64(r.salt),r.it),r.wrap); await setDK(raw); await loadState(); }
-async function setPassword(pass){ const salt=rnd(16); VAULT.meta.kt=new Date().toISOString(); VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)}; await persist(); }
+// Si la bóveda usa clave secreta y este dispositivo no la tiene (recuperación en un dispositivo nuevo), se crea otra y se devuelve
+async function setPassword(pass){ const salt=rnd(16); VAULT.meta.kt=new Date().toISOString(); let fresh=null;
+  if(VAULT.meta.skid){ let d=await devKey(); if(!d||d.id!==VAULT.meta.skid){ const bytes=rnd(16), key=await skKey(bytes), id=await skId(key); await saveDevKey({bytes,key,id}); VAULT.meta.skid=id; d=DEVKEY; fresh=skEncode(bytes); }
+    VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPassSK(pass,salt,PW_ITER,d.key),VAULT.dkRaw),sk:1}; }
+  else VAULT.meta.pw={salt:b64(salt),it:PW_ITER,wrap:await seal(await kdfPass(pass,salt,PW_ITER),VAULT.dkRaw)};
+  await persist(); return fresh; }
 async function newRecovery(){ const rec=makeRecovery(), rsalt=rnd(16); VAULT.meta.kt=new Date().toISOString(); VAULT.meta.rec={salt:b64(rsalt),it:REC_ITER,wrap:await seal(await kdfPass(normRec(rec),rsalt,REC_ITER),VAULT.dkRaw)}; await persist(); return rec; }
 function passkeyCapable(){ return !!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext); }
 function deviceName(){ const u=navigator.userAgent; if(/Android/.test(u)) return 'Android'; if(/iPhone|iPad/.test(u)) return 'iPhone/iPad'; if(/Mac/.test(u)) return 'Mac'; if(/Windows/.test(u)) return 'Windows'; return 'Dispositivo'; }
@@ -2914,7 +2987,7 @@ async function unlockWithPasskey(){
 }
 /* ---------- Bloqueo ---------- */
 let lockTimer=null, hiddenAt=0;
-function lockNow(){ SHARED_FILES=null; if(typeof syncOnLock==='function') syncOnLock(); if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
+function lockNow(){ SHARED_FILES=null; SK_PENDING=null; if(typeof syncOnLock==='function') syncOnLock(); if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
 function bumpLock(){ clearTimeout(lockTimer); if(!S) return; const m=(S.settings&&S.settings.lockMin)||5; lockTimer=setTimeout(()=>{ if(S) lockNow(); },m*60000); }
 ['pointerdown','keydown','scroll','touchstart'].forEach(ev=>window.addEventListener(ev,()=>{ if(S) bumpLock(); },{passive:true}));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden){ hiddenAt=Date.now(); if(S) flushSave(); } else if(S&&hiddenAt&&Date.now()-hiddenAt>((S.settings.lockMin||5)*60000)) lockNow(); });
@@ -2936,11 +3009,12 @@ function showGate(mode,extra){
   else if(mode==='recovery'){
     box(`<h2>${L('Tu clave de recuperación','Your recovery key')}</h2><p class="muted">${L('Si olvidas la contraseña y pierdes tus dispositivos, es la única forma de recuperar los datos. Escríbela en papel y guárdala en un sitio seguro. No se volverá a mostrar.','If you forget the password and lose your devices, this is the only way to recover your data. Write it on paper and keep it somewhere safe. It won\'t be shown again.')}</p>
       <div class="reccode">${extra}</div><button class="sm" id="gCopy">${L('Copiar','Copy')}</button>
+      ${SK_NEW?`<h3 class="sec" style="margin-top:14px">${L('Nueva clave secreta de la bóveda','New vault secret key')}</h3><p class="muted">${L('Este dispositivo no tenía la clave secreta, así que se ha creado otra. Guárdala también: tus otros dispositivos la necesitarán para entrar con la contraseña.','This device didn\'t have the secret key, so a new one was created. Save it too: your other devices will need it to sign in with the password.')}</p><div class="reccode">${esc(fmtSK(SK_NEW))}</div>`:''}
       <label class="f" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="gOk" style="width:auto"> ${L('La he guardado en un lugar seguro','I have saved it somewhere safe')}</label>
       <button class="pri" id="gNext" style="width:100%" disabled>${L('Continuar','Continue')}</button>`);
     $('#gCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(extra); toast(L('Copiada. Pégala en un sitio seguro y bórrala del portapapeles','Copied. Paste it somewhere safe and clear the clipboard')); }catch(e){ toast(L('Cópiala a mano','Copy it by hand')); } };
     $('#gOk').onchange=e=>$('#gNext').disabled=!e.target.checked;
-    $('#gNext').onclick=()=>passkeyCapable()?showGate('passkey'):enterApp(true);
+    $('#gNext').onclick=()=>{ SK_NEW=null; passkeyCapable()?showGate('passkey'):enterApp(true); };
   }
   else if(mode==='passkey'){
     box(`<h2>${L('¿Desbloquear con tu huella?','Unlock with your fingerprint?')}</h2><p class="muted">${L('Crea una passkey en este dispositivo para abrir MyFinZen con la huella, la cara o el PIN del móvil. Es más segura que la contraseña: no se puede adivinar ni robar con una web falsa. La contraseña maestra seguirá sirviendo.','Create a passkey on this device to open MyFinZen with your phone\'s fingerprint, face or PIN. It is safer than the password: it can\'t be guessed or stolen by a fake website. The master password keeps working.')}</p>
@@ -2953,12 +3027,19 @@ function showGate(mode,extra){
     const jn=typeof SYNC!=='undefined'&&SYNC.joinNote?`<div class="alert good" style="margin-bottom:12px"><span class="ic">✓</span><div>${L('Datos traídos de tu nube. Desbloquea con la contraseña maestra de tu otro dispositivo.','Data brought from your cloud. Unlock with your other device\'s master password.')}</div></div>`:'';
     box(`<h2>${L('Desbloquear','Unlock')}</h2>${jn}${hasPk&&!jn?`<button class="pri" id="gPk" style="width:100%">${L('Usar huella / passkey','Use fingerprint / passkey')}</button><div class="muted" style="text-align:center;margin:10px 0">${L('o','or')}</div>`:''}
       <label class="f">${L('Contraseña maestra','Master password')}<input type="password" id="gP" autocomplete="current-password"></label>
+      <div id="gSKw" hidden><label class="f">${L('Clave secreta de la bóveda','Vault secret key')}<input id="gSK" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXXX"></label>
+        <p class="muted" style="margin:-4px 0 10px">${L('Solo la primera vez en este dispositivo. Está en tu otro dispositivo: Ajustes → Seguridad → Clave secreta.','Only the first time on this device. It\'s on your other device: Settings → Security → Secret key.')}${'BarcodeDetector' in window?` <a href="#" id="gSKscan">${L('Escanear el código','Scan the code')}</a>`:''}</p></div>
       <button class="${hasPk&&!jn?'':'pri'}" id="gGo" style="width:100%">${L('Desbloquear','Unlock')}</button>
       <div id="gMsg" class="neg" style="margin-top:8px;min-height:1em"></div>
       <p style="margin-top:14px"><a href="#" id="gRec">${L('Usar la clave de recuperación','Use the recovery key')}</a></p>`);
     const fail=m=>{ $('#gMsg').textContent=m; };
     if(hasPk&&!jn){ const tryPk=async(auto)=>{ try{ await unlockWithPasskey(); enterApp(); }catch(e){ if(!auto) fail(e.name==='NotAllowedError'?cancelled:e.message); } }; $('#gPk').onclick=()=>tryPk(false); if(!extra&&!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) setTimeout(()=>tryPk(true),300); }
-    const go=async()=>{ $('#gGo').disabled=true; $('#gGo').textContent=L('Comprobando…','Checking…'); try{ await unlockWithPassword($('#gP').value); enterApp(); }catch(e){ fail(L('Contraseña incorrecta','Wrong password')); $('#gGo').disabled=false; $('#gGo').textContent=L('Desbloquear','Unlock'); } };
+    const skw=$('#gSKw'); skMissing().then(m=>{ if(m&&VAULT.meta.pw.sk) skw.hidden=false; });
+    if($('#gSKscan')) $('#gSKscan').onclick=e=>{ e.preventDefault(); scanSK(v=>{ $('#gSK').value=fmtSK(normSK(v)); }); };
+    const go=async()=>{ $('#gGo').disabled=true; $('#gGo').textContent=L('Comprobando…','Checking…'); const reset=()=>{ $('#gGo').disabled=false; $('#gGo').textContent=L('Desbloquear','Unlock'); };
+      try{ if(!skw.hidden&&$('#gSK').value.trim()){ const k=await skFromText($('#gSK').value); if(k.id!==VAULT.meta.skid){ reset(); return fail(L('Esa clave secreta no es la de esta bóveda','That secret key isn\'t this vault\'s')); } DEVKEY={id:k.id,key:k.key}; SK_PENDING=k.bytes; }
+        await unlockWithPassword($('#gP').value); enterApp(); }
+      catch(e){ if(e.code==='nosk'){ skw.hidden=false; fail(L('Este dispositivo aún no tiene la clave secreta de la bóveda: escríbela abajo.','This device doesn\'t have the vault\'s secret key yet: type it below.')); $('#gSK').focus(); } else fail(e.code==='badsk'?e.message:L('Contraseña incorrecta','Wrong password')); if(SK_PENDING){ DEVKEY=null; SK_PENDING=null; } reset(); } };
     $('#gGo').onclick=go; $('#gP').onkeydown=e=>{ if(e.key==='Enter') go(); };
     $('#gRec').onclick=e=>{ e.preventDefault(); showGate('recover'); };
   }
@@ -2967,10 +3048,10 @@ function showGate(mode,extra){
       <button class="pri" id="gGo" style="width:100%">${L('Recuperar','Recover')}</button><div id="gMsg" class="neg" style="margin-top:8px"></div><p><a href="#" id="gBack">${L('Volver','Back')}</a></p>`);
     $('#gBack').onclick=e=>{e.preventDefault();showGate('unlock',true);};
     $('#gGo').onclick=async()=>{ const a=$('#g1').value; if(a.length<10) return toast(tooShort); if(a!==$('#g2').value) return toast(noMatch);
-      try{ await unlockWithRecovery($('#gR').value); await setPassword(a); const rec=await newRecovery(); showGate('recovery',rec); }catch(e){ $('#gMsg').textContent=L('Clave de recuperación incorrecta','Wrong recovery key'); } };
+      try{ await unlockWithRecovery($('#gR').value); SK_NEW=await setPassword(a); const rec=await newRecovery(); showGate('recovery',rec); }catch(e){ $('#gMsg').textContent=L('Clave de recuperación incorrecta','Wrong recovery key'); } };
   }
 }
-function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); if(typeof syncAfterUnlock==='function') setTimeout(syncAfterUnlock,0); if(first&&!location.hash) location.hash='#resumen'; route(); if(first) setTimeout(()=>openModal(`<h2>${L('Todo listo','All set')}</h2><p>${L('Tus datos se guardan cifrados en este dispositivo.','Your data is stored encrypted on this device.')}</p><ul><li>${L('Toca el icono <b>i</b> azul de cada sección para ver qué es y cómo usarla, o abre el <b>Manual</b>.','Tap the blue <b>i</b> icon on each section to see what it is and how to use it, or open the <b>Manual</b>.')}</li><li>${L('Si vienes de la versión de claude.ai: <b>Copia y ajustes → Restaurar copia</b>.','If you come from the claude.ai version: <b>Backup & settings → Restore backup</b>.')}</li><li>${L('Haz copias cifradas de vez en cuando y guárdalas en Dropbox.','Make encrypted backups now and then and keep them in Dropbox.')}</li><li>${L('Para usar Claude, pega tu clave de API en <b>Copia y ajustes</b> (opcional).','To use Claude, paste your API key in <b>Backup & settings</b> (optional).')}</li></ul><div class="row"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`)||($('#mc').onclick=closeModal),200); }
+function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); if(typeof syncAfterUnlock==='function') setTimeout(syncAfterUnlock,0); skMissing().then(m=>{ if(m!==SK_MISS){ SK_MISS=m; if(S) route(); } }); if(first&&!location.hash) location.hash='#resumen'; route(); if(first) setTimeout(()=>openModal(`<h2>${L('Todo listo','All set')}</h2><p>${L('Tus datos se guardan cifrados en este dispositivo.','Your data is stored encrypted on this device.')}</p><ul><li>${L('Toca el icono <b>i</b> azul de cada sección para ver qué es y cómo usarla, o abre el <b>Manual</b>.','Tap the blue <b>i</b> icon on each section to see what it is and how to use it, or open the <b>Manual</b>.')}</li><li>${L('Si vienes de la versión de claude.ai: <b>Copia y ajustes → Restaurar copia</b>.','If you come from the claude.ai version: <b>Backup & settings → Restore backup</b>.')}</li><li>${L('Haz copias cifradas de vez en cuando y guárdalas en Dropbox.','Make encrypted backups now and then and keep them in Dropbox.')}</li><li>${L('Para usar Claude, pega tu clave de API en <b>Copia y ajustes</b> (opcional).','To use Claude, paste your API key in <b>Backup & settings</b> (optional).')}</li></ul><div class="row"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`)||($('#mc').onclick=closeModal),200); }
 /* ---------- Claude con la clave del usuario ---------- */
 const MODELS={quick:'claude-haiku-5-5',default:'claude-sonnet-5-5',complex:'claude-opus-5-5'};
 function parseJSONLoose(t){ const s=String(t||'').replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,''); const a=s.indexOf('{'), b=s.lastIndexOf('}'); return JSON.parse(a>=0?s.slice(a,b+1):s); }

@@ -493,6 +493,20 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
     const D=await dev('D'); await D.p.click('#gJoin'); await D.p.waitForSelector('#jIn'); await D.p.setInputFiles('#jIn',{name:'MyFinZen-sync.txt',mimeType:'text/plain',buffer:Buffer.from(DBX.file)});
     await unlock(D.p,'contrasena nueva sincronizada');
     ok(await D.p.evaluate(()=>S.tx.some(t=>t.id==='syT4')&&S.secret.sync&&S.secret.sync.p==='manual'&&!!document.querySelector('#syncBtn:not([hidden])')),'dispositivo nuevo a mano: abre el archivo, desbloquea y queda en modo manual con la nube arriba'); await D.c.close();
+    // Clave secreta de la bóveda
+    const NP='contrasena nueva sincronizada';
+    const skA=await A.p.evaluate(async p=>{ const sk=await enableSK(p); await syncNow(); return sk; },NP);
+    const dk=await A.p.evaluate(async()=>{ const d=await IDB.get('devkey'); return {ext:d.key.extractable,alg:d.key.algorithm.name}; });
+    ok(/^[0-9A-Z]{26}$/.test(skA)&&dk.ext===false&&dk.alg==='HKDF'&&/"sk":1/.test(DBX.file)&&!DBX.file.includes(skA),'clave secreta: 128 bits, guardada como clave no exportable y nunca en la nube');
+    ok(await A.p.evaluate(async([t,p])=>{ const rf=parseSyncFile(t); try{ await unseal(await kdfPass(p,unb64(rf.meta.pw.salt),rf.meta.pw.it),rf.meta.pw.wrap); return false; }catch(e){ return true; } },[DBX.file,NP]),'con el archivo de la nube y la contraseña, pero sin la clave secreta, no se abre');
+    await B.p.evaluate(()=>syncNow()); await B.p.evaluate(()=>lockNow()); await B.p.waitForSelector('#gP');
+    await B.p.fill('#gP',NP); await B.p.click('#gGo'); await B.p.waitForFunction(()=>!document.querySelector('#gSKw').hidden&&/clave secreta/.test(document.querySelector('#gMsg').textContent),null,{timeout:15000});
+    await B.p.fill('#gSK','ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZZ'); await B.p.click('#gGo'); await B.p.waitForFunction(()=>/no es la de esta bóveda/.test(document.querySelector('#gMsg').textContent),null,{timeout:15000});
+    await B.p.fill('#gSK',skA.toLowerCase()); await B.p.click('#gGo'); await B.p.waitForFunction(()=>!!S,null,{timeout:15000}); await B.p.waitForTimeout(200);
+    ok(await B.p.evaluate(async()=>{ const d=await IDB.get('devkey'); return !!d&&d.id===VAULT.meta.skid&&/^[0-9A-Z]{26}$/.test(S.secret.sk||''); }),'otro dispositivo: la contraseña sola no basta; con la clave secreta entra y la guarda para la próxima vez');
+    await B.p.evaluate(()=>lockNow()); await unlock(B.p,NP); ok(await B.p.evaluate(()=>!!S),'después ya entra solo con la contraseña');
+    const rot=await B.p.evaluate(async()=>{ const old=VAULT.meta.skid; DEVKEY=null; await IDB.del('devkey'); const fresh=await setPassword('contrasena nueva sincronizada'); return {fresh,changed:VAULT.meta.skid!==old}; });
+    ok(/^[0-9A-Z]{26}$/.test(rot.fresh||'')&&rot.changed,'recuperar en un dispositivo sin la clave secreta crea una nueva');
     // Otra bóveda en la misma nube: no se mezcla, pregunta
     const C=await dev('C'); await C.p.fill('#g1','otra boveda distinta 7'); await C.p.fill('#g2','otra boveda distinta 7'); await C.p.click('#gGo'); await C.p.waitForSelector('.reccode',{timeout:20000}); await C.p.check('#gOk'); await C.p.click('#gNext'); await C.p.waitForTimeout(300); if(await C.p.$('#gSkip')) await C.p.click('#gSkip'); await C.p.waitForTimeout(300); if(await C.p.$('#mc')) await C.p.click('#mc');
     await C.p.evaluate(()=>{ location.hash='#ajustes'; }); await C.p.waitForSelector('#syDbx'); const before=DBX.file; await C.p.click('#syDbx'); await unlock(C.p,'otra boveda distinta 7'); await settle(C.p); await C.p.waitForTimeout(300);

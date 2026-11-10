@@ -44,7 +44,7 @@ const syncState=st=>{ const c=Object.assign({},st); delete c.secret; return c; }
 const noSv=st=>{ const c=Object.assign({},st); delete c.sv; delete c.secret; return c; };
 const devId=()=>{ const s=S&&S.secret; if(s&&s.sync&&s.sync.dev) return s.sync.dev; return SYNC.dev||(SYNC.dev=b64u(rnd(9))); };
 async function buildSyncFile(state){ const m=VAULT.meta;
-  return JSON.stringify({app:'myfinzen-sync',v:1,updated:new Date().toISOString(),meta:{v:m.v,created:m.created,kt:m.kt||null,pw:m.pw,rec:m.rec,pk:m.pk||[],pkDel:m.pkDel||[],data:await seal(VAULT.dk,TE.encode(JSON.stringify(state)))}}); }
+  return JSON.stringify({app:'myfinzen-sync',v:1,updated:new Date().toISOString(),meta:{v:m.v,created:m.created,kt:m.kt||null,skid:m.skid||null,pw:m.pw,rec:m.rec,pk:m.pk||[],pkDel:m.pkDel||[],data:await seal(VAULT.dk,TE.encode(JSON.stringify(state)))}}); }
 const B64=/^[A-Za-z0-9+/=]+$/, B64U=/^[A-Za-z0-9_-]+$/;
 function syncErr(code,msg){ return Object.assign(new Error(msg||code),{code}); }
 // Todo lo que llega de la nube se valida antes de usarlo
@@ -54,12 +54,12 @@ function parseSyncFile(text){
   const bad=()=>syncErr('badfile',L('El archivo de sincronización está dañado o no es de MyFinZen','The sync file is damaged or not from MyFinZen'));
   if(!isObj(j)||j.app!=='myfinzen-sync'||j.v!==1||!isObj(j.meta)) throw bad();
   const sealed=o=>isObj(o)&&typeof o.iv==='string'&&B64.test(o.iv)&&o.iv.length<=32&&typeof o.ct==='string'&&B64.test(o.ct)?{iv:o.iv,ct:o.ct}:null;
-  const kw=o=>{ if(!isObj(o)) return null; const it=Number(o.it), w=sealed(o.wrap); return typeof o.salt==='string'&&B64.test(o.salt)&&o.salt.length<=64&&Number.isInteger(it)&&it>=100000&&it<=5000000&&w?{salt:o.salt,it,wrap:w}:null; };
+  const kw=o=>{ if(!isObj(o)) return null; const it=Number(o.it), w=sealed(o.wrap); return typeof o.salt==='string'&&B64.test(o.salt)&&o.salt.length<=64&&Number.isInteger(it)&&it>=100000&&it<=5000000&&w?Object.assign({salt:o.salt,it,wrap:w},o.sk===1?{sk:1}:{}):null; };
   const m=j.meta, pw=kw(m.pw), rec=kw(m.rec), data=sealed(m.data); if(!pw||!rec||!data) throw bad();
   const pk=(Array.isArray(m.pk)?m.pk:[]).map(p=>isObj(p)&&typeof p.id==='string'&&B64U.test(p.id)&&p.id.length<=400&&typeof p.prfSalt==='string'&&B64.test(p.prfSalt)&&sealed(p.wrap)?{id:p.id,prfSalt:p.prfSalt,wrap:sealed(p.wrap),created:isoDate(p.created)||today(),name:String(p.name||'').slice(0,60)}:null).filter(Boolean).slice(0,20);
   const pkDel=(Array.isArray(m.pkDel)?m.pkDel:[]).filter(x=>typeof x==='string'&&B64U.test(x)&&x.length<=400).slice(-50);
   const iso=s=>typeof s==='string'&&/^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(s)?s:null;
-  return {updated:iso(j.updated),meta:{v:1,created:typeof m.created==='string'?m.created.slice(0,40):new Date().toISOString(),kt:iso(m.kt),pw,rec,pk:pk.filter(p=>!pkDel.includes(p.id)),pkDel,data}}; }
+  return {updated:iso(j.updated),meta:{v:1,created:typeof m.created==='string'?m.created.slice(0,40):new Date().toISOString(),kt:iso(m.kt),skid:typeof m.skid==='string'&&B64U.test(m.skid)&&m.skid.length<=24?m.skid:null,pw,rec,pk:pk.filter(p=>!pkDel.includes(p.id)),pkDel,data}}; }
 async function openSyncState(rf){ let raw; try{ raw=await unseal(VAULT.dk,rf.meta.data); }catch(e){ throw syncErr('othervault',L('Los datos de la nube son de otra bóveda (otra contraseña)','The cloud data belongs to another vault (another password)')); }
   const st=sanitizeState(JSON.parse(TD.decode(raw))); raw.fill(0); delete st.secret; return st; }
 // Passkeys: se suman las de todos los dispositivos; contraseña y clave de recuperación: las más recientes (meta.kt)
@@ -68,7 +68,7 @@ function metaNeedsUp(rf){ const m=VAULT.meta, ids=new Set(rf.meta.pk.map(p=>p.id
   return (m.pk||[]).some(p=>!ids.has(p.id))||(m.pkDel||[]).some(x=>!del.has(x))||(m.kt||'')>(rf.meta.kt||''); }
 function mergeMeta(rf){ const m=VAULT.meta; m.pkDel=[...new Set([...(m.pkDel||[]),...rf.meta.pkDel])].slice(-50); const del=new Set(m.pkDel);
   const ids=new Set((m.pk||[]).map(p=>p.id)); m.pk=(m.pk||[]).concat(rf.meta.pk.filter(p=>!ids.has(p.id))).filter(p=>!del.has(p.id));
-  if((rf.meta.kt||'')>(m.kt||'')){ m.pw=rf.meta.pw; m.rec=rf.meta.rec; m.kt=rf.meta.kt; } }
+  if((rf.meta.kt||'')>(m.kt||'')){ m.pw=rf.meta.pw; m.rec=rf.meta.rec; m.kt=rf.meta.kt; if(rf.meta.skid) m.skid=rf.meta.skid; else delete m.skid; skMissing().then(x=>{ SK_MISS=x; }); } }
 async function getBase(){ const b=VAULT.meta.sync&&VAULT.meta.sync.base; if(!b) return undefined; try{ const raw=await unseal(VAULT.dk,b); const s=JSON.parse(TD.decode(raw)); raw.fill(0); return s; }catch(e){ return undefined; } }
 async function setBase(st){ VAULT.meta.sync=Object.assign({},VAULT.meta.sync,{base:await seal(VAULT.dk,TE.encode(JSON.stringify(syncState(st)))),at:new Date().toISOString()}); }
 // Fusiona lo que hay en la nube con este dispositivo. Devuelve el estado resultante y si la nube necesita la versión nueva.
@@ -213,8 +213,9 @@ function syncCardHTML(){ const c=syncConf(), p=syncProv();
     <p class="muted" style="margin-top:8px">${L('En el otro dispositivo, abre MyFinZen y elige «Ya uso MyFinZen en otro dispositivo». Usarás la misma contraseña maestra.','On the other device, open MyFinZen and choose "I already use MyFinZen on another device". You\'ll use the same master password.')}</p></div>`;
   const st=SYNC.busy?L('Sincronizando…','Syncing…'):SYNC.needPerm?L('Falta permiso para el archivo: toca «Sincronizar ahora».','File permission needed: tap "Sync now".'):SYNC.err?`<span class="neg">${esc(SYNC.err.message)}</span>`:(p.auto?L('Sincronizado ','Synced ')+esc(syncAgo(c.last)):L('Último envío: ','Last upload: ')+esc(syncAgo(c.last)));
   return `<div class="card" style="margin-bottom:12px" id="syncCard">${helpBtn('sync')}<h2>${L('Tus dispositivos','Your devices')}</h2><p class="sub">${ic('cloud')} <b>${esc(p.name)}</b> · ${st}</p>
+    ${!VAULT.meta.skid?`<div class="alert warn"><span class="ic">!</span><div style="flex:1">${L('<b>Recomendado:</b> activa la clave secreta. Así el archivo de tu nube necesita tu contraseña y una clave que solo está en tus dispositivos.','<b>Recommended:</b> turn on the secret key. Then your cloud file needs your password and a key that is only on your devices.')} <button class="sm" data-skon>${L('Activar','Turn on')}</button></div></div>`:''}
     <div class="row" style="justify-content:flex-start">${p.auto?`<button class="pri" id="syNow">${L('Sincronizar ahora','Sync now')}</button>`:`<button class="pri" id="syUp">${L('Subir a mi nube','Upload to my cloud')}</button><label class="btn">${L('Traer de mi nube','Get from my cloud')}<input type="file" id="syIn" accept=".txt,.mfz,.json,text/plain" hidden></label>`}<button id="syOff">${L('Desconectar','Disconnect')}</button></div>
-    <p class="muted" style="margin-top:8px">${L('Se sincroniza al abrir la app, a los pocos segundos de cada cambio y cada 5 minutos. La clave de API de Claude no se sincroniza.','It syncs when you open the app, a few seconds after each change and every 5 minutes. The Claude API key isn\'t synced.')}</p></div>`; }
+    <p class="muted" style="margin-top:8px">${p.auto?L('Se sincroniza al abrir la app, a los pocos segundos de cada cambio y cada 5 minutos.','It syncs when you open the app, a few seconds after each change and every 5 minutes.'):L('Súbelo después de cambios importantes y ábrelo desde tu otro dispositivo; se suman los cambios de los dos.','Upload it after important changes and open it from your other device; the changes from both are combined.')} ${L('La clave de API de Claude no se sincroniza.','The Claude API key isn\'t synced.')}</p></div>`; }
 function wireSyncCard(el){ const on=(id,f)=>{ const b=el.querySelector('#'+id); if(b) b.onclick=f; };
   on('syDbx',()=>dbxConnect('link')); on('syFile',()=>fileConnect());
   on('syMan',()=>{ S.secret.sync={p:'manual',dev:devId()}; save(); syncUI(); route(); manualUpload(); });
