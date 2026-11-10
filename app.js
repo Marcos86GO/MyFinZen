@@ -331,11 +331,33 @@ function payMonth(t){ const d=S.settings.payShift|0; return d>0&&isPay(t)&&+t.da
 // Sugerencia: las últimas nóminas llegan a final de mes (día ≥ 20) → propone el día desde el que contarlas en el mes siguiente
 function payShiftGuess(){ const p=S.tx.filter(isPay).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3); const late=p.filter(t=>+t.date.slice(8,10)>=20);
   return p.length>=2&&late.length>=Math.ceil(p.length*2/3)?Math.min(...late.map(t=>+t.date.slice(8,10))):0; }
+/* Cobertura de los datos: cada cuenta de banco o tarjeta tiene movimientos hasta una fecha (su último extracto o la
+   actividad reciente en CSV). Un mes es definitivo cuando todas llegan a su último día; si no, es provisional. */
+function covEnd(a){ const ii=(S.imports||[]).filter(e=>e.acc===a.id&&(e.kind==='pdf'||e.kind==='csv')&&isoDate(e.date)).map(e=>e.date);
+  const tt=S.tx.filter(t=>t.acc===a.id&&t.src!=='manual').map(t=>t.date); return ii.concat(tt).filter(d=>d<=today()).sort().pop()||null; }
+function covAccounts(){ const off=new Set(S.settings.stmtOff||[]), lim=isoAddMonths(today(),-4);
+  return S.accounts.filter(a=>(a.kind==='cash'||a.kind==='credit')&&!off.has(a.id)).map(a=>({a,end:covEnd(a)})).filter(x=>x.end&&x.end>=lim); }
+function monthCov(m){ const me=monthEnd(m), lim=me<today()?me:today(); const lag=covAccounts().filter(x=>x.end<lim).sort((x,y)=>x.end.localeCompare(y.end));
+  return {complete:!lag.length,lag,through:lag.length?lag[0].end:null}; }
+/* Nómina esperada: si una cuenta aún no tiene datos del día en que sueles cobrar, se estima esa nómina (importe y día
+   habituales de los últimos 3 meses cubiertos, al menos 2 meses) hasta que llegue el extracto. No se guarda: se calcula. */
+function payEstimates(){ const out=[], now=today(), by={};
+  S.tx.filter(isPay).forEach(t=>(by[t.acc]=by[t.acc]||[]).push(t));
+  for(const [aid,ps] of Object.entries(by)){ const a=acc(aid); if(!a) continue; const end=covEnd(a); if(!end||end>=now) continue;
+    const recent=ps.filter(t=>t.date>isoAddMonths(end,-3)&&t.date<=end).sort((x,y)=>x.date.localeCompare(y.date)); const slots=[];
+    recent.forEach(t=>{ const d=+t.date.slice(8,10); let sl=slots.find(z=>Math.abs(z.day-d)<=4); if(!sl){ sl={day:d,items:[]}; slots.push(sl); } sl.items.push(t); });
+    for(const sl of slots){ if(new Set(sl.items.map(t=>ym(t.date))).size<2) continue;
+      const days=sl.items.map(t=>+t.date.slice(8,10)).sort((x,y)=>x-y), amts=sl.items.slice(-3).map(t=>t.amount).sort((x,y)=>x-y);
+      const day=days[Math.floor(days.length/2)], amt=amts[Math.floor(amts.length/2)];
+      let m=ym(end); for(let i=0;i<4;i++){ const dd=Math.min(day,+monthEnd(m).slice(8)); const d=`${m}-${String(dd).padStart(2,'0')}`;
+        if(d>end&&d<=now&&!ps.some(t=>Math.abs(daysBetween(t.date,d))<=5)) out.push({id:'est:'+aid+':'+d,acc:aid,date:d,desc:L('Nómina esperada','Expected paycheck'),amount:amt,cat:'Nómina',est:true});
+        m=ymNext(m); } } }
+  return out; }
 function cashflowByMonth(){
   const fixed=fixedMortgages(); const fixedCats=new Set(fixed.map(f=>f.cat));
   const map={};
-  for(const t of S.tx){ const ty=catType(t.cat); if(ty==='neutral') continue; const k=ty==='income'?payMonth(t):ym(t.date); map[k]=map[k]||{income:0,expense:0,cats:{},carried:[]};
-    if(ty==='income'){ map[k].income+=t.amount; if(k!==ym(t.date)) map[k].carried.push(t); continue; }
+  for(const t of S.tx.concat(payEstimates())){ const ty=catType(t.cat); if(ty==='neutral') continue; const k=ty==='income'?payMonth(t):ym(t.date); map[k]=map[k]||{income:0,expense:0,cats:{},carried:[],est:[]};
+    if(ty==='income'){ map[k].income+=t.amount; if(t.est) map[k].est.push(t); else if(k!==ym(t.date)) map[k].carried.push(t); continue; }
     if(fixedCats.has(t.cat)) continue; // se cuenta abajo como cuota fija
     map[k].expense+=-t.amount; map[k].cats[t.cat]=(map[k].cats[t.cat]||0)+(-t.amount); }
   for(const k of Object.keys(map)) for(const f of fixed){ map[k].expense+=f.monthly; map[k].cats[f.cat]=(map[k].cats[f.cat]||0)+f.monthly; }
@@ -665,7 +687,7 @@ VIEWS.resumen=(el)=>{
     <div id="cNW" style="margin-top:8px"></div></div>
   <div class="tiles">
     ${tile('stat_cash',L('Efectivo','Cash'),by.cash!=null?fmt(by.cash):'—',by.credit?L(`Tarjetas: ${fmt(by.credit)}`,`Cards: ${fmt(by.credit)}`):L('Bancos y ahorro','Banks and savings'))}
-    ${tile('stat_save',last?L('Ahorro de ','Saved in ')+ymLabel(last):L('Ahorro del mes','Monthly savings'),lastCF?fmt(lastCF.income-lastCF.expense):'—',lastCF?`${L('Entra','In')} ${fmtK(lastCF.income)} · ${L('Sale','Out')} ${fmtK(lastCF.expense)}`:L('Sin movimientos','No transactions'),lastCF?(lastCF.income-lastCF.expense>=0?'pos':'neg'):'')}
+    ${tile('stat_save',last?L('Ahorro de ','Saved in ')+ymLabel(last)+(monthCov(last).complete?'':L(' (provisional)',' (provisional)')):L('Ahorro del mes','Monthly savings'),lastCF?fmt(lastCF.income-lastCF.expense):'—',lastCF?`${L('Entra','In')} ${fmtK(lastCF.income)} · ${L('Sale','Out')} ${fmtK(lastCF.expense)}`:L('Sin movimientos','No transactions'),lastCF?(lastCF.income-lastCF.expense>=0?'pos':'neg'):'')}
     ${tile('stat_inv',L('Inversiones','Investments'),inv?fmt(inv):'—',by.retirement?L(`Jubilación ${fmtK(by.retirement)}`,`Retirement ${fmtK(by.retirement)}`):L('Bróker y jubilación','Brokerage and retirement'))}
     ${tile('stat_mort',L('Hipotecas','Mortgages'),by.mortgage?fmt(by.mortgage):'—',mPay?L(`Cuota ${fmt(mPay)}/mes`,`Payment ${fmt(mPay)}/mo`):L('Lo que debes','What you owe'))}
   </div>
@@ -692,6 +714,9 @@ function catAv(c){ const n=catL(c||''); let h=0; for(const ch of String(c)) h=(h
 function dayLabel(d){ const t=today(); if(d===t) return L('Hoy','Today'); const y=new Date(); y.setDate(y.getDate()-1); if(d===isoDate(y.getFullYear()+'-'+(y.getMonth()+1)+'-'+y.getDate())) return L('Ayer','Yesterday');
   const x=new Date(d+'T12:00:00'); const s=x.toLocaleDateString(LANG==='en'?'en-US':'es-ES',{weekday:'long',day:'numeric',month:'long',...(d.slice(0,4)!==t.slice(0,4)?{year:'numeric'}:{})}); return s.charAt(0).toUpperCase()+s.slice(1); }
 function txRow(t,withDate){ const u=isUncat(t); return `<button class="lrow txr${u?' unc':''}" data-tx="${esc(t.id)}">${u?`<span class="av round" style="background:var(--warn);color:#1a1a19">?</span>`:catAv(t.cat)}<span class="lm"><b>${esc(t.desc)}</b><span>${withDate?esc(dLabel(t.date))+' · ':''}${u?`<span class="uncl">${L('Sin categoría · toca para elegir','Uncategorized · tap to choose')}</span>`:esc(catL(t.cat))}${t.acc?' · '+esc(accName(t.acc)):''}${t.rec?` · <span class="rec">${esc(recLabel(t))}</span>`:''}</span></span><span class="lr"><b class="${t.amount>0?'pos':''}">${t.amount>0?'+':''}${fmt(t.amount,2)}</b></span></button>`; }
+const addDays=(iso,n)=>{ const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
+function covNote(cov){ const x=cov.lag; const nm=x.slice(0,3).map(z=>`<b>${esc(z.a.name)}</b> ${L('desde el','since')} ${esc(dLabel(addDays(z.end,1)))}`).join(', ');
+  return `<p class="covn" id="covNote">${ic('clock')}<span>${L(`<b>Provisional.</b> Faltan movimientos de ${nm}${x.length>3?' y más':''}: llegarán con el próximo extracto.`,`<b>Provisional.</b> Missing transactions from ${nm}${x.length>3?' and more':''}: they will come with the next statement.`)} <a href="#importar">${L('Importar','Import')}</a> · ${L('o sube ya la actividad reciente del banco (CSV): cuando llegue el extracto, la sustituye sin duplicar.','or upload the bank\'s recent activity now (CSV): when the statement arrives, it replaces it without duplicates.')}</span></p>`; }
 VIEWS.flujo=(el)=>{
   const cf=cashflowByMonth(); const months=monthsRange(12);
   const inc=months.map(m=>cf[m]?cf[m].income:0), exp=months.map(m=>cf[m]?cf[m].expense:0), net=months.map((m,i)=>inc[i]-exp[i]);
@@ -709,7 +734,7 @@ VIEWS.flujo=(el)=>{
   const shown=list.slice(0,flujoFilter.limit);
   // Mes del resumen: el elegido o el último con datos
   const sm=sel||Object.keys(cf).filter(m=>m<=ym(today())).sort().pop(); const c=sm&&cf[sm];
-  const pg=!S.settings.payShift&&!S.settings.payShiftAsked?payShiftGuess():0;
+  const pg=!S.settings.payShift&&!S.settings.payShiftAsked?payShiftGuess():0; const cov=sm?monthCov(sm):null;
   const days=[]; shown.forEach(t=>{ const d=days[days.length-1]; if(d&&d.date===t.date) d.tx.push(t); else days.push({date:t.date,tx:[t]}); });
   const nI=L('Ingresos','Income'), nG=L('Gastos','Expenses'), nN=L('Ahorro neto','Net savings');
   const R=lastRec(); const nUnc=S.tx.filter(isUncat).length;
@@ -722,7 +747,8 @@ VIEWS.flujo=(el)=>{
   </div>
   <div class="stack">
     <div class="card">${helpBtn('cat_chart')}<h2>${L('Gasto por categoría','Spending by category')}</h2><p class="sub">${sel?ymLabel(sel):L('Media mensual de los últimos 12 meses','Monthly average over the last 12 months')}</p>
-      ${c?`<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 14px"><div class="stat"><div class="note">${nI}${sel?'':' · '+ymLabel(sm)}</div><div class="val pos" style="font-size:18px">${fmt(c.income)}</div>${c.carried&&c.carried.length?`<div class="note">${L('incl. nómina del','incl. paycheck of')} ${c.carried.map(t=>esc(dLabel(t.date))).join(', ')}</div>`:''}</div><div class="stat"><div class="note">${nG}</div><div class="val" style="font-size:18px">${fmt(c.expense)}</div></div><div class="stat"><div class="note">${L('Ahorro','Saved')}</div><div class="val ${c.income-c.expense>=0?'pos':'neg'}" style="font-size:18px">${fmt(c.income-c.expense)}</div></div></div>`:''}
+      ${c?`<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 14px"><div class="stat"><div class="note">${nI}${sel?'':' · '+ymLabel(sm)}</div><div class="val pos" style="font-size:18px">${fmt(c.income)}</div>${c.carried&&c.carried.length?`<div class="note">${L('incl. nómina del','incl. paycheck of')} ${c.carried.map(t=>esc(dLabel(t.date))).join(', ')}</div>`:''}${c.est&&c.est.length?`<div class="note est">${L('incl. nómina estimada del','incl. estimated paycheck of')} ${c.est.map(t=>esc(dLabel(t.date))).join(', ')}</div>`:''}</div><div class="stat"><div class="note">${nG}</div><div class="val" style="font-size:18px">${fmt(c.expense)}</div></div><div class="stat"><div class="note">${L('Ahorro','Saved')}${cov&&!cov.complete?' · '+L('provisional','provisional'):''}</div><div class="val ${c.income-c.expense>=0?'pos':'neg'}" style="font-size:18px">${fmt(c.income-c.expense)}</div></div></div>`:''}
+      ${c&&cov&&!cov.complete?covNote(cov):''}
       ${pg?`<div class="alert info" id="payAsk" style="margin-bottom:14px"><span class="ic">i</span><div style="flex:1">${L(`<b>Cobras a final de mes.</b> ¿Cuento cada nómina cobrada desde el día ${pg} como ingreso del mes siguiente, que es cuando la gastas? Así el ahorro del mes compara lo que cobraste con lo que gastas.`,`<b>You get paid at the end of the month.</b> Should each paycheck received from day ${pg} on count as income for the following month, when you spend it? That way the month's savings compare what you earned with what you spend.`)}<div class="row" style="margin-top:8px;justify-content:flex-start"><button class="sm pri" data-pay="${pg}">${L('Sí, contarla el mes siguiente','Yes, count it next month')}</button><button class="sm" data-pay="0">${L('No','No')}</button></div></div></div>`:''}
       ${catItems.length?hbars(catItems,'var(--s2)'):`<p class="muted">${L('Sin gastos todavía.','No spending yet.')}</p>`}</div>
     <div class="card">${helpBtn('cf_chart')}<h2>${L('Ingresos, gastos y ahorro','Income, expenses and savings')}</h2><p class="sub">${L('Últimos 12 meses','Last 12 months')}</p>${legend([{n:nI,c:'var(--s3)'},{n:nG,c:'var(--s2)'},{n:nN,c:'var(--s1)'}])}<div id="cCF"></div></div>
@@ -1860,7 +1886,7 @@ function renderGenericPDF(r,name,text){
     const c=num($('#gC').value); if(!isNaN(c)&&c) { const a=acc(id); a.contributed=(a.contributed||0)+c; }
     const nf=saveFunds(acc(id),Object.assign({},r,{date:isoDate($('#gD').value)||r.date,dateFound:true}));
     regImport({acc:id,kind:'pdf',date:isoDate($('#gD').value)||r.date,contrib:!isNaN(c)&&c?c:undefined});
-    let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; ({added,dup}=importTxInto(id,tx.map(t=>flip?Object.assign({},t,{amount:-t.amount}):t),'pdf')); }
+    let added=0,dup=0; if(tx.length && $('#gTx') && $('#gTx').checked){ const flip=$('#gFlip').checked; ({added,dup}=importTxInto(id,tx.map(t=>flip?Object.assign({},t,{amount:-t.amount}):t),'pdf',{end:isoDate($('#gD')&&$('#gD').value)||null})); }
     learnKey(acc(id),gkey); save(); const RR=reconcile(); if(RR.changed) save(); pdfDone(`<div class="alert good"><span class="ic">✓</span><div>${L(`<b>Guardado.</b> ${!isNaN(v)?`Saldo ${fmt(v,2)}. `:''}${added?`${added} movimientos importados${dup?` (${dup} ya estaban)`:''}. `:''}Revisa en <a href="#cuentas">Cuentas</a>${added?' e <a href="#flujo">Movimientos</a>':''}.`,`<b>Saved.</b> ${!isNaN(v)?`Balance ${fmt(v,2)}. `:''}${added?`${added} transactions imported${dup?` (${dup} were already there)`:''}. `:''}Check in <a href="#cuentas">Accounts</a>${added?' and <a href="#flujo">Transactions</a>':''}.`)}</div></div>`); };
   $('#gAI').onclick=async()=>{ const box=$('#gAIout'); box.innerHTML=`<p class="muted">${L('Pidiendo a Claude…','Asking Claude…')}</p>`;
     try{ const res=await claudeExtract(text); if(!res){box.innerHTML='';return;}
@@ -1905,11 +1931,23 @@ function renderTaxImport(name,text,type,claudeForms){
 const isPdfFile=f=>/\.pdf$/i.test(f.name)||f.type==='application/pdf';
 // Guardado común (importación individual y por lotes)
 // st: identifica el extracto; dos movimientos iguales del mismo extracto no se marcan como duplicados.
-function importTxInto(accId,tx,src){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0; const st=(IMP_CTX&&IMP_CTX.id)||uid();
+function importTxInto(accId,tx,src,opt={}){ const keys=new Set(S.tx.map(t=>t.acc+'|'+t.date+'|'+t.amount+'|'+t.desc)); let added=0,dup=0,repl=0,gone=0; const st=(IMP_CTX&&IMP_CTX.id)||uid();
+  // Lo mismo desde otra fuente (actividad reciente en CSV ↔ extracto en PDF): mismo importe y ±3 días, cada uno una sola vez
+  const pool=S.tx.filter(t=>t.acc===accId&&t.src!==src&&t.src!=='manual'), used=new Set();
+  const near=t=>pool.find(x=>!used.has(x.id)&&Math.abs(x.amount-t.amount)<0.005&&Math.abs(daysBetween(x.date,t.date))<=3);
+  // Actividad reciente: lo que cae dentro de un extracto ya importado lo decide el extracto
+  const pdfEnd=src==='csv'?(S.imports||[]).filter(e=>e.acc===accId&&e.kind==='pdf'&&isoDate(e.date)).map(e=>e.date).sort().pop()||'':'';
   // Solo cuenta como repetido lo que ya estaba guardado: dos cargos iguales el mismo día en un extracto son dos cargos.
   for(const t of tx){ const k=accId+'|'+t.date+'|'+t.amount+'|'+t.desc; if(keys.has(k)){dup++;continue;}
+    const m=near(t); if(m){ used.add(m.id);
+      if(src==='pdf'&&m.src==='csv'){ m.date=t.date; m.desc=t.desc; m.src='pdf'; m.st=st; if(!m.manual) m.cat=categorize(t.desc,t.amount)||otherCat(t.amount); repl++; } else dup++; continue; }
+    if(pdfEnd&&t.date<=pdfEnd){ dup++; continue; }
     S.tx.push({id:uid(),date:t.date,desc:t.desc,amount:t.amount,cat:categorize(t.desc,t.amount)||otherCat(t.amount),acc:accId,src,st}); added++; }
-  return {added,dup}; }
+  // El extracto manda en su periodo: lo que venía de la actividad reciente y no aparece en él (cargos pendientes que cambiaron) sale
+  if(src==='pdf'&&tx.length){ const ds=tx.map(t=>t.date).sort(), from=ds[0], to=opt.end&&opt.end>ds[ds.length-1]?opt.end:ds[ds.length-1];
+    const drop=new Set(S.tx.filter(t=>t.acc===accId&&t.src==='csv'&&!t.manual&&!used.has(t.id)&&t.date>=from&&t.date<=to).map(t=>t.id));
+    gone=drop.size; if(gone) S.tx=S.tx.filter(t=>!drop.has(t.id)); }
+  return {added,dup,repl,gone}; }
 function saveMortgageStatement(m,r,bal,date){ m.rate=r.rate; m.payment=r.pi; m.extra=r.extra||0; m.escrow=r.escrow||0; if(r.nextDue) m.nextDue=r.nextDue; if(r.last4) m.last4=r.last4; if(!m.institution) m.institution=r.institution;
   const sn=upsertSnap(m.id,date,bal); Object.assign(sn,{rate:m.rate,pi:m.payment,extra:m.extra,escrow:m.escrow}); delete extraSim[m.id]; }
 function saveHoldings(id,H,d,setBal,setCost){ const a=acc(id); const total=H.reduce((s,x)=>s+x.value,0), cost=H.reduce((s,x)=>s+(x.cost||0),0);
@@ -1988,9 +2026,9 @@ async function autoPDF(file){
     a=newAccFrom(r,r.kind); created=true; } const bal=r.cands.length?r.cands[0].v:NaN; const useBal=!isNaN(bal)&&r.dateFound; const txOk=r.tx.length&&['cash','credit'].includes(a.kind);
   if(!useBal&&!txOk) return {status:'review',kind:'pdf',acc:a.id,msg:L('No encontré el saldo con su fecha ni movimientos','I couldn\'t find a dated balance or transactions')};
   if(r.last4&&!a.last4) a.last4=r.last4;
-  if(useBal) upsertSnap(a.id,r.date,bal); const res=txOk?importTxInto(a.id,r.tx,'pdf'):{added:0,dup:0}; learnKey(a,key);
+  if(useBal) upsertSnap(a.id,r.date,bal); const res=txOk?importTxInto(a.id,r.tx,'pdf',{end:r.dateFound?r.date:null}):{added:0,dup:0}; learnKey(a,key);
   const nf=saveFunds(a,r); regImport({acc:a.id,kind:'pdf',date:r.dateFound?r.date:null});
-  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,created,funds:nf,check:r.check}; }
+  return {status:'ok',kind:'pdf',acc:a.id,bal:useBal?bal:null,date:useBal?r.date:null,added:res.added,dup:res.dup,repl:(res.repl||0)+(res.gone||0),created,funds:nf,check:r.check}; }
 // Fondos del plan (401(k), IRA…): se guardan como posiciones de la cuenta para ver su distribución
 function saveFunds(a,r){ if(r.contrib&&a.kind==='retirement'&&r.dateFound&&!(a.contrib401&&a.contrib401.date>r.date)) a.contrib401=Object.assign({date:r.date},r.contrib);
   const F=r.funds; if(!F||!F.rows.length||!['retirement','brokerage','kids'].includes(a.kind)||!r.dateFound) return 0;
@@ -2049,7 +2087,7 @@ function renderBatch(){
   const KL={csv:'CSV',pdf:L('Extracto','Statement'),mortgage:L('Hipoteca','Mortgage'),tax:L('Fiscal','Tax form'),holdings:L('Posiciones','Positions')};
   const ic={ok:['good','✓'],skip:['info','i'],review:['warn','!'],error:['crit','✗']};
   const detail=r=>{ const parts=[]; if(r.created) parts.push(`<b>${L('cuenta nueva','new account')}</b>`); if(r.kind) parts.push(KL[r.kind]||r.kind); if(r.acc&&acc(r.acc)) parts.push(esc(acc(r.acc).name));
-    if(r.added!=null) parts.push(L(`${r.added} movimientos nuevos${r.dup?` (${r.dup} ya estaban)`:''}`,`${r.added} new transactions${r.dup?` (${r.dup} already there)`:''}`));
+    if(r.added!=null) parts.push(L(`${r.added} movimientos nuevos${r.dup?` (${r.dup} ya estaban)`:''}`,`${r.added} new transactions${r.dup?` (${r.dup} already there)`:''}`)+(r.repl?L(` · ${r.repl} de la actividad reciente sustituidos por el extracto`,` · ${r.repl} from recent activity replaced by the statement`):''));
     if(r.bal!=null) parts.push(`${L('saldo','balance')} ${fmt(r.bal,2)}${r.date?' · '+dLabel(r.date):''}`); if(r.flip) parts.push(L('signo invertido (tarjeta)','sign flipped (card)'));
     if(r.funds) parts.push(L(`${r.funds} fondos`,`${r.funds} funds`));
     if(r.check) parts.push(r.check.ok?`<span class="pos">✓ ${L('cuadra con el extracto','matches the statement')}</span>`:`<b class="neg">⚠ ${L('no cuadra con el extracto','doesn\'t match the statement')} (${L('diferencia','difference')} ${fmt(r.check.diff,2)})</b>`);

@@ -12,7 +12,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   transactions:[{date:'<img src=x onerror="window.__pwn=4">',description:'x',amount:5},{date:'2026-10-01',description:'<img src=x onerror="window.__pwn=5">',amount:-10},{date:'2026-10-02',description:'y',amount:'9"><img src=x>'}],tax_forms:[]};
 (async()=>{
   const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const pg=await ctx.newPage();
-  const errs=[]; pg.on('pageerror',e=>errs.push(e.message)); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
+  const errs=[]; pg.on('pageerror',e=>{ errs.push(e.message); console.log('PAGEERR',e.stack); }); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
   const cdp=await ctx.newCDPSession(pg); await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
   await pg.route('https://api.anthropic.com/**',r=>{ const body=JSON.parse(r.request().postData());
@@ -337,6 +337,27 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.evaluate(()=>{ location.hash='#ajustes'; }); await pg.waitForSelector('#psOn'); await pg.uncheck('#psOn'); await pg.waitForTimeout(100);
   ok(await pg.evaluate(c=>!S.settings.payShift&&cashflowByMonth()[c].carried.length===0,ps.cur),'la opción de la nómina se puede quitar en Ajustes');
   await pg.evaluate(()=>{ deleteAccount('psA'); S.tx.filter(t=>t._ps).forEach(t=>{ t.cat='Nómina'; delete t._ps; }); delete S.settings.payShiftAsked; save(); });
+  // Cobertura de datos y nómina esperada
+  const cv=await pg.evaluate(()=>{ closeModal(); const prev=isoAddMonths(today(),-1).slice(0,7), p2=isoAddMonths(today(),-2).slice(0,7), p3=isoAddMonths(today(),-3).slice(0,7);
+    S.accounts.push({id:'cvA',kind:'cash',name:'Banco Cobertura Prueba'}); S.imports.push({id:'cvI',acc:'cvA',kind:'pdf',date:prev+'-15',fp:'cv',added:today()});
+    [p3,p2].forEach((m,i)=>S.tx.push({id:'cvN'+i,acc:'cvA',date:m+'-25',desc:'NOMINA COBERTURA',amount:8800+i*200,cat:'Nómina',src:'pdf'}));
+    S.tx.push({id:'cvG',acc:'cvA',date:prev+'-10',desc:'GASTO COBERTURA',amount:-100,cat:'Compras',src:'pdf'});
+    const est=payEstimates().filter(t=>t.acc==='cvA'), c=cashflowByMonth()[prev], mc=monthCov(prev);
+    flujoFilter.month=prev; flujoFilter.cat='all'; location.hash='#flujo'; route();
+    return {prev,est:est.map(t=>t.date+':'+t.amount).join(),inEst:c.est.some(t=>t.acc==='cvA'),lag:mc.lag.some(x=>x.a.id==='cvA'),complete:mc.complete}; });
+  await pg.waitForTimeout(200);
+  const cvUI=await pg.evaluate(()=>({note:/Provisional/.test(($('#covNote')||{}).textContent||''),est:/estimada/.test(document.querySelector('.tiles').textContent),prov:/provisional/.test(document.querySelector('.tiles').textContent)}));
+  ok(cv.est===cv.prev+'-25:9000'&&cv.inEst&&cv.lag&&!cv.complete&&cvUI.note&&cvUI.est&&cvUI.prov,'banco con extracto hasta el 15: mes provisional, dice qué falta y estima la nómina del 25 ('+JSON.stringify([cv,cvUI])+')');
+  ok(await pg.evaluate(p=>{ S.tx.push({id:'cvR',acc:'cvA',date:p+'-24',desc:'NOMINA COBERTURA',amount:9100,cat:'Nómina',src:'csv'}); const r=!payEstimates().some(t=>t.acc==='cvA'); S.tx=S.tx.filter(t=>t.id!=='cvR'); return r; },cv.prev),'la nómina estimada desaparece en cuanto llega la real');
+  // Actividad reciente (CSV) → el extracto (PDF) la sustituye sin duplicar
+  const rcx=await pg.evaluate(()=>{ S.accounts.push({id:'rcA',kind:'cash',name:'Banco Actividad Prueba'}); const d=n=>isoAddMonths(today(),-1).slice(0,7)+'-'+String(n).padStart(2,'0');
+    const a=importTxInto('rcA',[{date:d(3),desc:'CAFE PENDIENTE',amount:-5.25},{date:d(5),desc:'TIENDA',amount:-40},{date:d(8),desc:'RESTAURANTE',amount:-30}],'csv');
+    const b=importTxInto('rcA',[{date:d(4),desc:'CAFE SHOP 123',amount:-5.25},{date:d(5),desc:'TIENDA XYZ',amount:-40},{date:d(9),desc:'RESTAURANTE',amount:-36},{date:d(12),desc:'NUEVO',amount:-12}],'pdf',{end:d(15)});
+    S.imports.push({id:'rcI',acc:'rcA',kind:'pdf',date:d(15),fp:'rc',added:today()});
+    const c=importTxInto('rcA',[{date:d(3),desc:'CAFE PENDIENTE',amount:-5.25},{date:d(8),desc:'RESTAURANTE',amount:-30},{date:d(18),desc:'DESPUES',amount:-7}],'csv');
+    const tx=S.tx.filter(t=>t.acc==='rcA'); return {a,b,c,n:tx.length,pdf:tx.filter(t=>t.src==='pdf').length,sum:tx.reduce((s,t)=>s+t.amount,0)}; });
+  ok(rcx.a.added===3&&rcx.b.repl===2&&rcx.b.gone===1&&rcx.b.added===2&&rcx.c.added===1&&rcx.c.dup===2&&rcx.n===5&&rcx.pdf===4&&Math.abs(rcx.sum+100.25)<0.01,'la actividad reciente del banco se sustituye por el extracto sin duplicar ('+JSON.stringify(rcx)+')');
+  await pg.evaluate(()=>{ deleteAccount('cvA'); deleteAccount('rcA'); save(); });
   // Hipoteca ↔ inmueble: no puede quedar una hipoteca suelta
   await pg.evaluate(()=>{ closeModal(); S.accounts.push({id:'hpA',kind:'property',name:'Piso Alquiler Prueba',rental:true}); editAccount(null,'mortgage'); });
   await pg.selectOption('#xPr','__new'); await pg.fill('#eN','Hipoteca Prueba H'); await pg.fill('#xPnN','Casa Prueba H'); await pg.fill('#xPnV','650000'); await pg.uncheck('#xPnR'); await pg.fill('#xR','6'); await pg.fill('#xP','2000'); await pg.fill('#eB','400000'); await pg.click('#eOk');
