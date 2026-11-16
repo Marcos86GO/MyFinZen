@@ -7,6 +7,6 @@
     "test": "node tests/news.mjs && node tests/e2e.js"
   },
   "devDependencies": {
-    "playwright": "^1.47.0"
+    "playwright": "^1.49.0"
   }
 }

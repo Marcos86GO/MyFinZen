@@ -1,7 +1,7 @@
 // MyFinZen service worker: guarda la app para usarla sin conexión.
 // Solo cachea los archivos de la app (código e iconos), nunca tus datos.
 // Sube VERSION en cada cambio para que los dispositivos reciban la actualización.
-const VERSION='v1.22.2';
+const VERSION='v1.23.0';
 const CACHE = 'myfinzen-' + VERSION;
 const ASSETS = [
   './',
@@ -9,6 +9,7 @@ const ASSETS = [
   './manifest.webmanifest',
   './help.js',
   './app.js',
+  './cal.js',
   './sync.js',
   './vendor/pdf.min.js',
   './vendor/pdf.worker.min.js',
@@ -58,6 +59,48 @@ function shareTarget(e) {
     return Response.redirect(new URL('./?share=' + id + '#importar', self.registration.scope).href, 303);
   })());
 }
+
+/* Aviso de pagos importantes con la app cerrada (Calendario). El service worker no tiene la clave de la bóveda:
+   solo lee el registro 'calsched' que la app deja en IndexedDB cuando activas las notificaciones, con las FECHAS de
+   los avisos y CUÁNTOS pagos son (sin nombres ni importes). El navegador lo despierta con la sincronización periódica. */
+const calDB = () => new Promise((res, rej) => { const r = indexedDB.open('misfinanzas', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('kv'); // la misma estructura que crea la app
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const calTx = (db, mode, fn) => new Promise((res, rej) => { const t = db.transaction('kv', mode), q = fn(t.objectStore('kv')); t.oncomplete = () => res(q.result); t.onerror = t.onabort = () => rej(t.error); });
+const isoDay = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+async function calCheck() {
+  if (!self.Notification || Notification.permission !== 'granted') return;
+  const db = await calDB();
+  try {
+    const rec = await calTx(db, 'readonly', s => s.get('calsched'));
+    if (!rec || typeof rec !== 'object' || !Array.isArray(rec.days)) return;
+    const d = new Date(), now = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const shown = (Array.isArray(rec.shown) ? rec.shown : []).filter(isoDay);
+    const due = rec.days.filter(x => x && isoDay(x.d) && isoDay(x.u) && x.d <= now && x.u >= now && !shown.includes(x.d)).slice(0, 3);
+    if (!due.length) return;
+    const en = rec.lang === 'en';
+    for (const x of due) {
+      const n = Math.max(1, Math.min(99, Math.round(Number(x.n)) || 1));
+      await self.registration.showNotification(en ? 'MyFinZen · Significant payments' : 'MyFinZen · Pagos importantes', {
+        body: en ? `You have ${n === 1 ? '1 significant payment' : n + ' significant payments'} before your next paycheck. Tap to see them.`
+                 : `Tienes ${n === 1 ? '1 pago importante' : n + ' pagos importantes'} antes de tu próxima nómina. Toca para verlos.`,
+        tag: 'mfz-pay-' + x.d, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { hash: '#calendario' } });
+      shown.push(x.d);
+    }
+    rec.shown = shown.slice(-60);
+    await calTx(db, 'readwrite', s => s.put(rec, 'calsched'));
+  } finally { db.close(); }
+}
+self.addEventListener('periodicsync', e => { if (e.tag === 'mfz-cal') e.waitUntil(calCheck().catch(() => {})); });
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL('./#calendario', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const c = cs.find(x => x.url.startsWith(self.registration.scope));
+    if (c) { c.postMessage({ type: 'goto', hash: '#calendario' }); return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
+});
 
 self.addEventListener('fetch', e => {
   const req = e.request;
