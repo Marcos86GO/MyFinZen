@@ -47,23 +47,42 @@ function recItem(k,list,fixed,covOf){ const ds=[...new Set(list.map(t=>t.date))]
   if(ds.length<3&&!bill) return null;
   if(daysBetween(last.date,covOf(last.acc))>c[1]*1.5+7) return null;      // ya no se cobra
   const steady=!amts.some(a=>Math.abs(a-m)>m*0.1);
-  return {auto:true,name:recName(k,last.desc),amount:r2(fixed||steady?-last.amount:calMedian(amts.slice(-3))),freq:c[0],next:last.date,from:addDays(last.date,1),cat:last.cat,n:ds.length,
-    hist:list.slice(-12).map(t=>({d:t.date,a:-t.amount}))}; }
+  // Día de cobro: un pago mensual no siempre se anota el mismo día (fin de semana, festivo: el banco lo apunta después), así que
+  // se toma el día más temprano de los últimos cargos, que es el del cobro; un retraso solo puede moverlo hacia delante.
+  let next=last.date; if(CAL_FREQ[c[0]].m){ const dd=ds.slice(-6).map(d=>+d.slice(8,10)), lo=Math.min(...dd); if(Math.max(...dd)-lo<=6) next=last.date.slice(0,8)+String(lo).padStart(2,'0'); }
+  const seen=list.reduce((m,t)=>t.post>m?t.post:m,last.date);
+  return {auto:true,name:recName(k,last.desc),amount:r2(fixed||steady?-last.amount:calMedian(amts.slice(-3))),freq:c[0],next,from:addDays(seen,1),cat:last.cat,n:ds.length,
+    hist:list.slice(-12).map(t=>({d:t.post,a:-t.amount}))}; }
+// Fecha real de la compra: algunos bancos la escriben en el texto ("CHECKCARD 0921 …", "PURCHASE 0821 …") y anotan el cargo días después
+function recDate(t){ const m=String(t.desc||'').match(/\b(?:CHECKCARD|PURCHASE)\s+(\d{2})(\d{2})\b/i); if(!m) return t.date;
+  for(const y of [+t.date.slice(0,4),+t.date.slice(0,4)-1]){ const d=isoDate(`${y}-${m[1]}-${m[2]}`), n=d?daysBetween(d,t.date):-1; if(n>=0&&n<=7) return d; } return t.date; }
+// ¿Dos textos distintos del mismo comercio son el mismo pago? Mismo importe (o facturas parecidas) y nunca dos cargos cerca:
+// si fueran dos pagos distintos que se cobran a la vez, alguno de uno caería a menos de 20 días de alguno del otro.
+function sameBill(A,B){ const cents=l=>new Set(l.map(t=>Math.round(-t.amount*100))), ca=cents(A), med=l=>calMedian(l.map(t=>-t.amount));
+  const amt=[...cents(B)].some(x=>ca.has(x))||(BILL_CATS.has(A[A.length-1].cat)&&BILL_CATS.has(B[B.length-1].cat)&&Math.abs(med(A)-med(B))<=med(A)*0.25);
+  return amt&&A.every(a=>B.every(b=>Math.abs(daysBetween(a.date,b.date))>=20)); }
 function detectRecurring(){ const now=today(), lim=isoAddMonths(now,-26), fm=new Set(fixedMortgages().map(f=>f.cat)), cov={};
   const covOf=id=>{ if(!id) return now; if(!(id in cov)){ const a=acc(id); cov[id]=(a&&covEnd(a))||now; } return cov[id]; };
   const G={};
-  for(const t of S.tx){ if(!(t.amount<0)||t.date<lim||t.date>now||t.rec||txType(t)!=='expense'||fm.has(t.cat)) continue; const k=recKey(t.desc); if(!k) continue; (G[k]=G[k]||[]).push(t); }
+  for(const t of S.tx){ if(!(t.amount<0)||t.date<lim||t.date>now||t.rec||txType(t)!=='expense'||fm.has(t.cat)) continue; const k=recKey(t.desc); if(!k) continue;
+    (G[k]=G[k]||[]).push({date:recDate(t),post:t.date,amount:t.amount,cat:t.cat,acc:t.acc,desc:t.desc}); }
+  // El mismo comercio puede venir escrito de formas distintas según el mes ("NETFLIX.COM LOS GATOS" / "Netflix.com netflix.com"): se juntan
+  const MK={}, first={}; for(const k of Object.keys(G)){ MK[k]=[k]; (first[k.split(' ')[0]]=first[k.split(' ')[0]]||[]).push(k); }
+  const oldest=k=>G[k].reduce((m,t)=>t.date<m?t.date:m,'9');
+  for(const ks of Object.values(first)){ if(ks.length<2) continue; ks.sort((a,b)=>oldest(a).localeCompare(oldest(b)));   // manda la clave del más antiguo
+    for(let i=0;i<ks.length;i++){ if(!G[ks[i]]) continue; for(let j=i+1;j<ks.length;j++){ if(G[ks[j]]&&sameBill(G[ks[i]],G[ks[j]])){ G[ks[i]].push(...G[ks[j]]); MK[ks[i]].push(ks[j]); delete G[ks[j]]; } } } }
   const out=[];
   for(const [k,all] of Object.entries(G)){ all.sort((a,b)=>a.date.localeCompare(b.date)); const found=[], used=new Set(), byAmt={};
     all.forEach(t=>{ const c=Math.round(-t.amount*100); (byAmt[c]=byAmt[c]||[]).push(t); });
     for(const sub of Object.values(byAmt)){ const it=recItem(k,sub,true,covOf); if(it){ found.push(it); sub.forEach(t=>used.add(t)); } }   // importe fijo (suscripciones)
     const rest=all.filter(t=>!used.has(t)), it=rest.length>=2?recItem(k,rest,false,covOf):null; if(it) found.push(it);                    // importe variable (facturas)
     if(!found.length&&new Set(all.map(t=>t.date)).size<=2){ const t=all[all.length-1], a=-t.amount, f=a>=100?'y':'m';   // una suscripción recién contratada o con pocos meses importados
-      if(t.cat==='Suscripciones'&&daysBetween(t.date,covOf(t.acc))<=(f==='y'?555:53)) found.push({auto:true,guess:true,name:recName(k,t.desc),amount:r2(a),freq:f,next:t.date,from:addDays(t.date,1),cat:t.cat,n:1,hist:[{d:t.date,a}]}); }
-    found.forEach(f=>{ f.key='auto:'+hashKey(k)+(found.length>1?':'+Math.round(f.amount*100):''); f.mk=k; out.push(f); }); }
+      if(t.cat==='Suscripciones'&&daysBetween(t.date,covOf(t.acc))<=(f==='y'?555:53)) found.push({auto:true,guess:true,name:recName(k,t.desc),amount:r2(a),freq:f,next:t.date,from:addDays(t.post,1),cat:t.cat,n:1,hist:[{d:t.post,a}]}); }
+    const mks=MK[k]; let nm=null; if(mks.length>1){ const w=mks.map(x=>x.split(' ')); let n=0; while(n<w[0].length&&w.every(x=>x[n]===w[0][n])) n++; nm=recName(w[0].slice(0,n).join(' ')); }   // nombre: lo que tienen en común
+    found.forEach(f=>{ f.key='auto:'+hashKey(k)+(found.length>1?':'+Math.round(f.amount*100):''); f.mk=k; f.mks=mks; if(nm) f.name=nm; out.push(f); }); }
   return out; }
 // Desde la ficha de un movimiento: anotarlo como pago recurrente (o abrir el que ya lo incluye)
-function recurFromTx(t){ const k=recKey(t.desc); let cur=k&&recurringAll().find(r=>r.mk===k); if(cur&&cur.off){ recUnOff(cur.key); cur=recurringAll().find(r=>r.mk===k); }   // lo habías quitado: vuelve
+function recurFromTx(t){ const k=recKey(t.desc), has=r=>(r.mks||[]).includes(k); let cur=k&&recurringAll().find(has); if(cur&&cur.off){ recUnOff(cur.key); cur=recurringAll().find(has); }   // lo habías quitado: vuelve
   if(cur) return recurModal(cur);
   let next=isoAddMonths(t.date,1); for(let i=2;next<today()&&i<40;i++) next=isoAddMonths(t.date,i);
   recurModal(null,{key:k?'auto:'+hashKey(k):undefined,name:(k&&recName(k,t.desc))||String(t.desc).slice(0,80),amount:r2(-t.amount),freq:'m',next,cat:catType(t.cat)==='expense'&&!isUncat(t)?t.cat:'Otros gastos',why:L(`Cargo de ${amt2(-t.amount)} el ${dLabel(t.date)}. Elige cada cuánto se repite y cuándo es el próximo.`,`Charge of ${amt2(-t.amount)} on ${dLabel(t.date)}. Choose how often it repeats and when the next one is.`)}); }
@@ -113,7 +132,7 @@ function recurSuggest(){ const c=calCfg(), no=new Set(c.noSug), have=new Set((S.
   const ms=S.accounts.filter(a=>a.kind==='mortgage');
   S.accounts.filter(p=>p.kind==='property'&&p.insYear>0).forEach(p=>{ const mort=ms.find(m=>m.propertyId===p.id), k='ins:'+p.id; if(mort&&mort.escrow>0) return; if(no.has(k)||have.has(k)) return;
     out.push({key:k,name:L('Seguro · ','Insurance · ')+p.name,amount:p.insYear,freq:'y',cat:'Seguros',why:L('Lo tienes anotado en el inmueble; falta la fecha en que lo pagas.','It is noted on the property; the date you pay it is missing.')}); });
-  const known=new Set(all.map(r=>r.mk).filter(Boolean)), lim=isoAddMonths(now,-13), one={};
+  const known=new Set(all.flatMap(r=>r.mks||[])), lim=isoAddMonths(now,-13), one={};
   for(const t of S.tx){ if(!(t.amount<=-100)||t.date<lim||t.date>now||t.rec||!['Seguros','Suscripciones','Educación'].includes(t.cat)) continue; const k=recKey(t.desc); if(!k||known.has(k)) continue; (one[k]=one[k]||[]).push(t); }
   Object.entries(one).filter(([,l])=>l.length===1).map(([k,l])=>({k,t:l[0]})).sort((a,b)=>a.t.amount-b.t.amount).slice(0,4).forEach(({k,t})=>{ const key='sug:'+hashKey(k); if(no.has(key)||have.has(key)) return;
     out.push({key,name:recName(k,t.desc),amount:-t.amount,freq:'y',next:isoAddMonths(t.date,12),cat:t.cat,why:L(`Un cargo de ${amt2(-t.amount)} el ${dLabel(t.date)}. ¿Se repite cada año?`,`One charge of ${amt2(-t.amount)} on ${dLabel(t.date)}. Does it repeat every year?`)}); });
