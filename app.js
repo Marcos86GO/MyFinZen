@@ -37,11 +37,12 @@ const ICONS={
   globe:'M12 3a9 9 0 1 1 0 18a9 9 0 1 1 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
   news:'M5 5h12v14H6a1 1 0 0 1-1-1zM17 9h2a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0M8 9h6M8 13h6M8 16h4', pin:'M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11zM12 8a2 2 0 1 1 0 4a2 2 0 1 1 0-4z', piggy:'M5 11a7 6 0 0 1 13-2h2v4l-2 1v3h-3v-2H9v2H6v-3a6 6 0 0 1-1-3zM15 10h.01',
   thumbUp:'M7 11v9H4v-9zM7 11l4-7a2 2 0 0 1 2 2v4h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 16.8 20H7', thumbDown:'M7 13V4H4v9zM7 13l4 7a2 2 0 0 0 2-2v-4h5a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 16.8 4H7',
+  calendar:'M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4', left:'M15 6l-6 6 6 6',
   layers:'M12 4l9 5-9 5-9-5zM3 14l9 5 9-5', star:'M12 4l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z'
 };
 const ic=(n,cls)=>`<svg class="ico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]||''}"/></svg>`;
 // Menú: orden pedido por el usuario. Lo que no cabe va en "Más".
-const NAV=[['resumen','Resumen','Overview','home'],['flujo','Movimientos','Transactions','flow'],['cuentas','Cuentas','Accounts','wallet'],['inversiones','Inversiones','Investments','trend'],['hipotecas','Hipotecas','Mortgages','house'],['impuestos','Impuestos','Taxes','receipt']];
+const NAV=[['resumen','Resumen','Overview','home'],['flujo','Movimientos','Transactions','flow'],['cuentas','Cuentas','Accounts','wallet'],['inversiones','Inversiones','Investments','trend'],['hipotecas','Hipotecas','Mortgages','house'],['impuestos','Impuestos','Taxes','receipt'],['calendario','Calendario','Calendar','calendar']];
 const NAV_MORE=[['alquiler','Casa en alquiler','Rental','building'],['claude','Claude','Claude','spark'],['ayuda','Manual','Manual','book'],['ajustes','Copia y ajustes','Backup & settings','sliders']];
 const NAV_PARENT={noticias:'inversiones',jubilacion:'inversiones',importar:'cuentas'};
 function navLabel(v){ const n=[...NAV,...NAV_MORE].find(x=>x[0]===(NAV_PARENT[v]||v)); return n?L(n[1],n[2]):'MyFinZen'; }
@@ -203,7 +204,7 @@ const isoDate=v=>{ if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v)) retur
 const str=(v,max=300)=>v==null?'':String(v).slice(0,max);
 const arr=v=>Array.isArray(v)?v:[];
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
-const ACC_NUM=['rate','payment','extra','escrow','rent','hoa','taxYear','insYear','maint','otherMonthly','mortgagePay','buildingBasis','inService','apr','contributed'];
+const ACC_NUM=['rate','payment','extra','escrow','rent','hoa','taxYear','insYear','maint','otherMonthly','mortgagePay','buildingBasis','inService','apr','contributed','stmtDay'];
 function sanitizeHoldingRow(x){ x=obj(x); const n=k=>numStrict(x[k]); const r={sym:str(x.sym,40).trim(),name:str(x.name,120),qty:n('qty')??NaN,avg:n('avg')??NaN,cost:n('cost'),value:n('value')||0,gain:n('gain')}; if(x.fund) r.fund=true; if(x.cls) r.cls=str(x.cls,40); return r; }
 function sanitizeState(st){
   if(!st||typeof st!=='object'||Array.isArray(st)) throw Object.assign(new Error(L('Datos no válidos','Invalid data')),{code:'notbackup'});
@@ -211,7 +212,7 @@ function sanitizeState(st){
   o.accounts=arr(o.accounts).filter(a=>a&&typeof a==='object').map(a=>{ const x=Object.assign({},a);
     x.id=cleanId(a.id)||uid(); x.kind=Object.prototype.hasOwnProperty.call(KINDS,a.kind)?a.kind:'other'; x.name=str(a.name,120)||KINDS[x.kind].label; x.institution=str(a.institution,120); x.last4=String(a.last4??'').replace(/\D/g,'').slice(-4);
     ACC_NUM.forEach(k=>{ if(k in x) x[k]=numStrict(x[k]); });
-    if('propertyId' in x) x.propertyId=x.propertyId?cleanId(x.propertyId):null; if('nextDue' in x) x.nextDue=isoDate(x.nextDue);
+    if('propertyId' in x) x.propertyId=x.propertyId?cleanId(x.propertyId):null; if('stmtDay' in x){ const d=Math.round(x.stmtDay||0); if(d>=1&&d<=31) x.stmtDay=d; else delete x.stmtDay; } if('nextDue' in x) x.nextDue=isoDate(x.nextDue);
     ['rental','pre2017'].forEach(k=>{ if(k in x) x[k]=!!x[k]; });
     if('keys' in x) x.keys=arr(x.keys).filter(k=>typeof k==='string').map(k=>k.slice(0,80)).slice(0,20);
     if('contrib401' in x){ const c=obj(x.contrib401); x.contrib401=isoDate(c.date)?{date:c.date,months:Math.max(1,Math.min(12,Math.round(numStrict(c.months)||3))),employee:numStrict(c.employee),employer:numStrict(c.employer),total:numStrict(c.total)}:undefined; if(!x.contrib401||x.contrib401.total==null) delete x.contrib401; }
@@ -239,6 +240,8 @@ function sanitizeState(st){
   if(s.newsSort==='rec') S2.newsSort='rec';
   { const d=numStrict(s.payShift); if(d!=null&&d>=1&&d<=31) S2.payShift=Math.round(d); } if(s.payShiftAsked===true) S2.payShiftAsked=true;
   if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
+  { const c=obj(s.cal), m=numStrict(c.min); // calendario: umbral de pagos importantes, notificación y días de cobro
+    S2.cal={min:m!=null&&m>=0&&m<=1e7?Math.round(m):500,sys:c.sys===true,payDays:[...new Set(arr(c.payDays).map(d=>Math.round(numStrict(d)||0)).filter(d=>d>=1&&d<=31))].slice(0,4),noSug:arr(c.noSug).filter(x=>typeof x==='string'&&/^[\w:.-]{1,80}$/.test(x)).slice(-200)}; }
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
     for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }
@@ -256,6 +259,11 @@ function sanitizeState(st){
   o.tax=tax;
   o.imports=arr(o.imports).map(e=>{ e=obj(e); const x={id:cleanId(e.id)||uid(),acc:e.acc?cleanId(e.acc):null,kind:str(e.kind,12),fp:str(e.fp,300),hash:str(e.hash,64),name:str(e.name,160),date:isoDate(e.date),added:isoDate(e.added)||today()};
     if(e.doc) x.doc=cleanId(e.doc); const c=numStrict(e.contrib); if(c) x.contrib=c; return x; }).filter(e=>e.fp||e.hash).slice(-2000);
+  // Pagos recurrentes: los tuyos (completos) y tus cambios sobre los que la app detecta (con key)
+  o.recurring=arr(o.recurring).map(r=>{ r=obj(r); const x={id:cleanId(r.id)||uid()}, nm=str(r.name,80).trim(), a=numStrict(r.amount);
+    if(typeof r.key==='string'&&/^[\w:.-]{1,80}$/.test(r.key)) x.key=r.key; if(nm) x.name=nm; if(a!=null&&a>0&&a<1e8) x.amount=Math.round(a*100)/100;
+    if(['w','b','m','q','s','y'].includes(r.freq)) x.freq=r.freq; if(isoDate(r.next)) x.next=r.next; if(r.cat) x.cat=str(r.cat,60); if(r.notify===true||r.notify===false) x.notify=r.notify; if(r.off===true) x.off=true; return x;
+  }).filter(r=>r.key||(r.name&&r.amount&&r.freq&&r.next)).slice(0,500);
   o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,40),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
   { const sec=obj(o.secret), out={}; if(typeof sec.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(sec.apiKey)) out.apiKey=sec.apiKey;
     const y=obj(sec.sync); if(['dropbox','file','manual'].includes(y.p)){ out.sync={p:y.p,dev:cleanId(y.dev)||uid()}; if(typeof y.rt==='string'&&/^[\w.~+/=-]{8,400}$/.test(y.rt)) out.sync.rt=y.rt; if(typeof y.last==='string'&&!isNaN(Date.parse(y.last))) out.sync.last=y.last.slice(0,30); }
@@ -279,7 +287,7 @@ const IDB = {
   del(k){ if(!this.db){ if(this.mem) delete this.mem[k]; return Promise.resolve(true); } return new Promise(res=>{ try{const tx=this.db.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete=()=>res(true); tx.onerror=()=>res(false);}catch(e){res(false)} }); }
 };
 let saveTimer=null;
-function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ saveTimer=null; persist(); if(typeof syncSoon==='function') syncSoon(); },200); }
+function save(){ if(typeof calDirty==='function') calDirty(); clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ saveTimer=null; persist(); if(typeof syncSoon==='function') syncSoon(); },200); }
 function flushSave(){ if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; } return persist(); }
 
 /* ============================================================
@@ -614,6 +622,7 @@ function computeAlerts(){
   cc.forEach(a=>{ if(a.apr && a.apr>0) A.push({lvl:'warn',key:'apr:'+a.id+':'+ym(today()),go:{h:'cuentas',acc:a.id},t:L(`<b>${esc(a.name)}</b> tiene ${fmt(balanceOf(a))} pendientes al ${a.apr}% APR. Pagarla entera cada mes evita intereses.`,`<b>${esc(a.name)}</b> has ${fmt(balanceOf(a))} outstanding at ${a.apr}% APR. Paying it in full every month avoids interest.`)}); });
   // rental
   S.accounts.filter(a=>a.kind==='property'&&a.rental).forEach(p=>{ const r=rentalPL(p); if(r.net<0) A.push({lvl:'warn',key:'rent:'+p.id+':'+Math.round(r.net),go:{h:'alquiler'},t:L(`<b>${esc(p.name)}</b> pierde unos ${fmt(-r.net)} al mes con las cifras configuradas.`,`<b>${esc(p.name)}</b> loses about ${fmt(-r.net)} a month with the configured figures.`)}); });
+  if(typeof calAlerts==='function') calAlerts(A); // pagos importantes antes de la próxima nómina (cal.js)
   const ign=new Set(S.settings.alertIgnore||[]); A.forEach(a=>{ a.ignored=!!(a.key&&ign.has(a.key)); });
   return A;
 }
@@ -662,6 +671,7 @@ function route(){ if(!S) return;
   if(v!=='importar'){ IMPORT_FOR=null; IMPORT_NEW=false; }
   try{ const R=reconcile(); if(R&&R.changed) save(); VIEWS[v]($('#app')); }
   catch(e){ console.warn('vista',v,e); $('#app').innerHTML=`<div class="alert crit"><span class="ic">!</span><div><b>${L('Algo ha fallado al mostrar esta pantalla.','Something went wrong showing this screen.')}</b> ${L('Tus datos no se han tocado. Prueba otra pestaña o recarga la app; si se repite, haz una copia cifrada y avísame.','Your data hasn\'t been touched. Try another tab or reload the app; if it keeps happening, make an encrypted backup and report it.')}<div class="muted" style="margin-top:4px">${esc(String(e&&e.message||e))}</div></div></div>`; }
+  if(typeof calSysSoon==='function') calSysSoon(); // registro de avisos al día (cal.js)
   window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
 /* Solo se repinta si cambia el ancho: al abrir el teclado del móvil cambia la altura y repintar quitaba el foco de la casilla */
@@ -1503,7 +1513,7 @@ function stmtInfo(a){
   const pd=imps.filter(e=>e.kind!=='csv').map(e=>e.date).sort(); let step=a.kind==='retirement'?3:1;
   if(pd.length>=2){ const g=pd.slice(1).map((d,i)=>monthsApart(pd[i],d)).filter(x=>x>0).sort((x,y)=>x-y); if(g.length) step=g[Math.floor(g.length/2)]>=3?3:1; }
   const now=today(), due=[];
-  if(last&&hasDocs){ let next=isoAddMonths(last,step); while(daysBetween(next,now)>=STMT_GRACE&&due.length<24){ due.push(next); next=isoAddMonths(next,step); } }
+  if(last&&hasDocs){ let next=isoAddMonths(last,step); while(daysBetween(next,now)>=(a.stmtDay&&typeof stmtLagOf==='function'?Math.max(STMT_GRACE,stmtLagOf(a,next)+1):STMT_GRACE)&&due.length<24){ due.push(next); next=isoAddMonths(next,step); } }
   const gaps=[]; if(step===1&&hasDocs){ const yr=isoAddMonths(now,-12); for(let i=1;i<dates.length;i++){ if(dates[i]<yr) continue; const k=monthsApart(dates[i-1],dates[i]); for(let j=1;j<k&&gaps.length<6;j++) gaps.push(isoAddMonths(dates[i-1],j)); } }
   return {a,state:off?'off':!hasDocs?'none':due.length?'due':'ok',last,due,gaps,step};
 }
@@ -2192,6 +2202,7 @@ function deleteAccount(id){
   Object.values(S.tax||{}).forEach(ty=>{ ty.docs=(ty.docs||[]).filter(d=>d.acc!==id); });
   S.accounts.forEach(x=>{ if(x.propertyId===id) x.propertyId=null; });
   S.settings.recIgnore=(S.settings.recIgnore||[]).filter(k=>!String(k).includes(id)); S.settings.alertIgnore=(S.settings.alertIgnore||[]).filter(k=>!String(k).includes(id));
+  S.recurring=(S.recurring||[]).filter(r=>!(r.key&&r.key.split(':').includes(id)));
   if(IMPORT_FOR===id) IMPORT_FOR=null; reconcile(); }
 /* ---------- Jubilación (pestaña de Inversiones) ----------
    Proyección en dólares de hoy: saldo actual de las cuentas de jubilación + aportación anual (tú + empresa, leída del
@@ -2844,7 +2855,7 @@ VIEWS.ajustes=(el)=>{
   $('#sKeyTest').onclick=async()=>{ const m=$('#sKeyMsg'); m.textContent=L('Probando…','Testing…'); try{ const r=await claudeCall('Responde solo: OK',{modelTier:'quick',maxTokens:10,stream:false}); m.textContent=L('Funciona ✓ (','Works ✓ (')+r.text.trim()+')'; }catch(e){ m.textContent=e.message; } };
   if($('#sKeyDel')) $('#sKeyDel').onclick=()=>{ if(S.secret) delete S.secret.apiKey; save(); route(); };
   $('#reCat').onclick=()=>{ let n=0; S.tx.forEach(t=>{ if(t.manual||t.rec) return; const c=categorize(t.desc,t.amount)||otherCat(t.amount); if(c!==t.cat){t.cat=c;n++;} }); save(); toast(L(`${n} movimientos recategorizados`,`${n} transactions recategorized`)); };
-  $('#wipe').onclick=async()=>{ if(await confirmModal(L('¿Borrar todo?','Delete everything?'),`<p>${L('Se borrarán los datos, la contraseña y las passkeys de este dispositivo. No se puede deshacer.','The data, password and passkeys on this device will be deleted. This cannot be undone.')}</p>`)){ clearTimeout(saveTimer); saveTimer=null; await persistQ; VAULT.dk=null; S=null; await IDB.set('vault',null); await IDB.del('syncHandle'); try{ localStorage.removeItem('mfz-lang'); }catch(e){} location.hash=''; location.reload(); } };
+  $('#wipe').onclick=async()=>{ if(await confirmModal(L('¿Borrar todo?','Delete everything?'),`<p>${L('Se borrarán los datos, la contraseña y las passkeys de este dispositivo. No se puede deshacer.','The data, password and passkeys on this device will be deleted. This cannot be undone.')}</p>`)){ clearTimeout(saveTimer); saveTimer=null; await persistQ; VAULT.dk=null; S=null; await IDB.set('vault',null); await IDB.del('syncHandle'); await IDB.del('calsched'); try{ localStorage.removeItem('mfz-lang'); }catch(e){} location.hash=''; location.reload(); } };
 };
 
 /* ---------- Modal helpers ---------- */
@@ -3051,7 +3062,7 @@ function showGate(mode,extra){
       try{ await unlockWithRecovery($('#gR').value); SK_NEW=await setPassword(a); const rec=await newRecovery(); showGate('recovery',rec); }catch(e){ $('#gMsg').textContent=L('Clave de recuperación incorrecta','Wrong recovery key'); } };
   }
 }
-function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); if(typeof syncAfterUnlock==='function') setTimeout(syncAfterUnlock,0); skMissing().then(m=>{ if(m!==SK_MISS){ SK_MISS=m; if(S) route(); } }); if(first&&!location.hash) location.hash='#resumen'; route(); if(first) setTimeout(()=>openModal(`<h2>${L('Todo listo','All set')}</h2><p>${L('Tus datos se guardan cifrados en este dispositivo.','Your data is stored encrypted on this device.')}</p><ul><li>${L('Toca el icono <b>i</b> azul de cada sección para ver qué es y cómo usarla, o abre el <b>Manual</b>.','Tap the blue <b>i</b> icon on each section to see what it is and how to use it, or open the <b>Manual</b>.')}</li><li>${L('Si vienes de la versión de claude.ai: <b>Copia y ajustes → Restaurar copia</b>.','If you come from the claude.ai version: <b>Backup & settings → Restore backup</b>.')}</li><li>${L('Haz copias cifradas de vez en cuando y guárdalas en Dropbox.','Make encrypted backups now and then and keep them in Dropbox.')}</li><li>${L('Para usar Claude, pega tu clave de API en <b>Copia y ajustes</b> (opcional).','To use Claude, paste your API key in <b>Backup & settings</b> (optional).')}</li></ul><div class="row"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`)||($('#mc').onclick=closeModal),200); }
+function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); if(typeof syncAfterUnlock==='function') setTimeout(syncAfterUnlock,0); if(typeof calSysSoon==='function') calSysSoon(); skMissing().then(m=>{ if(m!==SK_MISS){ SK_MISS=m; if(S) route(); } }); if(first&&!location.hash) location.hash='#resumen'; route(); if(first) setTimeout(()=>openModal(`<h2>${L('Todo listo','All set')}</h2><p>${L('Tus datos se guardan cifrados en este dispositivo.','Your data is stored encrypted on this device.')}</p><ul><li>${L('Toca el icono <b>i</b> azul de cada sección para ver qué es y cómo usarla, o abre el <b>Manual</b>.','Tap the blue <b>i</b> icon on each section to see what it is and how to use it, or open the <b>Manual</b>.')}</li><li>${L('Si vienes de la versión de claude.ai: <b>Copia y ajustes → Restaurar copia</b>.','If you come from the claude.ai version: <b>Backup & settings → Restore backup</b>.')}</li><li>${L('Haz copias cifradas de vez en cuando y guárdalas en Dropbox.','Make encrypted backups now and then and keep them in Dropbox.')}</li><li>${L('Para usar Claude, pega tu clave de API en <b>Copia y ajustes</b> (opcional).','To use Claude, paste your API key in <b>Backup & settings</b> (optional).')}</li></ul><div class="row"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`)||($('#mc').onclick=closeModal),200); }
 /* ---------- Claude con la clave del usuario ---------- */
 const MODELS={quick:'claude-haiku-5-5',default:'claude-sonnet-5-5',complex:'claude-opus-5-5'};
 function parseJSONLoose(t){ const s=String(t||'').replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,''); const a=s.indexOf('{'), b=s.lastIndexOf('}'); return JSON.parse(a>=0?s.slice(a,b+1):s); }

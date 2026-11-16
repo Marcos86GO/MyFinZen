@@ -203,7 +203,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.goto(U+'#flujo'); await pg.waitForTimeout(300);
   // Menú lateral y botón +
   await pg.click('#menuBtn'); await pg.waitForTimeout(250);
-  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
+  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos,#calendario'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
   await pg.click('#nav a[href="#cuentas"]'); await pg.waitForTimeout(300); ok(await pg.evaluate(()=>!document.body.classList.contains('menu-open')&&location.hash==='#cuentas'&&document.querySelector('#pageTitle').innerText==='Cuentas'),'el menú se cierra al elegir y el título cambia');
   await pg.click('#fab'); await pg.click('#fabTx'); await pg.fill('#nAmt','12.5'); await pg.fill('#nDesc','Café de prueba'); await pg.selectOption('#nCat','Restaurantes'); await pg.click('#nAdd'); await pg.waitForTimeout(200);
   ok(await pg.evaluate(()=>S.tx.some(t=>t.desc==='Café de prueba'&&t.amount===-12.5&&t.src==='manual')),'botón +: añadir un movimiento');
@@ -383,8 +383,92 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   const delTxt=await pg.$eval('#modal',e=>e.textContent); await pg.click('#dOk'); await pg.waitForTimeout(100);
   ok(/Hipoteca Suelta Prueba/.test(delTxt)&&await pg.evaluate(()=>!acc('hpA')&&!acc('hpM')&&!S.snapshots.some(x=>x.acc==='hpM')),'al borrar un inmueble se borra también su hipoteca (y lo avisa antes)');
   await pg.evaluate(ids=>{ deleteAccount(ids.mid); deleteAccount(ids.pid); save(); },hp1);
+  // Calendario: extractos y actividad disponibles, pagos recurrentes y aviso de pagos importantes (con datos propios; al final se restauran los de las demás pruebas)
+  const cal=await pg.evaluate(()=>{ closeModal(); const now=today(), mo=n=>isoAddMonths(now,-n).slice(0,7), d=(n,day)=>mo(n)+'-'+String(day).padStart(2,'0');
+    window.__calKeep={accounts:S.accounts,tx:S.tx,snapshots:S.snapshots,imports:S.imports,recurring:S.recurring,cal:S.settings.cal,ign:S.settings.alertIgnore};
+    S.accounts=[{id:'clA',kind:'cash',name:'Banco Calendario Prueba'},{id:'clS',kind:'credit',name:'Tarjeta Calendario Prueba'},{id:'clH',kind:'property',name:'Casa Calendario Prueba',taxYear:12000,insYear:1800},
+      {id:'clM',kind:'mortgage',name:'Hipoteca Calendario Prueba',rate:5,payment:3000,extra:100,propertyId:'clH',nextDue:isoAddMonths(now,1).slice(0,7)+'-01'}];
+    S.snapshots=[{id:'clHs',acc:'clH',date:now,value:900000},{id:'clMs',acc:'clM',date:now,value:500000}];
+    S.imports=[3,2,1].map(i=>({id:'clI'+i,acc:'clS',kind:'pdf',date:d(i,12),fp:'clS'+i,added:now}));
+    S.tx=[]; S.recurring=[]; S.settings.cal={min:500,sys:false,payDays:[],noSug:[]}; let n=0;
+    const tx=(date,desc,amount,cat)=>{ if(date<=now) S.tx.push({id:'clT'+(n++),acc:'clA',date,desc,amount,cat,src:'pdf'}); };
+    for(let i=5;i>=0;i--){ tx(d(i,25),'NOMINA EMPRESA PRUEBA',9000,'Nómina'); tx(d(i,3),'NETFLIX PRUEBA 866-579-7172',-15.49,'Suscripciones'); tx(d(i,2),'COMPANIA LUZ PRUEBA',-(100+i*17),'Suministros'); tx(d(i,1+i*3),'TIENDA SUELTA PRUEBA',-(40+i*55),'Compras'); }
+    for(let i=9;i>=5;i--) tx(d(i,4),'CANCELADO PRUEBA',-9.99,'Suscripciones');
+    tx(d(7,2),'SEGURO COCHE PRUEBA',-600,'Seguros'); tx(d(1,2),'SEGURO COCHE PRUEBA',-600,'Seguros'); tx(d(2,9),'MEMBRESIA CLUB PRUEBA',-320,'Suscripciones');
+    calDirty(); let all=recurringAll(); const by=k=>all.find(r=>r.name===k), nf=by('Netflix Prueba'), luz=by('Compania Luz Prueba'), seg=by('Seguro Coche Prueba'), mort=all.find(r=>r.key==='mort:clM'), p1=all.find(r=>r.key==='ptax1:clH'), p2=all.find(r=>r.key==='ptax2:clH');
+    const det={nf:!!nf&&nf.freq==='m'&&nf.amount===15.49&&recurNext(nf)>=now,luz:!!luz&&luz.freq==='m'&&luz.amount>=100&&luz.amount<=185,seg:!!seg&&seg.freq==='s'&&seg.amount===600,no:!by('Tienda Suelta Prueba')&&!by('Cancelado Prueba')&&!by('Membresia Club Prueba')};
+    const der={mort:!!mort&&mort.amount===3100&&mort.freq==='m'&&recurNext(mort).slice(8)==='01',ptax:!!p1&&!!p2&&p1.amount===6000&&recurNext(p1).slice(5)==='12-10'&&recurNext(p2).slice(5)==='04-10'};
+    acc('clM').escrow=400; calDirty(); der.escrow=!recurringAll().some(r=>r.ptax); acc('clM').escrow=0; calDirty();
+    const plan=payPlan(), est=payDays(now,addDays(now,70)).filter(p=>p.est);
+    const pay={plan:!!plan&&plan.mode==='auto'&&plan.kind==='dom'&&plan.days.join()==='25',est:est.length>=2&&est.every(p=>{ const day=+p.d.slice(8,10), wd=new Date(p.d+'T12:00:00').getDay(); return day>=23&&day<=25&&wd!==0&&wd!==6&&p.amt===9000; })};
+    // Aviso: un pago de 900 que vence mañana se avisa con la nómina anterior (ya cobrada); uno de 20 no
+    S.recurring=[{id:'clR1',name:'COLEGIO PRUEBA',amount:900,freq:'m',next:addDays(now,1)},{id:'clR2',name:'REVISTA PRUEBA',amount:20,freq:'m',next:addDays(now,1)}]; calDirty();
+    const N=calNotices(), paysAll=payDays(addDays(now,-62),addDays(now,220)).map(p=>p.d), has=k=>N.some(g=>g.items.some(e=>e.r.name===k||e.r.key===k)), a1=computeAlerts().find(a=>a.key.startsWith('pay:'));
+    const al={grp:N.length>0&&N.every(g=>!g.noPay&&g.items.every(e=>g.pay<e.d&&!paysAll.some(p=>p>g.pay&&p<e.d))),active:N.filter(g=>g.active).some(g=>g.items.some(e=>e.r.name==='COLEGIO PRUEBA')),
+      alert:!!a1&&/COLEGIO PRUEBA/.test(a1.t)&&!/REVISTA PRUEBA/.test(a1.t)&&a1.go.h==='calendario',big:has('mort:clM')&&isSig(recurringAll().find(r=>r.key==='ptax1:clH')),small:!has('REVISTA PRUEBA')&&!has('Netflix Prueba')};
+    S.settings.cal.min=100000; al.high=!computeAlerts().some(a=>a.key.startsWith('pay:')); S.recurring[1].notify=true; calDirty(); al.forced=/REVISTA PRUEBA/.test((computeAlerts().find(a=>a.key.startsWith('pay:'))||{t:''}).t);
+    S.settings.cal.min=500; delete S.recurring[1].notify; calDirty();
+    // Extractos (cierre del último + 1 mes + 3 días) y actividad del mes (día 3)
+    const close=isoAddMonths(d(1,12),1), evS=()=>calEvents(addDays(close,-1),addDays(close,40)).filter(e=>e.type==='stmt'&&e.a.id==='clS'), e0=evS();
+    const st={first:e0.length>1&&e0[0].close===close&&e0[0].d===addDays(close,3)&&e0[0].pend===(addDays(close,3)<=now),second:e0.length>1&&e0[1].close===isoAddMonths(d(1,12),2)};
+    acc('clS').stmtDay=20; st.day=evS()[0].d===close.slice(0,8)+'20'&&stmtLagOf(acc('clS'),close)===8; delete acc('clS').stmtDay;
+    const nm=ymNext(ym(now)), evA=calEvents(nm+'-01',monthEnd(nm)).filter(e=>e.type==='act'); st.act=evA.length===1&&evA[0].d===nm+'-03'&&evA[0].m===ym(now)&&evA[0].n===2&&!evA[0].pend;
+    // Validación de lo que llega de una copia o de la nube
+    const sz=sanitizeState(JSON.parse(JSON.stringify(Object.assign({},S,{recurring:[{id:'ok1',name:'  Bueno  ',amount:'12.5',freq:'m',next:'2027-01-05',notify:true,extra:'<img>'},{id:'bad1',name:'<b>x</b>',amount:-5,freq:'zz',next:'ayer'},{id:'ov1',key:'auto:abc',off:true},{id:'ov2',key:'<script>'}],
+      settings:Object.assign({},S.settings,{cal:{min:'-3',sys:'yes',payDays:[25,99,'x',25,1],noSug:['ins:clH','<img>']}}),accounts:S.accounts.map(a=>a.id==='clS'?Object.assign({},a,{stmtDay:45}):a)}))));
+    const san=JSON.stringify(sz.recurring)==='[{"id":"ok1","name":"Bueno","amount":12.5,"freq":"m","next":"2027-01-05","notify":true},{"id":"ov1","key":"auto:abc","off":true}]'&&JSON.stringify(sz.settings.cal)==='{"min":500,"sys":false,"payDays":[25,1],"noSug":["ins:clH"]}'&&sz.accounts.find(a=>a.id==='clS').stmtDay===undefined;
+    save(); location.hash='#calendario'; route(); return {det,der,pay,al,st,san,nfKey:nf&&nf.key,in40:addDays(now,40),annual:isoAddMonths(d(2,9),12)}; });
+  const allTrue=o=>Object.values(o).every(v=>v===true);
+  ok(allTrue(cal.det),'pagos recurrentes detectados: suscripción fija, factura variable y seguro semestral; no las compras sueltas, lo cancelado ni un cargo único ('+JSON.stringify(cal.det)+')');
+  ok(allTrue(cal.der),'pagos deducidos de las cuentas: cuota de la hipoteca e impuesto de propiedad (10 dic y 10 abr; con escrow no) ('+JSON.stringify(cal.der)+')');
+  ok(allTrue(cal.pay),'días de cobro detectados (día 25) y próximas nóminas esperadas, nunca en fin de semana ('+JSON.stringify(cal.pay)+')');
+  ok(allTrue(cal.al),'pagos importantes: se avisan con la nómina anterior a su vencimiento, según el importe elegido o la opción de cada pago ('+JSON.stringify(cal.al)+')');
+  ok(allTrue(cal.st),'calendario de extractos (cierre + 1 mes + 3 días, o el día que diga el usuario) y actividad del mes el día 3 ('+JSON.stringify(cal.st)+')');
+  ok(cal.san,'los pagos recurrentes y los ajustes del calendario se validan al restaurar');
+  await pg.waitForSelector('#calCard .cd.today'); await pg.waitForTimeout(200);
+  const calUI=await pg.evaluate(()=>({days:document.querySelectorAll('#calCard .cd[data-day]').length===+monthEnd(ym(today())).slice(8),nav:document.querySelector('nav a.on').getAttribute('href')==='#calendario'&&$('#pageTitle').innerText==='Calendario',
+    now:/COLEGIO PRUEBA/.test(($('#calNow')||{}).textContent||''),rec:/Netflix Prueba/.test($('#calRec').textContent)&&/Hipoteca Calendario Prueba/.test($('#calRec').textContent)&&!/Tienda Suelta/.test($('#calRec').textContent),
+    sug:document.querySelectorAll('#calRec [data-sug]').length===2,plan:/día 25/.test($('#calPlan').textContent),next:/COLEGIO PRUEBA/.test($('#calNext').textContent)&&/Nómina esperada/.test($('#calNext').textContent),day:/Hoy/.test($('#calDay').textContent)}));
+  ok(allTrue(calUI),'pantalla Calendario: mes, día de hoy, próximos 45 días, pagos recurrentes, sugerencias y aviso ('+JSON.stringify(calUI)+')');
+  if(process.env.SHOTS){ await pg.screenshot({path:process.env.SHOTS+'/calendario-movil.png',fullPage:true}); await pg.setViewportSize({width:1200,height:900}); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/calendario-escritorio.png',fullPage:true}); await pg.setViewportSize({width:412,height:900}); await pg.waitForTimeout(400); }
+  await pg.click('#calNextM'); await pg.waitForTimeout(100); const noSel=await pg.evaluate(()=>/Toca un día/.test($('#calDay').textContent)); await pg.click('#calCard .cd[data-day$="-03"]'); await pg.waitForTimeout(100);
+  ok(noSel&&await pg.evaluate(()=>/Actividad de/.test($('#calDay').textContent)&&!!document.querySelector('#calCard .cd.sel[data-day$="-03"]')),'cambiar de mes y tocar un día muestra lo de ese día'); await pg.click('#calToday'); await pg.waitForTimeout(100);
+  await pg.click('#recAdd'); await pg.click('#rcOk'); await pg.waitForTimeout(100); const needName=await pg.evaluate(()=>$('#modalBg').classList.contains('show')&&!(S.recurring||[]).some(r=>!r.name));
+  await pg.fill('#rcN','SEGURO HOGAR PRUEBA'); await pg.fill('#rcA','1800'); await pg.selectOption('#rcF','y'); await pg.fill('#rcD',cal.in40); await pg.selectOption('#rcC','Seguros'); await pg.click('#rcOk'); await pg.waitForTimeout(200);
+  ok(needName&&await pg.evaluate(d=>{ const r=S.recurring.find(x=>x.name==='SEGURO HOGAR PRUEBA'); return !!r&&r.amount===1800&&r.freq==='y'&&r.next===d&&r.cat==='Seguros'&&!r.key&&/SEGURO HOGAR PRUEBA/.test($('#calRec').textContent)&&calNotices().some(g=>g.items.some(e=>e.r.name==='SEGURO HOGAR PRUEBA'&&e.d===d)); },cal.in40),'añadir un pago recurrente a mano (pide nombre, importe y fecha) y entra en los avisos');
+  await pg.click(`#calRec [data-rec="${cal.nfKey}"]`); await pg.fill('#rcN','Netflix casa'); await pg.click('#rcOk'); await pg.waitForTimeout(200);
+  const ov1=await pg.evaluate(k=>{ const o=S.recurring.find(x=>x.key===k), r=recurringAll().find(x=>x.key===k); return !!o&&Object.keys(o).sort().join()==='id,key,name'&&r.name==='Netflix casa'&&r.amount===15.49; },cal.nfKey);
+  await pg.click(`#calRec [data-rec="${cal.nfKey}"]`); await pg.click('#rcOff'); await pg.waitForTimeout(200);
+  const ov2=await pg.evaluate(k=>recurringAll().find(x=>x.key===k).off===true&&!calEvents(today(),addDays(today(),60)).some(e=>e.type==='pay'&&e.r.key===k)&&/Netflix casa/.test($('.coff').textContent)&&!document.querySelector(`#calRec [data-rec="${k}"]`),cal.nfKey);
+  await pg.click('.coff summary'); await pg.click(`[data-unoff="${cal.nfKey}"]`); await pg.waitForTimeout(200);
+  ok(ov1&&ov2&&await pg.evaluate(k=>{ const r=recurringAll().find(x=>x.key===k); return !r.off&&r.name==='Netflix casa'&&!!document.querySelector(`#calRec [data-rec="${k}"]`); },cal.nfKey),'un pago detectado se puede renombrar (solo se guarda el cambio), ocultar con "No es recurrente" y recuperar');
+  await pg.click('#calRec [data-nosug="0"]'); await pg.waitForTimeout(150); const sg1=await pg.evaluate(()=>document.querySelectorAll('#calRec [data-sug]').length===1&&S.settings.cal.noSug.join()==='ins:clH');
+  await pg.click('#calRec [data-sug="0"]'); await pg.waitForSelector('#rcN'); const sg2=await pg.evaluate(d=>$('#rcN').value==='Membresia Club Prueba'&&$('#rcA').value==='320'&&$('#rcF').value==='y'&&$('#rcD').value===d,cal.annual); await pg.click('#rcOk'); await pg.waitForTimeout(200);
+  ok(sg1&&sg2&&await pg.evaluate(()=>S.recurring.some(r=>/^sug:/.test(r.key||'')&&r.amount===320&&r.freq==='y')&&!document.querySelector('#calRec [data-sug]')),'sugerencias: un cargo único grande se confirma como anual o se descarta');
+  await pg.fill('#calMin','100000'); await pg.dispatchEvent('#calMin','change'); await pg.waitForTimeout(150); const th1=await pg.evaluate(()=>S.settings.cal.min===100000&&!$('#calNow')&&!computeAlerts().some(a=>a.key.startsWith('pay:')));
+  await pg.fill('#calMin','500'); await pg.dispatchEvent('#calMin','change'); await pg.waitForTimeout(150); await pg.fill('#calPay','10, 24'); await pg.dispatchEvent('#calPay','change'); await pg.waitForTimeout(150);
+  const th2=await pg.evaluate(()=>S.settings.cal.min===500&&!!$('#calNow')&&S.settings.cal.payDays.join()==='10,24'&&payPlan().mode==='manual'&&/día 10 y el 24/.test($('#calPlan').textContent)); await pg.fill('#calPay',''); await pg.dispatchEvent('#calPay','change'); await pg.waitForTimeout(150);
+  ok(th1&&th2&&await pg.evaluate(()=>payPlan().mode==='auto'),'el usuario elige el importe desde el que un pago es importante y puede escribir sus días de cobro');
+  await pg.evaluate(()=>[...document.querySelectorAll('#calNext .cev')].find(b=>/Extracto · Tarjeta Calendario Prueba/.test(b.textContent)).click()); await pg.waitForSelector('#stD'); await pg.fill('#stD','20'); await pg.click('#stOk'); await pg.waitForTimeout(150);
+  const sh1=await pg.evaluate(()=>acc('clS').stmtDay===20); await pg.evaluate(()=>{ delete acc('clS').stmtDay; [...document.querySelectorAll('#calNext .cev')].find(b=>/Actividad de/.test(b.textContent)).click(); }); await pg.waitForSelector('#acImp');
+  ok(sh1&&await pg.evaluate(()=>/Banco Calendario Prueba/.test($('#modal').textContent)&&/Datos hasta/.test($('#modal').textContent)&&!!$('#modal .sst')),'tocar un extracto permite decir qué día sale; tocar la actividad del mes muestra hasta dónde llega cada cuenta'); await pg.click('#mc');
+  // Notificación: sin permiso del navegador (headless clásico) no se activa ni se guarda nada fuera de la bóveda
+  await pg.click('#calSys'); await pg.waitForTimeout(400); const np1=await pg.evaluate(async()=>!$('#calSys').checked&&S.settings.cal.sys===false&&(await IDB.get('calsched'))===undefined);
+  ok(np1&&await pg.evaluate(async()=>{ S.settings.cal.sys=true; await calSysCheck(); const r=(await IDB.get('calsched'))===undefined, t=await calSysStatus(); S.settings.cal.sys=false; return r&&t.length>20; }),'sin permiso de notificaciones no se activa ni se guarda nada fuera de la bóveda (tampoco si se activó en otro dispositivo)');
+  await pg.waitForTimeout(400); ok(!/COLEGIO PRUEBA|SEGURO HOGAR|Netflix casa/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v)))),'los pagos recurrentes van cifrados en la bóveda');
+  await pg.goto(U+'#resumen'); await pg.waitForTimeout(300); const ra=await pg.evaluate(()=>/COLEGIO PRUEBA/.test($('#alertBox').textContent)); await pg.evaluate(()=>goAlert(computeAlerts().find(a=>a.key.startsWith('pay:')).go)); await pg.waitForTimeout(200);
+  ok(ra&&await pg.evaluate(()=>location.hash==='#calendario'&&!!$('#calNow')),'el aviso de pagos importantes sale en el Resumen y lleva al Calendario');
+  await pg.evaluate(()=>setLang('en')); await pg.waitForTimeout(250); const calEn=[(await pg.$eval('body',e=>e.innerText)).match(/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes|Pagos|Nómina|Extracto|Hoy|próximo|Mensual|Anual)\b/)];
+  await pg.click('#recAdd'); await pg.waitForSelector('#rcN'); calEn.push((await pg.$eval('#modal',e=>e.innerText)).match(/\b(Nombre|Importe|Categoría|Aviso|Aceptar|Cancelar|Siempre|Nunca|Mensual)\b/)); await pg.click('#mc');
+  if(process.env.SHOTS) await pg.screenshot({path:process.env.SHOTS+'/en-calendario-movil.png',fullPage:true});
+  ok(calEn.every(m=>!m)&&await pg.evaluate(()=>/Significant payment alerts/.test($('#calNotify').textContent)&&/Recurring payments/.test($('#calRec').textContent)&&$('#pageTitle').innerText==='Calendar'),'Calendario en inglés'+(calEn.some(Boolean)?' — quedan textos: '+calEn.filter(Boolean).map(m=>m[0]).join(', '):''));
+  await pg.evaluate(()=>setLang('es'));
+  ok(await pg.evaluate(()=>{ closeModal(); S.recurring.push({id:'clOv',key:'mort:clM',notify:false}); deleteAccount('clM'); const r=!S.recurring.some(x=>x.key&&x.key.includes('clM'));
+    const k=window.__calKeep; S.accounts=k.accounts; S.tx=k.tx; S.snapshots=k.snapshots; S.imports=k.imports; if(k.recurring===undefined) delete S.recurring; else S.recurring=k.recurring; if(k.cal===undefined) delete S.settings.cal; else S.settings.cal=k.cal; S.settings.alertIgnore=k.ign;
+    delete window.__calKeep; CAL.m=null; REC=null; save(); location.hash='#resumen'; route(); return r; }),'al borrar una cuenta se quitan los cambios sobre sus pagos');
+  await pg.waitForTimeout(300);
   // Inglés en todas las pantallas
-  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','claude','ayuda','ajustes']; const bad=[];
+  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','calendario','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
   for(const v of views){ await pg.goto(U+'#'+v); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push(v+': '+m[0]); }
   for(const tab of ['resumen','perfil','optimizar','turbotax']){ await pg.goto(U+'#impuestos'); await pg.evaluate(t=>{taxSel.tab=t;route();},tab); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push('impuestos/'+tab+': '+m[0]); }
@@ -515,6 +599,28 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
     ok(await B.p.evaluate(async()=>{ const v=await IDB.get('vault'); const t=JSON.stringify(v); return !!v.sync&&!!v.sync.base&&!/COMPRA DISPOSITIVO/.test(t); })&&!/"sync"/.test(DBX.file),'IndexedDB sigue cifrado y la base de la fusión no sale del dispositivo');
     const se=[].concat(A.e,B.e,C.e); ok(se.length===0,'sincronización sin errores en consola'+(se.length?': '+se.join(' | '):''));
     await A.c.close(); await B.c.close(); await C.c.close(); }
+  // Calendario: notificación del sistema. Hace falta Chromium completo (headless nuevo): el headless clásico no concede el permiso de notificaciones.
+  { let nb=null; try{ nb=await chromium.launch({channel:'chromium'}); }catch(e){ ok(false,'Chromium completo para probar las notificaciones (npx playwright install chromium): '+String(e.message).split('\n')[0]); }
+    if(nb){ const c=await nb.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const p=await c.newPage(); const ne=[]; p.on('pageerror',x=>ne.push(x.message)); p.on('console',m=>{ if(m.type()==='error') ne.push(m.text()); });
+      await c.grantPermissions(['notifications']);
+      await p.goto(U); await p.waitForTimeout(600); await p.fill('#g1',PASS); await p.fill('#g2',PASS); await p.click('#gGo'); await p.waitForSelector('.reccode',{timeout:20000}); await p.check('#gOk'); await p.click('#gNext'); await p.waitForTimeout(300); if(await p.$('#gSkip')) await p.click('#gSkip'); await p.waitForTimeout(300); if(await p.$('#mc')) await p.click('#mc');
+      const tdy=await p.evaluate(()=>{ S.accounts.push({id:'ntA',kind:'cash',name:'Banco Aviso Prueba'}); S.recurring=[{id:'ntR',name:'PAGO SECRETO PRUEBA',amount:913.77,freq:'m',next:addDays(today(),1)}]; save(); location.hash='#calendario'; return today(); });
+      await p.waitForSelector('#calSys'); await p.waitForTimeout(300); const pre=await p.evaluate(async()=>(await IDB.get('calsched'))===undefined);
+      await p.check('#calSys'); await p.waitForFunction(()=>S.settings.cal.sys===true,null,{timeout:10000}); await p.waitForTimeout(700);
+      const n1=await p.evaluate(async()=>{ await calSysCheck(); const r=await navigator.serviceWorker.ready, ns=await r.getNotifications(), sc=await IDB.get('calsched'), txt=JSON.stringify(sc)+ns.map(n=>n.title+n.body).join();
+        return {one:ns.length===1&&/^mfz-pay-\d{4}-\d\d-\d\d$/.test(ns[0].tag)&&/1 pago importante/.test(ns[0].body),days:!!sc&&sc.days.length>0&&sc.days.every(x=>Object.keys(x).sort().join()==='d,n,u'),clean:!/SECRETO|913|Banco/.test(txt),shown:!!sc&&sc.shown.length===1,st:/Activado/.test($('#calSysSt').textContent)}; });
+      ok(pre&&allTrue(n1),'notificación del sistema con la app abierta: una sola vez, sin nombres ni importes; fuera de la bóveda solo fechas y número de pagos ('+JSON.stringify(n1)+')');
+      // Con la app cerrada y bloqueada lo hace el service worker al despertarlo el navegador (sincronización periódica simulada)
+      const cdp2=await c.newCDPSession(p); const regs=[]; cdp2.on('ServiceWorker.workerRegistrationUpdated',e=>regs.push(...e.registrations)); await cdp2.send('ServiceWorker.enable'); await p.waitForTimeout(300);
+      await p.evaluate(async()=>{ lockNow(); const r=await navigator.serviceWorker.ready; (await r.getNotifications()).forEach(n=>n.close()); const t=today(); await IDB.set('calsched',{v:1,lang:'en',days:[{d:t,u:addDays(t,3),n:2},{d:addDays(t,-20),u:addDays(t,-10),n:5},{d:addDays(t,9),u:addDays(t,12),n:1},{d:'<x>',u:t,n:1}],shown:[]}); });
+      const fire=async()=>{ await cdp2.send('ServiceWorker.dispatchPeriodicSyncEvent',{origin:new URL(U).origin,registrationId:regs[regs.length-1].registrationId,tag:'mfz-cal'}); await p.waitForTimeout(700); };
+      await fire(); await fire();
+      const n2=await p.evaluate(async()=>{ const r=await navigator.serviceWorker.ready, ns=await r.getNotifications(), sc=await IDB.get('calsched'); return {n:ns.map(x=>x.tag+'|'+x.body),shown:sc.shown.join(),locked:!S}; });
+      ok(regs.length>0&&n2.locked&&n2.n.length===1&&n2.n[0].startsWith('mfz-pay-'+tdy+'|')&&/2 significant payments/.test(n2.n[0])&&n2.shown===tdy,'con la app bloqueada, el service worker avisa solo de lo de hoy (ni lo caducado ni lo futuro) y no lo repite ('+JSON.stringify(n2)+')');
+      ok(await p.evaluate(async()=>{ history.replaceState(null,'','#resumen'); navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'goto',hash:'#calendario'}})); return location.hash==='#calendario'; }),'tocar la notificación abre el Calendario');
+      await p.fill('#gP',PASS); await p.click('#gGo'); await p.waitForFunction(()=>!!S,null,{timeout:15000}); await p.waitForSelector('#calSys'); await p.uncheck('#calSys'); await p.waitForFunction(()=>S.settings.cal.sys===false,null,{timeout:10000}); await p.waitForTimeout(500);
+      ok(await p.evaluate(async()=>(await IDB.get('calsched'))===undefined),'al desactivar la notificación se borra el registro de avisos');
+      ok(ne.length===0,'notificaciones sin errores en consola'+(ne.length?': '+ne.join(' | '):'')); await nb.close(); } }
   ok(errs.length===0,'sin errores en consola'+(errs.length?': '+errs.join(' | '):''));
   await b.close(); srv.close(); console.log(failed?`\n${failed} prueba(s) fallida(s)`:'\nTodo OK'); process.exit(failed?1:0);
 })().catch(e=>{ console.error(e); srv.close(); process.exit(1); });
