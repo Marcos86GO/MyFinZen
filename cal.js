@@ -33,15 +33,16 @@ let CALC=null;
 function calDirty(){ CALC=null; }
 
 /* ---------- Pagos recurrentes: detectados en los movimientos ---------- */
-function recKey(desc){ return normDesc(desc).replace(/[^A-Z&]+/g,' ').trim().split(' ').filter(w=>w.length>1&&!REC_STOP.has(w)).slice(0,3).join(' '); }
+// Comercio de un movimiento: sus 3 primeras palabras, sin códigos de referencia (PRIME*2K4XY12L0), teléfonos ni números de tienda, que cambian en cada cargo
+function recKey(desc){ return normDesc(desc).split(/[^A-Z0-9&]+/).filter(w=>w.length>1&&!/\d/.test(w)&&!REC_STOP.has(w)).slice(0,3).join(' '); }
 function recName(k,desc){ let w=k.split(' '); if(w.length>1&&w[w.length-1].length<=2) w=w.slice(0,-1); const lead=(normDesc(desc||'').trim().match(/^(\d{1,3}) [A-Z]/)||[])[1];
   return (lead?lead+' ':'')+w.map(x=>x.charAt(0)+x.slice(1).toLowerCase()).join(' '); }
 function recItem(k,list,fixed,covOf){ const ds=[...new Set(list.map(t=>t.date))].sort(); if(ds.length<2) return null;
   const gaps=ds.slice(1).map((d,i)=>daysBetween(ds[i],d)), med=calMedian(gaps);
-  const c=REC_CAD.find(x=>Math.abs(med-x[1])<=x[2]); if(!c||ds.length<c[3]) return null;
+  const bill=BILL_CATS.has(list[list.length-1].cat), c=REC_CAD.find(x=>Math.abs(med-x[1])<=x[2]); if(!c||ds.length<(bill?2:c[3])) return null;
   // casi todos los cargos llegan a su ritmo (o al doble: un mes que falta)
   if(gaps.filter(g=>Math.abs(g-c[1])<=c[2]||Math.abs(g-2*c[1])<=c[2]*1.5).length<Math.ceil(gaps.length*0.8)) return null;
-  const last=list[list.length-1], amts=list.map(t=>-t.amount), m=calMedian(amts), bill=BILL_CATS.has(last.cat);
+  const last=list[list.length-1], amts=list.map(t=>-t.amount), m=calMedian(amts);
   if(!fixed&&!bill&&(SHOP_CATS.has(last.cat)||amts.some(a=>Math.abs(a-m)>m*0.25))) return null;   // compras sueltas en la misma tienda
   if(ds.length<3&&!bill) return null;
   if(daysBetween(last.date,covOf(last.acc))>c[1]*1.5+7) return null;      // ya no se cobra
@@ -53,12 +54,18 @@ function detectRecurring(){ const now=today(), lim=isoAddMonths(now,-26), fm=new
   const G={};
   for(const t of S.tx){ if(!(t.amount<0)||t.date<lim||t.date>now||t.rec||txType(t)!=='expense'||fm.has(t.cat)) continue; const k=recKey(t.desc); if(!k) continue; (G[k]=G[k]||[]).push(t); }
   const out=[];
-  for(const [k,all] of Object.entries(G)){ if(all.length<2) continue; all.sort((a,b)=>a.date.localeCompare(b.date)); const found=[], used=new Set(), byAmt={};
+  for(const [k,all] of Object.entries(G)){ all.sort((a,b)=>a.date.localeCompare(b.date)); const found=[], used=new Set(), byAmt={};
     all.forEach(t=>{ const c=Math.round(-t.amount*100); (byAmt[c]=byAmt[c]||[]).push(t); });
     for(const sub of Object.values(byAmt)){ const it=recItem(k,sub,true,covOf); if(it){ found.push(it); sub.forEach(t=>used.add(t)); } }   // importe fijo (suscripciones)
     const rest=all.filter(t=>!used.has(t)), it=rest.length>=2?recItem(k,rest,false,covOf):null; if(it) found.push(it);                    // importe variable (facturas)
+    if(!found.length&&new Set(all.map(t=>t.date)).size<=2){ const t=all[all.length-1], a=-t.amount, f=a>=100?'y':'m';   // una suscripción recién contratada o con pocos meses importados
+      if(t.cat==='Suscripciones'&&daysBetween(t.date,covOf(t.acc))<=(f==='y'?555:53)) found.push({auto:true,guess:true,name:recName(k,t.desc),amount:r2(a),freq:f,next:t.date,from:addDays(t.date,1),cat:t.cat,n:1,hist:[{d:t.date,a}]}); }
     found.forEach(f=>{ f.key='auto:'+hashKey(k)+(found.length>1?':'+Math.round(f.amount*100):''); f.mk=k; out.push(f); }); }
   return out; }
+// Desde la ficha de un movimiento: anotarlo como pago recurrente (o abrir el que ya lo incluye)
+function recurFromTx(t){ const k=recKey(t.desc), cur=k&&recurringAll().find(r=>r.mk===k&&!r.off); if(cur) return recurModal(cur);
+  let next=isoAddMonths(t.date,1); for(let i=2;next<today()&&i<40;i++) next=isoAddMonths(t.date,i);
+  recurModal(null,{key:k?'auto:'+hashKey(k):undefined,name:(k&&recName(k,t.desc))||String(t.desc).slice(0,80),amount:r2(-t.amount),freq:'m',next,cat:catType(t.cat)==='expense'&&!isUncat(t)?t.cat:'Otros gastos',why:L(`Cargo de ${amt2(-t.amount)} el ${dLabel(t.date)}. Elige cada cuánto se repite y cuándo es el próximo.`,`Charge of ${amt2(-t.amount)} on ${dLabel(t.date)}. Choose how often it repeats and when the next one is.`)}); }
 /* ---------- Pagos recurrentes: los que se deducen de tus cuentas (hipotecas, HOA, impuesto de propiedad) ---------- */
 function derivedRecurring(det){ const out=[], ms=S.accounts.filter(a=>a.kind==='mortgage'), first=ym(today())+'-01', y=+today().slice(0,4)-1;
   ms.filter(m=>mortMonthly(m)>0).forEach(m=>out.push({key:'mort:'+m.id,auto:true,der:true,name:m.name,amount:mortMonthly(m),freq:'m',next:isoDate(m.nextDue)||first,cat:mortCat(m)}));
@@ -205,7 +212,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S) calSy
 /* ============================================================
    Pantalla
    ============================================================ */
-const CAL={m:null,sel:null,ev:[],t:null};
+const CAL={m:null,sel:null,ev:[],t:null,open:false};
 const CAL_COL={stmt:'var(--s1)',act:'var(--s7)',pay:'var(--s4)',sig:'var(--s8)',salary:'var(--s3)'};
 const evKind=e=>e.type==='pay'&&e.sig?'sig':e.type;
 const iconAv=(i,h)=>`<span class="av" style="--h:${h}">${ic(i)}</span>`;
@@ -228,13 +235,13 @@ function calGrid(m,evs){ const [y,mo]=m.split('-').map(Number), n=new Date(y,mo,
       <span class="dots">${kinds.map(k=>`<i class="cdot" style="background:${CAL_COL[k]}"></i>`).join('')}</span>
       <span class="lbls">${L_.slice(0,3).map(e=>`<span class="clb" style="--c:${CAL_COL[evKind(e)]}">${esc(evTitle(e))}</span>`).join('')}${L_.length>3?`<span class="clb more">+${L_.length-3}</span>`:''}</span></button>`; }
   return `<div class="calg">${h}</div>`; }
-function recRow(r){ const nx=recurNext(r), sig=isSig(r), src=r.manual?L('Añadido por ti','Added by you'):r.der?L('De tus cuentas','From your accounts'):L('Detectado','Detected');
+function recRow(r){ const nx=recurNext(r), sig=isSig(r), src=r.manual?L('Añadido por ti','Added by you'):r.der?L('De tus cuentas','From your accounts'):r.guess?L('Detectado · 1 cargo','Detected · 1 charge'):L('Detectado','Detected');
   return `<button class="lrow" data-rec="${esc(recId(r))}">${catAv(r.cat)}<span class="lm"><b>${esc(r.name)}</b><span>${esc(freqL(r.freq))}${nx?' · '+L('próximo','next')+' '+esc(dShort(nx)):''} · ${src}</span></span><span class="lr"><b>${amt2(r.amount)}</b>${sig?`<span class="neg">${L('Importante','Significant')}</span>`:''}</span></button>`; }
 VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now); CAL.sel=now; } CAL.ev=[];
   const m=CAL.m, mEv=calEvents(m+'-01',monthEnd(m)), all=recurringAll(), on=all.filter(r=>!r.off).sort((a,b)=>(recurNext(a)||'9').localeCompare(recurNext(b)||'9')), off=all.filter(r=>r.off);
   const N=calNotices(), act=N.filter(g=>g.active), fut=N.filter(g=>!g.active), plan=payPlan(), sug=recurSuggest();
   const dayEv=CAL.sel&&ym(CAL.sel)===m?mEv.filter(e=>e.d===CAL.sel):null;
-  const pend=calEvents(addDays(now,-92),addDays(now,-1)).filter(e=>e.pend), next=calEvents(now,addDays(now,45)).filter(e=>!(e.type==='pay'&&e.paid));
+  const pend=calEvents(addDays(now,-92),addDays(now,-1)).filter(e=>e.pend), nmo=ymNext(ym(now)), next=calEvents(now,monthEnd(nmo)).filter(e=>!(e.type==='pay'&&e.paid));
   const byDay={}; next.forEach(e=>(byDay[e.d]=byDay[e.d]||[]).push(e));
   const monthly=on.reduce((s,r)=>s+recMonthly(r),0), [yy,mm]=m.split('-').map(Number);
   el.innerHTML=`<div class="stack">
@@ -242,17 +249,18 @@ VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now
   <div class="card" id="calCard">${helpBtn('cal')}
     <div class="calh"><button class="sm" id="calPrev" aria-label="${L('Mes anterior','Previous month')}">${ic('left')}</button><h2>${esc(mesLong(mm-1))} ${yy}</h2><button class="sm" id="calToday">${L('Hoy','Today')}</button><button class="sm" id="calNextM" aria-label="${L('Mes siguiente','Next month')}">${ic('right')}</button></div>
     ${calGrid(m,mEv)}
-    ${legend([{c:CAL_COL.salary,n:L('Nómina','Paycheck')},{c:CAL_COL.sig,n:L('Pago importante','Significant payment')},{c:CAL_COL.pay,n:L('Pago recurrente','Recurring payment')},{c:CAL_COL.stmt,n:L('Extracto disponible','Statement available')},{c:CAL_COL.act,n:L('Actividad del mes','Month activity')}])}
-    <div id="calDay">${dayEv?`<h3 class="sec">${esc(calDayLabel(CAL.sel))}</h3>${dayEv.length?`<div class="clist">${dayEv.map(e=>evRow(e)).join('')}</div>`:`<p class="muted" style="margin:0 4px">${L('Nada previsto este día.','Nothing expected this day.')}</p>`}`:`<p class="muted" style="margin:10px 4px 0">${L('Toca un día para ver qué hay.','Tap a day to see what is on it.')}</p>`}</div></div>
-  <div class="grid g2">
-  <div class="card" id="calNext">${helpBtn('cal_next')}<h2>${L('Próximos 45 días','Next 45 days')}</h2><p class="sub">${L('Lo que ya puedes traer a la app y lo que viene.','What you can already bring into the app and what is coming.')}</p>
+    <div id="calDay">${dayEv?`<h3 class="sec">${esc(calDayLabel(CAL.sel))}</h3>${dayEv.length?`<div class="clist">${dayEv.map(e=>evRow(e)).join('')}</div>`:`<p class="muted" style="margin:0 4px">${L('Nada previsto este día.','Nothing expected this day.')}</p>`}`:`<p class="muted" style="margin:10px 4px 0">${L('Toca un día para ver qué hay.','Tap a day to see what is on it.')}</p>`}</div>
+    <div class="calleg">${legend([{c:CAL_COL.salary,n:L('Nómina','Paycheck')},{c:CAL_COL.sig,n:L('Pago importante','Significant payment')},{c:CAL_COL.pay,n:L('Pago recurrente','Recurring payment')},{c:CAL_COL.stmt,n:L('Extracto disponible','Statement available')},{c:CAL_COL.act,n:L('Actividad del mes','Month activity')}])}</div></div>
+  <div class="card" id="calNext">${helpBtn('cal_next')}<div class="row" style="padding-right:30px"><div><h2 style="margin:0">${L(`Lo que queda de ${mesLong(+now.slice(5,7)-1)} y ${mesLong(+nmo.slice(5)-1)}`,`Rest of ${mesLong(+now.slice(5,7)-1)} and ${mesLong(+nmo.slice(5)-1)}`)}</h2>
+      <p class="muted" style="margin:2px 0 0">${L(`${next.length} ${next.length===1?'fecha prevista':'fechas previstas'}`,`${next.length} date${next.length===1?'':'s'} ahead`)}${pend.length?L(` · ${pend.length} ya ${pend.length===1?'disponible':'disponibles'}`,` · ${pend.length} available now`):''}</p></div>
+      <button id="calNextBtn" aria-expanded="${CAL.open?'true':'false'}" aria-controls="calNextBody">${CAL.open?L('Ocultar','Hide'):L('Ver la lista','Show the list')}</button></div>
+    <div id="calNextBody" ${CAL.open?'':'hidden'}>
     ${pend.length?`<h3 class="sec">${L('Ya disponible','Available now')}</h3><div class="clist">${pend.slice(-8).reverse().map(e=>evRow(e,true)).join('')}</div>`:''}
-    ${Object.keys(byDay).length?Object.keys(byDay).sort().map(d=>`<h3 class="sec">${esc(calDayLabel(d))}</h3><div class="clist">${byDay[d].map(e=>evRow(e)).join('')}</div>`).join(''):pend.length?'':`<p class="muted">${L('Nada todavía: aparecerá cuando tengas extractos, movimientos o pagos recurrentes.','Nothing yet: it will appear once you have statements, transactions or recurring payments.')}</p>`}</div>
+    ${Object.keys(byDay).length?Object.keys(byDay).sort().map(d=>`<h3 class="sec">${esc(calDayLabel(d))}</h3><div class="clist">${byDay[d].map(e=>evRow(e)).join('')}</div>`).join(''):pend.length?'':`<p class="muted" style="margin-top:10px">${L('Nada todavía: aparecerá cuando tengas extractos, movimientos o pagos recurrentes.','Nothing yet: it will appear once you have statements, transactions or recurring payments.')}</p>`}</div></div>
   <div class="card" id="calRec">${helpBtn('cal_rec')}<div class="row" style="padding-right:30px"><div><h2 style="margin:0">${L('Pagos recurrentes','Recurring payments')}</h2><p class="muted" style="margin:2px 0 0">${on.length?L(`${on.length} ${on.length===1?'pago':'pagos'} · unos ${fmt(monthly)} al mes`,`${on.length} payment${on.length===1?'':'s'} · about ${fmt(monthly)} a month`):L('Suscripciones, seguros, impuestos, HOA…','Subscriptions, insurance, taxes, HOA…')}</p></div><button class="pri" id="recAdd">${ic('plus')}${L('Nuevo pago','New payment')}</button></div>
-    ${on.length?`<div class="clist" style="margin-top:10px">${on.map(recRow).join('')}</div>`:`<p class="muted" style="margin-top:10px">${L('La app los detecta sola en tus movimientos cuando un cargo se repite (al menos 3 meses seguidos). Los que no detecte, añádelos tú.','The app detects them in your transactions when a charge repeats (at least 3 months in a row). Add yourself the ones it misses.')}</p>`}
+    ${on.length?`<div class="clist" style="margin-top:10px">${on.map(recRow).join('')}</div>`:`<p class="muted" style="margin-top:10px">${L('La app los detecta sola en tus movimientos: las suscripciones desde el primer cargo y el resto cuando un cargo se repite. Los que no detecte, añádelos con «Nuevo pago» o desde la ficha del movimiento.','The app detects them in your transactions: subscriptions from the first charge and the rest when a charge repeats. Add the ones it misses with "New payment" or from the transaction itself.')}</p>`}
     ${sug.length?`<h3 class="sec">${L('¿También son recurrentes?','Are these recurring too?')}</h3>${sug.map((s,i)=>`<div class="srow csug">${catAv(s.cat)}<span class="lm"><b>${esc(s.name)} · ${amt2(s.amount)}</b><span>${esc(s.why)}</span></span><button class="sm" data-sug="${i}">${L('Sí, anotar','Yes, add it')}</button><button class="sm ghost" data-nosug="${i}" aria-label="${L('No es recurrente','Not recurring')}">${ic('close')}</button></div>`).join('')}`:''}
     ${off.length?`<details class="coff"><summary>${L(`${off.length} ${off.length===1?'oculto':'ocultos'}`,`${off.length} hidden`)}</summary>${off.map(r=>`<div class="srow"><span class="lm"><b>${esc(r.name)}</b><span>${amt2(r.amount)} · ${esc(freqL(r.freq))}</span></span><button class="sm" data-unoff="${esc(r.key)}">${L('Volver a mostrar','Show again')}</button></div>`).join('')}</details>`:''}</div>
-  </div>
   <div class="card" id="calNotify">${helpBtn('cal_notify')}<h2>${L('Aviso de pagos importantes','Significant payment alerts')}</h2>
     <p class="sub">${L('Te aviso el día en que cobras la nómina anterior a cada pago importante, para que reserves ese dinero.','I alert you on the day you receive the paycheck before each significant payment, so you can set that money aside.')}</p>
     <div class="row"><label class="f">${L('Un pago es importante desde (USD)','A payment is significant from (USD)')}<input id="calMin" inputmode="decimal" value="${esc(c.min)}"></label>
@@ -274,6 +282,7 @@ VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now
   el.querySelectorAll('[data-nosug]').forEach(b=>b.onclick=()=>{ c.noSug=c.noSug.filter(k=>k!==sug[+b.dataset.nosug].key).concat(sug[+b.dataset.nosug].key).slice(-200); save(); VIEWS.calendario(el); });
   el.querySelectorAll('[data-unoff]').forEach(b=>b.onclick=()=>{ const o=(S.recurring||[]).find(x=>x.key===b.dataset.unoff); if(o){ delete o.off; if(Object.keys(o).every(k=>k==='id'||k==='key')) S.recurring=S.recurring.filter(x=>x!==o); } save(); VIEWS.calendario(el); });
   $('#recAdd').onclick=()=>recurModal(null);
+  $('#calNextBtn').onclick=e=>{ CAL.open=!CAL.open; $('#calNextBody').hidden=!CAL.open; e.currentTarget.textContent=CAL.open?L('Ocultar','Hide'):L('Ver la lista','Show the list'); e.currentTarget.setAttribute('aria-expanded',CAL.open?'true':'false'); };
   $('#calMin').onchange=e=>{ const v=num(e.target.value); if(!(v>=0)||v>1e7){ toast(L('Escribe un importe en dólares','Enter an amount in dollars')); e.target.value=c.min; return; } c.min=Math.round(v); save(); calSysSoon(); redraw(); };
   $('#calPay').onchange=e=>{ const d=[...new Set((e.target.value.match(/\d+/g)||[]).map(Number))].filter(x=>x>=1&&x<=31).slice(0,4); c.payDays=d; save(); calSysSoon(); redraw(); };
   $('#calSys').onchange=async e=>{ const okk=await calSysToggle(e.target.checked); if(!S) return; e.target.checked=okk; const s=$('#calSysSt'); if(s) s.textContent=await calSysStatus(); };
@@ -285,7 +294,7 @@ VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now
 function recurModal(r,pre){ const isAuto=!!(r&&r.auto), src=r||pre||{}, nx=r?recurNext(r)||r.next:(pre&&pre.next)||'';
   const nt=src.notify===true?'y':src.notify===false?'n':'a';
   openModal(`${helpBtn('cal_rec')}<h2>${r?L('Pago recurrente','Recurring payment'):L('Nuevo pago recurrente','New recurring payment')}</h2>
-    ${isAuto?`<p class="sub">${r.der?L('La app lo deduce de tus cuentas. Puedes ajustarlo aquí.','The app derives it from your accounts. You can adjust it here.'):L(`Detectado en tus movimientos (${r.n} cargos). Puedes ajustarlo aquí.`,`Detected in your transactions (${r.n} charges). You can adjust it here.`)}</p>`:pre?`<p class="sub">${esc(pre.why||'')}</p>`:''}
+    ${isAuto?`<p class="sub">${r.der?L('La app lo deduce de tus cuentas. Puedes ajustarlo aquí.','The app derives it from your accounts. You can adjust it here.'):r.guess?L(`Solo he visto un cargo en la categoría Suscripciones, así que supongo que es ${r.base.freq==='y'?'anual':'mensual'}. Corrígelo si no lo es.`,`I have seen only one charge in the Subscriptions category, so I assume it is ${r.base.freq==='y'?'yearly':'monthly'}. Correct it if it is not.`):L(`Detectado en tus movimientos (${r.n} cargos). Puedes ajustarlo aquí.`,`Detected in your transactions (${r.n} charges). You can adjust it here.`)}</p>`:pre?`<p class="sub">${esc(pre.why||'')}</p>`:''}
     <label class="f">${L('Nombre','Name')}<input id="rcN" maxlength="80" value="${esc(src.name||'')}"></label>
     <div class="row"><label class="f">${L('Importe (USD)','Amount (USD)')}<input id="rcA" inputmode="decimal" value="${src.amount?esc(src.amount):''}"></label><label class="f">${L('Se repite','Repeats')}<select id="rcF">${Object.keys(CAL_FREQ).map(f=>`<option value="${f}" ${(src.freq||'m')===f?'selected':''}>${freqL(f)}</option>`).join('')}</select></label></div>
     <div class="row"><label class="f">${L('Próximo vencimiento','Next due date')}<input type="date" id="rcD" value="${esc(nx||'')}"></label><label class="f">${L('Categoría','Category')}<select id="rcC">${catsOf('expense').map(k=>`<option value="${esc(k)}" ${k===(src.cat||'Otros gastos')?'selected':''}>${esc(catL(k))}</option>`).join('')}</select></label></div>

@@ -806,8 +806,9 @@ function txSheet(id){ const t=S.tx.find(x=>x.id===id); if(!t) return;
     <div class="sheet-big ${t.amount>0?'pos':''}">${t.amount>0?'+':''}${fmt(t.amount,2)}</div>
     ${t.rec?`<p class="muted" style="color:var(--accent)">${esc(recLabel(t))}</p>`:''}
     <label class="f" style="margin-top:14px">${L('Categoría','Category')}<select id="tsCat">${opts}</select></label>
+    ${t.amount<0&&txType(t)==='expense'&&typeof recurFromTx==='function'?`<button id="tsRec" style="width:100%">${ic('calendar')}${L('Es un pago recurrente','It is a recurring payment')}</button>`:''}
     <div class="row" style="margin-top:14px"><button class="dan" id="tsDel">${ic('trash')}${L('Borrar','Delete')}</button><span></span><button class="pri" id="mc">${L('Hecho','Done')}</button></div>`);
-  $('#mc').onclick=()=>{ closeModal(); route(); };
+  $('#mc').onclick=()=>{ closeModal(); route(); }; if($('#tsRec')) $('#tsRec').onclick=()=>recurFromTx(t);
   $('#tsDel').onclick=()=>{ S.tx=S.tx.filter(x=>x.id!==id); save(); closeModal(); toast(L('Movimiento borrado','Transaction deleted')); route(); };
   $('#tsCat').onchange=e=>{ const old=t.cat; const apply=c=>{ t.cat=c; t.manual=true; save(); closeModal(); offerRule(t,old); };
     if(e.target.value==='__newcat') newCatModal(apply,()=>txSheet(id)); else apply(e.target.value); };
