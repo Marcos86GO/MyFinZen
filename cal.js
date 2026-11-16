@@ -63,7 +63,8 @@ function detectRecurring(){ const now=today(), lim=isoAddMonths(now,-26), fm=new
     found.forEach(f=>{ f.key='auto:'+hashKey(k)+(found.length>1?':'+Math.round(f.amount*100):''); f.mk=k; out.push(f); }); }
   return out; }
 // Desde la ficha de un movimiento: anotarlo como pago recurrente (o abrir el que ya lo incluye)
-function recurFromTx(t){ const k=recKey(t.desc), cur=k&&recurringAll().find(r=>r.mk===k&&!r.off); if(cur) return recurModal(cur);
+function recurFromTx(t){ const k=recKey(t.desc); let cur=k&&recurringAll().find(r=>r.mk===k); if(cur&&cur.off){ recUnOff(cur.key); cur=recurringAll().find(r=>r.mk===k); }   // lo habías quitado: vuelve
+  if(cur) return recurModal(cur);
   let next=isoAddMonths(t.date,1); for(let i=2;next<today()&&i<40;i++) next=isoAddMonths(t.date,i);
   recurModal(null,{key:k?'auto:'+hashKey(k):undefined,name:(k&&recName(k,t.desc))||String(t.desc).slice(0,80),amount:r2(-t.amount),freq:'m',next,cat:catType(t.cat)==='expense'&&!isUncat(t)?t.cat:'Otros gastos',why:L(`Cargo de ${amt2(-t.amount)} el ${dLabel(t.date)}. Elige cada cuánto se repite y cuándo es el próximo.`,`Charge of ${amt2(-t.amount)} on ${dLabel(t.date)}. Choose how often it repeats and when the next one is.`)}); }
 /* ---------- Pagos recurrentes: los que se deducen de tus cuentas (hipotecas, HOA, impuesto de propiedad) ---------- */
@@ -95,6 +96,18 @@ function recurOcc(r,from,to){ const out=[], f=CAL_FREQ[r.freq]; if(!f||!isoDate(
   return out; }
 function recurNext(r){ const now=today(); return recurOcc(r,r.from&&r.from>now?r.from:now,addDays(now,400))[0]||null; }
 const recMonthly=r=>r.amount*(CAL_FREQ[r.freq]||CAL_FREQ.m).pm;
+// Gasto anual en pagos recurrentes, repartido por frecuencia (en su orden natural) y por tipo de gasto (de mayor a menor; a partir del 8.º, "Resto")
+function recStats(){ const on=recurringAll().filter(r=>!r.off), F={}, C={}; let total=0;
+  on.forEach(r=>{ const y=recMonthly(r)*12, c=r.cat||UNCAT; total+=y; (F[r.freq]=F[r.freq]||{v:0,n:0}).v+=y; F[r.freq].n++; (C[c]=C[c]||{v:0,n:0}).v+=y; C[c].n++; });
+  const freq=Object.keys(CAL_FREQ).filter(f=>F[f]).map(f=>({k:freqL(f),v:F[f].v,n:F[f].n}));
+  let cat=Object.entries(C).map(([c,x])=>({k:catL(c),v:x.v,n:x.n})).sort((a,b)=>b.v-a.v);
+  if(cat.length>8){ const rest=cat.slice(7); cat=cat.slice(0,7).concat({k:L(`Resto (${rest.length} tipos)`,`Other (${rest.length} types)`),v:rest.reduce((s,x)=>s+x.v,0),n:rest.reduce((s,x)=>s+x.n,0)}); }
+  return {total,freq,cat}; }
+// Barras horizontales de un solo color: nombre, barra y "34 % · $12,000" (el porcentaje es la parte del total anual)
+function shareBars(items,total,color){ const mx=Math.max(...items.map(i=>i.v));
+  return '<div class="hb cst">'+items.map(i=>{ const p=total>0?i.v/total*100:0, pt=p>=10||p===0?Math.round(p):Math.round(p*10)/10;
+    const tip=`<b>${esc(i.k)}</b><br>${fmt(i.v)} ${L('al año','a year')} · ${pt}%<br>${i.n} ${L(i.n===1?'pago':'pagos',i.n===1?'payment':'payments')}`;
+    return `<div>${esc(i.k)}</div><div class="bar" data-st="${esc(tip)}"><span style="width:${(i.v/mx*100).toFixed(1)}%;background:${color}"></span></div><div class="v"><b>${pt}%</b> <span class="muted">${fmt(i.v)}</span></div>`; }).join('')+'</div>'; }
 /* Sugerencias: pagos que la app no puede fechar sola (el seguro de una casa) o que solo ha visto una vez (algo anual). */
 function recurSuggest(){ const c=calCfg(), no=new Set(c.noSug), have=new Set((S.recurring||[]).map(o=>o.key).filter(Boolean)), all=recurringAll(), out=[], now=today();
   const ms=S.accounts.filter(a=>a.kind==='mortgage');
@@ -239,7 +252,7 @@ function recRow(r){ const nx=recurNext(r), sig=isSig(r), src=r.manual?L('Añadid
   return `<button class="lrow" data-rec="${esc(recId(r))}">${catAv(r.cat)}<span class="lm"><b>${esc(r.name)}</b><span>${esc(freqL(r.freq))}${nx?' · '+L('próximo','next')+' '+esc(dShort(nx)):''} · ${src}</span></span><span class="lr"><b>${amt2(r.amount)}</b>${sig?`<span class="neg">${L('Importante','Significant')}</span>`:''}</span></button>`; }
 VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now); CAL.sel=now; } CAL.ev=[];
   const m=CAL.m, mEv=calEvents(m+'-01',monthEnd(m)), all=recurringAll(), on=all.filter(r=>!r.off).sort((a,b)=>(recurNext(a)||'9').localeCompare(recurNext(b)||'9')), off=all.filter(r=>r.off);
-  const N=calNotices(), act=N.filter(g=>g.active), fut=N.filter(g=>!g.active), plan=payPlan(), sug=recurSuggest();
+  const N=calNotices(), act=N.filter(g=>g.active), fut=N.filter(g=>!g.active), plan=payPlan(), sug=recurSuggest(), st=recStats();
   const dayEv=CAL.sel&&ym(CAL.sel)===m?mEv.filter(e=>e.d===CAL.sel):null;
   const pend=calEvents(addDays(now,-92),addDays(now,-1)).filter(e=>e.pend), nmo=ymNext(ym(now)), next=calEvents(now,monthEnd(nmo)).filter(e=>!(e.type==='pay'&&e.paid));
   const byDay={}; next.forEach(e=>(byDay[e.d]=byDay[e.d]||[]).push(e));
@@ -260,7 +273,7 @@ VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now
   <div class="card" id="calRec">${helpBtn('cal_rec')}<div class="row" style="padding-right:30px"><div><h2 style="margin:0">${L('Pagos recurrentes','Recurring payments')}</h2><p class="muted" style="margin:2px 0 0">${on.length?L(`${on.length} ${on.length===1?'pago':'pagos'} · unos ${fmt(monthly)} al mes`,`${on.length} payment${on.length===1?'':'s'} · about ${fmt(monthly)} a month`):L('Suscripciones, seguros, impuestos, HOA…','Subscriptions, insurance, taxes, HOA…')}</p></div><button class="pri" id="recAdd">${ic('plus')}${L('Nuevo pago','New payment')}</button></div>
     ${on.length?`<div class="clist" style="margin-top:10px">${on.map(recRow).join('')}</div>`:`<p class="muted" style="margin-top:10px">${L('La app los detecta sola en tus movimientos: las suscripciones desde el primer cargo y el resto cuando un cargo se repite. Los que no detecte, añádelos con «Nuevo pago» o desde la ficha del movimiento.','The app detects them in your transactions: subscriptions from the first charge and the rest when a charge repeats. Add the ones it misses with "New payment" or from the transaction itself.')}</p>`}
     ${sug.length?`<h3 class="sec">${L('¿También son recurrentes?','Are these recurring too?')}</h3>${sug.map((s,i)=>`<div class="srow csug">${catAv(s.cat)}<span class="lm"><b>${esc(s.name)} · ${amt2(s.amount)}</b><span>${esc(s.why)}</span></span><button class="sm" data-sug="${i}">${L('Sí, anotar','Yes, add it')}</button><button class="sm ghost" data-nosug="${i}" aria-label="${L('No es recurrente','Not recurring')}">${ic('close')}</button></div>`).join('')}`:''}
-    ${off.length?`<details class="coff"><summary>${L(`${off.length} ${off.length===1?'oculto':'ocultos'}`,`${off.length} hidden`)}</summary>${off.map(r=>`<div class="srow"><span class="lm"><b>${esc(r.name)}</b><span>${amt2(r.amount)} · ${esc(freqL(r.freq))}</span></span><button class="sm" data-unoff="${esc(r.key)}">${L('Volver a mostrar','Show again')}</button></div>`).join('')}</details>`:''}</div>
+    ${off.length?`<p style="margin:10px 0 0"><button class="sm ghost" id="recGone">${L('Recuperar un pago quitado','Bring back a removed payment')}</button></p>`:''}</div>
   <div class="card" id="calNotify">${helpBtn('cal_notify')}<h2>${L('Aviso de pagos importantes','Significant payment alerts')}</h2>
     <p class="sub">${L('Te aviso el día en que cobras la nómina anterior a cada pago importante, para que reserves ese dinero.','I alert you on the day you receive the paycheck before each significant payment, so you can set that money aside.')}</p>
     <div class="row"><label class="f">${L('Un pago es importante desde (USD)','A payment is significant from (USD)')}<input id="calMin" inputmode="decimal" value="${esc(c.min)}"></label>
@@ -271,6 +284,11 @@ VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now
     <label class="f" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="calSys" ${c.sys&&notifState()==='granted'?'checked':''}> ${L('Enviarme también una notificación al móvil o al ordenador','Also send me a notification on my phone or computer')}</label>
     <p class="muted" id="calSysSt"></p>
     <p class="muted">${L('La notificación no muestra nombres ni importes. Para poder avisar con la app cerrada se guardan fuera de la bóveda cifrada solo las fechas de los avisos y cuántos pagos son.','The notification shows no names or amounts. To be able to alert you with the app closed, only the alert dates and the number of payments are stored outside the encrypted vault.')}</p></div>
+  <div class="card" id="calStats">${helpBtn('cal_stats')}<h2>${L('A dónde va tu gasto recurrente','Where your recurring spending goes')}</h2>
+    ${st.total>0?`<p class="sub">${L(`Unos <b>${fmt(st.total)}</b> al año en ${on.length} ${on.length===1?'pago recurrente':'pagos recurrentes'}. Cada barra es su parte de ese total.`,`About <b>${fmt(st.total)}</b> a year in ${on.length} recurring payment${on.length===1?'':'s'}. Each bar is its share of that total.`)}</p>
+    <div class="grid g2"><div><h3 class="sec">${L('Por frecuencia de pago','By payment frequency')}</h3>${shareBars(st.freq,st.total,'var(--s1)')}</div>
+      <div><h3 class="sec">${L('Por tipo de gasto','By type of expense')}</h3>${shareBars(st.cat,st.total,'var(--s2)')}</div></div>`
+    :`<p class="muted">${L('Cuando haya pagos recurrentes verás aquí qué parte del gasto anual se va en cada frecuencia y en cada tipo de gasto.','Once there are recurring payments you will see here what share of the yearly spending goes to each frequency and each type of expense.')}</p>`}</div>
   </div>`;
   const redraw=()=>{ clearTimeout(CAL.t); CAL.t=setTimeout(()=>{ if(S&&location.hash==='#calendario') VIEWS.calendario($('#app')); },0); };
   const go=mo=>{ CAL.m=mo; CAL.sel=mo===ym(today())?today():null; VIEWS.calendario(el); };
@@ -280,8 +298,9 @@ VIEWS.calendario=(el)=>{ const now=today(), c=calCfg(); if(!CAL.m){ CAL.m=ym(now
   el.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>{ const r=recurringAll().find(x=>recId(x)===b.dataset.rec); if(r) recurModal(r); });
   el.querySelectorAll('[data-sug]').forEach(b=>b.onclick=()=>recurModal(null,sug[+b.dataset.sug]));
   el.querySelectorAll('[data-nosug]').forEach(b=>b.onclick=()=>{ c.noSug=c.noSug.filter(k=>k!==sug[+b.dataset.nosug].key).concat(sug[+b.dataset.nosug].key).slice(-200); save(); VIEWS.calendario(el); });
-  el.querySelectorAll('[data-unoff]').forEach(b=>b.onclick=()=>{ const o=(S.recurring||[]).find(x=>x.key===b.dataset.unoff); if(o){ delete o.off; if(Object.keys(o).every(k=>k==='id'||k==='key')) S.recurring=S.recurring.filter(x=>x!==o); } save(); VIEWS.calendario(el); });
+  if($('#recGone')) $('#recGone').onclick=()=>goneModal();
   $('#recAdd').onclick=()=>recurModal(null);
+  el.querySelectorAll('[data-st]').forEach(b=>{ const show=e=>showTip(b.dataset.st,e.clientX,e.clientY); b.onpointerenter=show; b.onpointermove=show; b.onpointerleave=hideTip; });
   $('#calNextBtn').onclick=e=>{ CAL.open=!CAL.open; $('#calNextBody').hidden=!CAL.open; e.currentTarget.textContent=CAL.open?L('Ocultar','Hide'):L('Ver la lista','Show the list'); e.currentTarget.setAttribute('aria-expanded',CAL.open?'true':'false'); };
   $('#calMin').onchange=e=>{ const v=num(e.target.value); if(!(v>=0)||v>1e7){ toast(L('Escribe un importe en dólares','Enter an amount in dollars')); e.target.value=c.min; return; } c.min=Math.round(v); save(); calSysSoon(); redraw(); };
   $('#calPay').onchange=e=>{ const d=[...new Set((e.target.value.match(/\d+/g)||[]).map(Number))].filter(x=>x>=1&&x<=31).slice(0,4); c.payDays=d; save(); calSysSoon(); redraw(); };
@@ -299,12 +318,12 @@ function recurModal(r,pre){ const isAuto=!!(r&&r.auto), src=r||pre||{}, nx=r?rec
     <div class="row"><label class="f">${L('Importe (USD)','Amount (USD)')}<input id="rcA" inputmode="decimal" value="${src.amount?esc(src.amount):''}"></label><label class="f">${L('Se repite','Repeats')}<select id="rcF">${Object.keys(CAL_FREQ).map(f=>`<option value="${f}" ${(src.freq||'m')===f?'selected':''}>${freqL(f)}</option>`).join('')}</select></label></div>
     <div class="row"><label class="f">${L('Próximo vencimiento','Next due date')}<input type="date" id="rcD" value="${esc(nx||'')}"></label><label class="f">${L('Categoría','Category')}<select id="rcC">${catsOf('expense').map(k=>`<option value="${esc(k)}" ${k===(src.cat||'Otros gastos')?'selected':''}>${esc(catL(k))}</option>`).join('')}</select></label></div>
     <label class="f">${L('Aviso antes de pagarlo','Alert before paying it')}<select id="rcNt"><option value="a" ${nt==='a'?'selected':''}>${L(`Solo si es de ${fmt(calCfg().min)} o más`,`Only if it is ${fmt(calCfg().min)} or more`)}</option><option value="y" ${nt==='y'?'selected':''}>${L('Siempre','Always')}</option><option value="n" ${nt==='n'?'selected':''}>${L('Nunca','Never')}</option></select></label>
-    <div class="row" style="margin-top:6px"><button id="mc">${L('Cancelar','Cancel')}</button>${r?(isAuto?`<button id="rcOff">${L('No es recurrente','Not recurring')}</button>${r.ov?`<button id="rcRst">${L('Deshacer mis cambios','Undo my changes')}</button>`:''}`:`<button id="rcDel">${ic('trash')}${L('Quitar','Remove')}</button>`):''}<span></span><button class="pri" id="rcOk">${L('Aceptar','Save')}</button></div>`);
+    <div class="row" style="margin-top:6px"><button id="mc">${L('Cancelar','Cancel')}</button>${r?(isAuto?`<button id="rcOff">${ic('trash')}${L('Quitar: no es recurrente','Remove: not recurring')}</button>${r.ov?`<button id="rcRst">${L('Deshacer mis cambios','Undo my changes')}</button>`:''}`:`<button id="rcDel">${ic('trash')}${L('Quitar','Remove')}</button>`):''}<span></span><button class="pri" id="rcOk">${L('Aceptar','Save')}</button></div>`);
   const done=()=>{ const y=window.scrollY; save(); closeModal(); calSysSoon(); route(); window.scrollTo(0,y); }, list=()=>S.recurring||(S.recurring=[]);
   $('#mc').onclick=closeModal;
   if($('#rcDel')) $('#rcDel').onclick=()=>{ S.recurring=list().filter(x=>x.id!==r.id); done(); };
   if($('#rcRst')) $('#rcRst').onclick=()=>{ S.recurring=list().filter(x=>x.key!==r.key); done(); };
-  if($('#rcOff')) $('#rcOff').onclick=()=>{ S.recurring=list().filter(x=>x.key!==r.key).concat(Object.assign({id:uid(),key:r.key},r.ov,{off:true})); done(); toast(L('Oculto. Lo tienes en "ocultos" por si vuelve.','Hidden. It is under "hidden" in case it comes back.')); };
+  if($('#rcOff')) $('#rcOff').onclick=()=>{ S.recurring=list().filter(x=>x.key!==r.key).concat(Object.assign({id:uid(),key:r.key},r.ov,{off:true})); done(); toast(L('Quitado de tus pagos recurrentes','Removed from your recurring payments')); };
   $('#rcOk').onclick=()=>{ const name=$('#rcN').value.trim().slice(0,80), amount=r2(num($('#rcA').value)), freq=$('#rcF').value, next=isoDate($('#rcD').value), cat=$('#rcC').value, n=$('#rcNt').value, notify=n==='y'?true:n==='n'?false:undefined;
     if(!name) return toast(L('Ponle un nombre','Give it a name')); if(!(amount>0)||amount>=1e8) return toast(L('Escribe el importe en dólares','Enter the amount in dollars')); if(!CAL_FREQ[freq]) return; if(!next) return toast(L('Elige la fecha del próximo vencimiento','Choose the next due date'));
     if(isAuto){ const o={id:(r.ov&&r.ov.id)||uid(),key:r.key}, b=r.base;   // solo se guarda lo que has cambiado: el resto sigue lo que la app detecta
@@ -313,6 +332,14 @@ function recurModal(r,pre){ const isAuto=!!(r&&r.auto), src=r||pre||{}, nx=r?rec
     else { const o={id:(r&&r.id)||uid(),name,amount,freq,next,cat}; if(notify!==undefined) o.notify=notify; if(pre&&pre.key) o.key=pre.key; else if(r&&r.key) o.key=r.key;
       S.recurring=list().filter(x=>x.id!==o.id); S.recurring.push(o); }
     done(); }; }
+// Lo quitado con "No es recurrente": la app tiene que recordarlo para no volver a detectarlo; aquí se puede recuperar
+function recUnOff(key){ const o=(S.recurring||[]).find(x=>x.key===key); if(!o) return; delete o.off; if(Object.keys(o).every(k=>k==='id'||k==='key')) S.recurring=S.recurring.filter(x=>x!==o); save(); }
+function goneModal(){ const off=recurringAll().filter(r=>r.off);
+  openModal(`${helpBtn('cal_rec')}<h2>${L('Pagos quitados','Removed payments')}</h2><p class="sub">${L('Los quitaste porque no son recurrentes. Si te equivocaste con alguno, recupéralo.','You removed them because they are not recurring. If one was a mistake, bring it back.')}</p>
+    <div class="clist">${off.map(r=>`<div class="srow">${catAv(r.cat)}<span class="lm"><b>${esc(r.name)}</b><span>${amt2(r.amount)} · ${esc(freqL(r.freq))}</span></span><button class="sm" data-unoff="${esc(r.key)}">${L('Recuperar','Bring back')}</button></div>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><span></span><button class="pri" id="mc">${L('Hecho','Done')}</button></div>`);
+  $('#mc').onclick=closeModal;
+  $('#modal').querySelectorAll('[data-unoff]').forEach(b=>b.onclick=()=>{ const y=window.scrollY; recUnOff(b.dataset.unoff); closeModal(); route(); window.scrollTo(0,y); }); }
 // Extracto: cuándo cierra, cuándo sale y cómo traerlo
 function stmtSheet(e){ const a=e.a;
   openModal(`${helpBtn('cal')}<h2>${L('Extracto · ','Statement · ')}${esc(a.name)}</h2>
