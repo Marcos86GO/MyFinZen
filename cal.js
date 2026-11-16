@@ -199,7 +199,7 @@ async function calSysStatus(){ const c=calCfg(), st=notifState();
   const bg=await calBg(true);
   return bg==='on'?L('Activado. Con la app cerrada, Android la despierta más o menos una vez al día: el aviso llega ese día, no a una hora exacta.','On. With the app closed, Android wakes it up about once a day: the alert arrives that day, not at an exact time.')
     :L('Activado, pero este dispositivo solo puede avisar con la app abierta. Para recibirlo con la app cerrada, instala MyFinZen desde Chrome en Android.','On, but this device can only notify while the app is open. To get it with the app closed, install MyFinZen from Chrome on Android.'); }
-if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message',e=>{ if(e.data&&e.data.type==='goto'&&e.data.hash==='#calendario') location.hash='#calendario'; });
+try{ if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message',e=>{ if(e.data&&e.data.type==='goto'&&e.data.hash==='#calendario') location.hash='#calendario'; }); }catch(e){} // en un marco aislado, leer navigator.serviceWorker lanza un error
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S) calSysSoon(); });
 
 /* ============================================================
@@ -291,7 +291,7 @@ function recurModal(r,pre){ const isAuto=!!(r&&r.auto), src=r||pre||{}, nx=r?rec
     <div class="row"><label class="f">${L('Próximo vencimiento','Next due date')}<input type="date" id="rcD" value="${esc(nx||'')}"></label><label class="f">${L('Categoría','Category')}<select id="rcC">${catsOf('expense').map(k=>`<option value="${esc(k)}" ${k===(src.cat||'Otros gastos')?'selected':''}>${esc(catL(k))}</option>`).join('')}</select></label></div>
     <label class="f">${L('Aviso antes de pagarlo','Alert before paying it')}<select id="rcNt"><option value="a" ${nt==='a'?'selected':''}>${L(`Solo si es de ${fmt(calCfg().min)} o más`,`Only if it is ${fmt(calCfg().min)} or more`)}</option><option value="y" ${nt==='y'?'selected':''}>${L('Siempre','Always')}</option><option value="n" ${nt==='n'?'selected':''}>${L('Nunca','Never')}</option></select></label>
     <div class="row" style="margin-top:6px"><button id="mc">${L('Cancelar','Cancel')}</button>${r?(isAuto?`<button id="rcOff">${L('No es recurrente','Not recurring')}</button>${r.ov?`<button id="rcRst">${L('Deshacer mis cambios','Undo my changes')}</button>`:''}`:`<button id="rcDel">${ic('trash')}${L('Quitar','Remove')}</button>`):''}<span></span><button class="pri" id="rcOk">${L('Aceptar','Save')}</button></div>`);
-  const done=()=>{ save(); closeModal(); calSysSoon(); route(); }, list=()=>S.recurring||(S.recurring=[]);
+  const done=()=>{ const y=window.scrollY; save(); closeModal(); calSysSoon(); route(); window.scrollTo(0,y); }, list=()=>S.recurring||(S.recurring=[]);
   $('#mc').onclick=closeModal;
   if($('#rcDel')) $('#rcDel').onclick=()=>{ S.recurring=list().filter(x=>x.id!==r.id); done(); };
   if($('#rcRst')) $('#rcRst').onclick=()=>{ S.recurring=list().filter(x=>x.key!==r.key); done(); };
@@ -316,7 +316,7 @@ function stmtSheet(e){ const a=e.a;
   $('#mc').onclick=closeModal;
   $('#stImp').onclick=()=>$('#stF').click();
   $('#stF').onchange=ev=>{ const fs=[...ev.target.files]; ev.target.value=''; if(!fs.length) return; closeModal(); importFiles(fs,{forId:a.id}); };
-  $('#stOk').onclick=()=>{ const v=$('#stD').value.trim(), d=Math.round(num(v)); if(v&&!(d>=1&&d<=31)) return toast(L('Escribe un día del 1 al 31','Enter a day from 1 to 31')); if(v) a.stmtDay=d; else delete a.stmtDay; save(); closeModal(); route(); }; }
+  $('#stOk').onclick=()=>{ const v=$('#stD').value.trim(), d=Math.round(num(v)); if(v&&!(d>=1&&d<=31)) return toast(L('Escribe un día del 1 al 31','Enter a day from 1 to 31')); if(v) a.stmtDay=d; else delete a.stmtDay; const y=window.scrollY; save(); closeModal(); route(); window.scrollTo(0,y); }; }
 // Actividad del mes: qué cuentas la tienen ya completa
 function actSheet(e){ const me=monthEnd(e.m), mn=mesLong(+e.m.slice(5)-1), rows=actAccounts().map(a=>{ const end=covEnd(a), okk=!!end&&end>=me;
     return `<div class="srow">${accAv(a)}<span class="lm"><b>${esc(a.name)}</b><span>${end?L(`Datos hasta el ${dLabel(end)}`,`Data through ${dLabel(end)}`):L('Sin datos todavía','No data yet')}</span></span>${okk?`<span class="sst ok">${ic('check')}${L('Completa','Complete')}</span>`:`<span class="sst due">${L('Falta','Missing')}</span>`}</div>`; }).join('');
