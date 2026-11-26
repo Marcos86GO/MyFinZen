@@ -37,6 +37,9 @@ window.HELP = {
   mix: {
     es: { t: 'Dónde está tu dinero', d: ['Saldo actual por tipo de cuenta. Las deudas (tarjetas, hipotecas) aparecen marcadas como deuda.'], steps: ['Usa esta vista para ver de un vistazo cuánto tienes líquido, invertido y en inmuebles.'] },
     en: { t: 'Where your money is', d: ['Current balance by account type. Debts (cards, mortgages) are marked as debt.'], steps: ['Use this view to see at a glance how much is in cash, invested and in property.'] } },
+  spend: {
+    es: { t: 'Adónde va tu gasto', d: ['Todo lo que gastas, repartido por categoría: no solo los pagos recurrentes del calendario, sino también las compras, los restaurantes o cualquier gasto puntual.', 'Usa los mismos datos que <b>Movimientos</b>: no cuenta las transferencias entre tus cuentas ni los pagos de tarjeta (sí las compras con la tarjeta), y la hipoteca va como cuota fija mensual. Lo que aún no tiene categoría sale en amarillo.', 'Solo usa meses terminados. Si a algún banco o tarjeta le faltan movimientos de esos meses, la cifra sale como provisional.'], steps: ['Elige el periodo: el último mes completo, o la media mensual de los últimos 3 o 12 meses.', 'Cada barra dice qué parte del gasto total es esa categoría y cuánto supone.', 'Toca una categoría para ver sus movimientos.'] },
+    en: { t: 'Where your spending goes', d: ['Everything you spend, split by category: not just the recurring payments from the calendar, but also shopping, restaurants and any one-off expense.', 'It uses the same data as <b>Transactions</b>: transfers between your accounts and card payments are not counted (card purchases are), and the mortgage counts as a fixed monthly payment. Anything still uncategorized shows in yellow.', 'Only finished months are used. If a bank or card is missing transactions for those months, the figure is marked as provisional.'], steps: ['Choose the period: the last complete month, or the monthly average of the last 3 or 12 months.', 'Each bar shows what share of total spending that category is and how much it amounts to.', 'Tap a category to see its transactions.'] } },
 
   /* ---------- Movimientos ---------- */
   cf_chart: {
@@ -253,7 +256,7 @@ window.HELP = {
 
 // Orden del manual por pantallas
 window.HELP_GROUPS = [
-{ es: 'Resumen', en: 'Overview', keys: ['onboard', 'stat_nw', 'stat_cash', 'stat_inv', 'stat_save', 'stat_mort', 'alerts', 'nw_chart', 'mix'] },
+{ es: 'Resumen', en: 'Overview', keys: ['onboard', 'stat_nw', 'stat_cash', 'stat_inv', 'stat_save', 'stat_mort', 'alerts', 'nw_chart', 'mix', 'spend'] },
   { es: 'Movimientos', en: 'Transactions', keys: ['cat_chart', 'cf_chart', 'rec', 'tx_list', 'add_tx', 'categories'] },
 { es: 'Cuentas e importar', en: 'Accounts & import', keys: ['accounts', 'acc_first', 'stmt_routine', 'imp_batch', 'imp_csv', 'imp_pdf', 'imp_paste'] },
 { es: 'Inversiones', en: 'Investments', keys: ['inv_total', 'inv_chart', 'holdings', 'retire_nofunds', 'retire', 'retire_tips', 'news'] },

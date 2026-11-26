@@ -490,6 +490,20 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
     const k=window.__calKeep; S.accounts=k.accounts; S.tx=k.tx; S.snapshots=k.snapshots; S.imports=k.imports; if(k.recurring===undefined) delete S.recurring; else S.recurring=k.recurring; if(k.cal===undefined) delete S.settings.cal; else S.settings.cal=k.cal; S.settings.alertIgnore=k.ign;
     delete window.__calKeep; CAL.m=null; REC=null; save(); location.hash='#resumen'; route(); return r; }),'al borrar una cuenta se quitan los cambios sobre sus pagos');
   await pg.waitForTimeout(300);
+  // Resumen → Adónde va tu gasto: todo el gasto por categoría (no solo el recurrente), con periodo y enlace a Movimientos
+  { await pg.goto(U+'#resumen'); await pg.waitForTimeout(300);
+    const r=await pg.evaluate(()=>{ const cf=cashflowByMonth(), cur=ym(today()), last=Object.keys(cf).filter(m=>m<cur).sort().pop(), d=spendData(cf,last,1);
+      const rows=document.querySelectorAll('#cSpend .hb .bar').length, sum=d?d.items.reduce((s,x)=>s+x.v,0):0;
+      return {rows,last,match:!!d&&Math.abs(sum-cf[last].expense)<1&&d.items.length>0,pressed:document.querySelector('#cSpend [data-sp="12"]').getAttribute('aria-pressed')}; });
+    await pg.click('#cSpend [data-sp="1"]'); await pg.waitForTimeout(100);
+    const one=await pg.evaluate(()=>({on:document.querySelector('#cSpend [data-sp="1"]').classList.contains('pri'),txt:document.querySelector('#cSpend .sub').innerText}));
+    if(process.env.SHOTS){ for(const [lg,w,n] of [['es',412,'gasto-movil'],['es',1200,'gasto-escritorio'],['en',412,'en-gasto-movil'],['en',1200,'en-gasto-escritorio']]){ await pg.setViewportSize({width:w,height:900}); await pg.evaluate(l=>setLang(l),lg); await pg.waitForTimeout(250); await pg.$eval('#spendCard',e=>e.scrollIntoView()); await pg.locator('#spendCard').screenshot({path:process.env.SHOTS+'/'+n+'.png'}); }
+      await pg.setViewportSize({width:412,height:900}); await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200); }
+    const cat=await pg.evaluate(()=>{ const a=document.querySelector('#cSpend [data-spc="0"]'); return a?a.dataset.spc:null; }); const want=await pg.evaluate(()=>{ const cf=cashflowByMonth(), last=Object.keys(cf).filter(m=>m<ym(today())).sort().pop(); return {cat:spendData(cf,last,1).items[0].cat,last}; });
+    await pg.click('#cSpend [data-spc="0"]'); await pg.waitForTimeout(300);
+    const go=await pg.evaluate(()=>({h:location.hash,cat:flujoFilter.cat,month:flujoFilter.month}));
+    ok(r.rows>0&&r.match&&r.pressed==='true'&&one.on&&cat==='0'&&go.h==='#flujo'&&go.cat===want.cat&&go.month===want.last,'Resumen: «Adónde va tu gasto» reparte todo el gasto del mes por categoría y lleva a sus movimientos '+JSON.stringify([r,one.on,go]));
+    await pg.evaluate(()=>{ flujoFilter.cat='all'; flujoFilter.month='all'; SPEND_P=12; }); }
   // Inglés en todas las pantallas
   await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','calendario','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;

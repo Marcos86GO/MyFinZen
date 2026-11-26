@@ -716,15 +716,45 @@ VIEWS.resumen=(el)=>{
   </div>
   <div id="alertWrap"></div>
   <div class="card">${helpBtn('mix')}<h2>${L('Dónde está tu dinero','Where your money is')}</h2><p class="sub">${L('Saldo actual por tipo de cuenta','Current balance by account type')}</p><div id="cMix"></div></div>
+  <div class="card" id="spendCard">${helpBtn('spend')}<h2>${L('Adónde va tu gasto','Where your spending goes')}</h2><div id="cSpend"></div></div>
   </div>`;
   lineChart($('#cNW'),{labels:months.map(ymLabel),series:[{name:nNW,color:'var(--accent)',values:nwSeries,area:true}],height:150});
   const order=['cash','brokerage','retirement','kids','property','other','credit','mortgage'];
   const colors={cash:'var(--s1)',brokerage:'var(--s3)',retirement:'var(--s7)',kids:'var(--s5)',property:'var(--s4)',other:'var(--s6)',credit:'var(--s8)',mortgage:'var(--s2)'};
   $('#cMix').innerHTML=order.some(k=>by[k])?hbars(order.filter(k=>by[k]).map(k=>({k:KINDS[k].label+(KINDS[k].asset?'':L(' (deuda)',' (debt)')),v:by[k],c:colors[k]}))):`<p class="muted">${L('Aún no hay saldos.','No balances yet.')}</p>`;
+  paintSpend(cf,last);
   if($('#obHide')) $('#obHide').onclick=()=>{ S.settings.onboardDone=true; save(); route(); };
   const paint=open=>{ const A0=computeAlerts(); $('#alertWrap').innerHTML=alertsBox(A0,open); wireAlerts($('#alertWrap'),A0.filter(a=>!a.ignored).concat(A0.filter(a=>a.ignored)),()=>paint(true)); };
   paint(false);
 };
+
+/* Adónde va tu gasto: todo el gasto (no solo el recurrente) por categoría, con los mismos datos que Movimientos
+   (cashflowByMonth: sin transferencias ni pagos de tarjeta; la hipoteca como cuota fija). Último mes completo,
+   o media mensual de los últimos 3 o 12 meses con datos. Tocar una categoría abre Movimientos con ese filtro. */
+let SPEND_P=12;
+function spendData(cf,last,n){ if(!last) return null;
+  const all=Object.keys(cf).filter(m=>m<=last).sort(), ms=all.slice(-n).filter(m=>m>isoAddMonths(last+'-01',-n).slice(0,7)); if(!ms.length) return null;
+  const C={}; ms.forEach(m=>{ for(const [k,v] of Object.entries(cf[m].cats)) C[k]=(C[k]||0)+v; });
+  let items=Object.entries(C).filter(([k,v])=>v>0.5).map(([k,v])=>({cat:k,k:catL(k),v:v/ms.length})).sort((a,b)=>b.v-a.v);
+  const total=items.reduce((s,x)=>s+x.v,0);
+  if(items.length>9){ const rest=items.slice(8); items=items.slice(0,8).concat({k:L(`Resto (${rest.length} categorías)`,`Other (${rest.length} categories)`),v:rest.reduce((s,x)=>s+x.v,0),rest:true}); }
+  return {ms,items,total,prov:ms.some(m=>!monthCov(m).complete)}; }
+function paintSpend(cf,last){ const box=$('#cSpend'); if(!box) return;
+  const d=spendData(cf,last,SPEND_P), one=SPEND_P===1;
+  const tabs=`<div class="tabs-inline" role="group" aria-label="${L('Periodo','Period')}" style="margin:2px 0 12px">${[[1,L('Último mes','Last month')],[3,L('3 meses','3 months')],[12,L('12 meses','12 months')]].map(([k,l])=>`<button class="sm ${k===SPEND_P?'pri':''}" data-sp="${k}" aria-pressed="${k===SPEND_P}">${l}</button>`).join('')}</div>`;
+  if(!d||!d.items.length){ box.innerHTML=`<p class="sub">${L('Todo tu gasto por categoría, no solo el recurrente','All your spending by category, not just recurring')}</p>${tabs}<p class="muted">${L('Aún no hay gastos de un mes completo. Importa los movimientos de tus bancos y tarjetas.','No spending from a complete month yet. Import your bank and card transactions.')}</p>`; }
+  else { const per=d.ms.length>1?`${ymLabel(d.ms[0])} – ${ymLabel(d.ms[d.ms.length-1])}`:ymLabel(d.ms[0]);
+    const sub=one?L(`Todo el gasto de ${per}: <b>${fmt(d.total)}</b>`,`All spending in ${per}: <b>${fmt(d.total)}</b>`)
+      :L(`Media mensual de ${d.ms.length===1?'1 mes':d.ms.length+' meses'} (${per}): <b>${fmt(d.total)}</b> al mes`,`Monthly average over ${d.ms.length===1?'1 month':d.ms.length+' months'} (${per}): <b>${fmt(d.total)}</b> a month`);
+    const mx=Math.max(...d.items.map(i=>i.v));
+    const rows=d.items.map((i,n)=>{ const p=d.total>0?i.v/d.total*100:0, pt=p>=10||p===0?Math.round(p):Math.round(p*10)/10;
+      const col=i.rest?'var(--muted)':i.cat===UNCAT?'var(--warn)':'var(--s2)';
+      const name=i.rest?`<div>${esc(i.k)}</div>`:`<div><a href="#flujo" class="spl" data-spc="${n}">${esc(i.k)}</a></div>`;
+      return `${name}<div class="bar"><span style="width:${(i.v/mx*100).toFixed(1)}%;background:${col}"></span></div><div class="v"><b>${pt}%</b> <span class="muted">${fmt(i.v)}${one?'':L('/mes','/mo')}</span></div>`; }).join('');
+    box.innerHTML=`<p class="sub">${sub}${d.prov?` · <span class="muted">${L('provisional','provisional')}</span>`:''}</p>${tabs}<div class="hb cst">${rows}</div>
+      <p class="muted" style="margin:12px 0 0;font-size:13px">${L('Incluye todo el gasto, también lo que no es recurrente. No cuenta transferencias entre tus cuentas ni pagos de tarjeta; la hipoteca va como cuota fija.','Includes all spending, not just recurring payments. Transfers between your accounts and card payments are not counted; the mortgage counts as a fixed payment.')} <a href="#flujo" class="spl" data-spc="all" style="white-space:nowrap">${L('Ver movimientos','See transactions')} →</a></p>`;
+    box.querySelectorAll('[data-spc]').forEach(a=>a.onclick=e=>{ e.preventDefault(); const it=d.items[+a.dataset.spc]; goAlert({h:'flujo',month:one?d.ms[0]:'all',cat:it?it.cat:'all'}); }); }
+  box.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{ SPEND_P=+b.dataset.sp; paintSpend(cf,last); }); }
 
 /* ---------- Movimientos ---------- */
 // sort: date_desc | date_asc | amt_desc | amt_asc (por importe absoluto: lo más grande primero)
