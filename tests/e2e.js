@@ -10,18 +10,16 @@ let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed+
 // Respuesta "envenenada" de Claude, como si el texto de un PDF hubiera intentado manipularla
 const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__pwn=1">',account_kind:'cash',period_end:'2026-10-12"><img src=x onerror="window.__pwn=2">',ending_balance:'1"><img src=x onerror="window.__pwn=3">',
   transactions:[{date:'<img src=x onerror="window.__pwn=4">',description:'x',amount:5},{date:'2026-10-01',description:'<img src=x onerror="window.__pwn=5">',amount:-10},{date:'2026-10-02',description:'y',amount:'9"><img src=x>'}],tax_forms:[]};
-// Ticket de restaurante leído de una foto (inventado), también con intentos de inyección
+// Ticket de restaurante (inventado) como si lo hubiera leído el lector local, también con intentos de inyección
 const TICKET={place:'<img src=x onerror="window.__pwn=20">Bistró Prueba',date:'2026-11-27',currency:'usd',guests:4,subtotal:55,discount:null,tax:5.09,service:null,tip:null,total:60.09,
   items:[{name:'Hamburguesa Prueba',qty:1,price:18.5},{name:'Ensalada Prueba',qty:1,price:14},{name:'Cerveza Prueba',qty:2,price:16},{name:'<img src=x onerror="window.__pwn=21">',qty:1,price:6.5},{name:'Malo',qty:1,price:'12"><img src=x>'}]};
-const RECEIPT_REQ=[];
+let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ninguna)
 (async()=>{
   const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const pg=await ctx.newPage();
   const errs=[]; pg.on('pageerror',e=>{ errs.push(e.message); console.log('PAGEERR',e.stack); }); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
   const cdp=await ctx.newCDPSession(pg); await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
-  await pg.route('https://api.anthropic.com/**',r=>{ const body=JSON.parse(r.request().postData());
-    const ct=body.messages&&body.messages[0]&&body.messages[0].content;
-    if(Array.isArray(ct)&&ct.some(c=>c.type==='text'&&/^You read restaurant receipts/.test(c.text))){ RECEIPT_REQ.push(r.request().postData()); return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:'```json\n'+JSON.stringify(TICKET)+'\n```'}],stop_reason:'end_turn'})}); }
+  await pg.route('https://api.anthropic.com/**',r=>{ ANTH++; const body=JSON.parse(r.request().postData());
     const prompt=String(body.messages&&body.messages[0]&&body.messages[0].content||'');
     if(!body.stream&&prompt.startsWith('You extract data')) return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:JSON.stringify(EVIL)}],stop_reason:'end_turn'})});
     if(!body.stream) return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:'OK'}],stop_reason:'end_turn'})});
@@ -526,8 +524,8 @@ const RECEIPT_REQ=[];
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(500); await pg.$eval('#recBox',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/flujo-escritorio.png'}); await pg.goto(U+'#hipotecas'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/hipotecas-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300); await pg.fill('#sKey','sk-ant-test'); await pg.click('#sKeySave'); await pg.waitForTimeout(300);
   await pg.click('#sKeyTest'); await pg.waitForTimeout(600); ok(/Funciona/.test(await pg.$eval('#sKeyMsg',e=>e.innerText)),'clave de API (mock)');
-  // Dividir la cuenta: foto del ticket → Claude (simulado) → reparto a partes iguales y por consumo entre tarjetas
-  { await pg.goto(U+'#dividir'); await pg.waitForTimeout(300);
+  // Dividir la cuenta: foto del ticket → lector local → reparto a partes iguales y por consumo entre tarjetas (todo en el dispositivo)
+  { const anth0=ANTH; await pg.goto(U+'#dividir'); await pg.waitForTimeout(300);
     ok(await pg.evaluate(()=>!!$('#spCam')&&$('#spCam').getAttribute('capture')==='environment'&&!!$('#spPick')&&!!$('#spManual')&&document.querySelector('nav a.on').getAttribute('href')==='#dividir'&&$('#pageTitle').innerText==='Dividir la cuenta'),'Dividir la cuenta: foto con la cámara, elegir fotos o a mano');
     // Lector local: la foto (de un ticket inventado, con sombra y girado) se lee en el navegador sin llamar a ningún servicio
     const ext=[]; const onReq=r=>{ if(!r.url().startsWith(U)&&!r.url().startsWith('blob:')&&!r.url().startsWith('data:')) ext.push(r.url()); }; pg.on('request',onReq);
@@ -535,7 +533,7 @@ const RECEIPT_REQ=[];
     const loc=await pg.evaluate(async()=>{ const s=spCurrent(); const dbs=indexedDB.databases?(await indexedDB.databases()).map(d=>d.name):[];
       const c=await caches.open('mfz-ocr-7.0.0'), cached=!!(await c.match(new URL('vendor/ocr/eng.traineddata.gz',location.href).href));
       return {place:s.place,date:s.date,people:s.people,cards:s.cards.map(c=>c.n).join(),items:s.items.map(i=>i.qty+'|'+i.name+'|'+i.price).join(';'),sub:s.sub,tax:s.tax,tot:s.tot,chk:$('#spChk').innerText,ai:!!$('#spAI'),err:SPLIT.err,dbs,cached,src:s.src,warn:!!$('#spWarn .alert')}; });
-    ok(!ext.length&&!RECEIPT_REQ.length&&loc.items==='2|Fish Tacos|18;1|Veggie Burger|14.5;3|Lemonade|9;1|Garlic Fries|6.75;1|Churros|7.25'&&loc.sub===55.5&&loc.tax===4.3&&loc.tot===59.8&&loc.place==='Prueba Bistro'&&loc.date==='2026-11-20'&&loc.people===3&&loc.cards==='2,1'&&loc.src==='photo'&&/subtotal del ticket/.test(loc.chk)&&/Cuadra con el total/.test(loc.chk)&&!/⚠/.test(loc.chk)&&!loc.err&&!loc.warn,
+    ok(!ext.length&&loc.items==='2|Fish Tacos|18;1|Veggie Burger|14.5;3|Lemonade|9;1|Garlic Fries|6.75;1|Churros|7.25'&&loc.sub===55.5&&loc.tax===4.3&&loc.tot===59.8&&loc.place==='Prueba Bistro'&&loc.date==='2026-11-20'&&loc.people===3&&loc.cards==='2,1'&&loc.src==='photo'&&/subtotal del ticket/.test(loc.chk)&&/Cuadra con el total/.test(loc.chk)&&!/⚠/.test(loc.chk)&&!loc.err&&!loc.warn,
       'lector local: lee la foto del ticket en el dispositivo (productos, unidades, subtotal, impuestos, total, comensales y fecha) sin enviar nada fuera '+JSON.stringify([loc,ext.slice(0,3)]));
     ok(loc.cached&&!loc.dbs.some(n=>n&&n!=='misfinanzas'),'el lector se guarda en la caché del service worker para usarlo sin conexión y no escribe en IndexedDB '+JSON.stringify(loc.dbs));
     const pr=await pg.evaluate(()=>{ const es=parseReceipt('RESTAURANTE EL PRUEBA\nC/ Mayor 12, Madrid\nMesa 4  Comensales: 3\nFecha: 27/11/2026 21:40\n2 Caña                    5,00\n1 Tortilla española       9,50\n1 Pulpo a la gallega     18,90\n3 Café solo               4,50\nBase imponible           34,45\nIVA 10%                   3,45\nTOTAL                    37,90 €\nTarjeta                  37,90');
@@ -546,15 +544,10 @@ const RECEIPT_REQ=[];
     ok(pr.es==='Restaurante El Prueba EUR 3 2026-11-27 2|5,1|9.5,1|18.9,3|4.5 37.9 0 37.9','ticket español con el IVA incluido '+pr.es);
     ok(pr.us==='The Test Grill 4 2026-11-20 1|Burger|16,2|Fries|9,1|Caesar Salad|12.5,1|Steak Frites|32,1|Add Egg|2 71.5 5 5.15 11.97 10 93.62','ticket de EE. UU. con descuento, impuestos, servicio, propina escrita y pago '+pr.us);
     ok(pr.ocr==='Prueba Sushi 2|6,2|11,2|15.9 32.9 2.54 35.44','errores típicos del OCR: ruido en los bordes, «[lotal», punto perdido; la tabla de propina sugerida no cuenta '+pr.ocr);
-    // Opcional: volver a leerlo con Claude (con la clave del usuario y pidiendo permiso)
-    ok(!loc.ai,'«Leer con Claude» no sale si la lectura local cuadra');
+    // Sin opción de Claude: ni con clave de API ni cuando la lectura no cuadra
     await pg.evaluate(()=>{ spCurrent().tot=1; route(); }); await pg.waitForTimeout(150);
-    await pg.click('#spAI'); await pg.waitForSelector('#spNoAsk',{timeout:5000});
-    const asked=await pg.evaluate(()=>/no se guarda en MyFinZen/.test($('#modal').innerText)&&!!$('#modal .sp-thumbs img')); await pg.click('#cY');
-    await pg.waitForFunction(()=>spCurrent()&&spCurrent().items.length===4&&!SPLIT.busy&&!!$('#spTicket'),null,{timeout:8000});
-    await pg.evaluate(()=>{ const s=spCurrent(); s.people=4; s.cards.forEach(c=>c.n=2); save(); route(); }); await pg.waitForTimeout(200);
-    const req=RECEIPT_REQ[0]||'', rq=req?JSON.parse(req).messages[0].content:[];
-    ok(asked&&RECEIPT_REQ.length===1&&rq[0].type==='image'&&rq[0].source.type==='base64'&&rq[0].source.media_type==='image/jpeg'&&rq[0].source.data.length>200&&!/icon-192/.test(req),'«Leer con Claude» es opcional: pide permiso y envía solo la foto reducida en JPEG');
+    ok(await pg.evaluate(()=>!!S.secret.apiKey&&!!$('#spWarn .alert')&&!/Claude|Anthropic/i.test($('#app').innerText)&&!$('#spAI')),'no hay opción de leer con Claude: si no cuadra, se avisa y se corrige a mano');
+    await pg.evaluate(t=>{ spNew(sanitizeTicket(t),'photo'); route(); },TICKET); await pg.waitForTimeout(200);
     const t1=await pg.evaluate(()=>{ const s=spCurrent(), T=spTotals(s), E=spEven(s,T); return {pwn:window.__pwn,img:[...document.querySelectorAll('#app img')].every(i=>i.closest('.sp-thumbs')),n:s.items.length,cur:s.cur,people:s.people,cards:s.cards.map(c=>c.n).join(),
       tip:T.tip,total:T.total,amts:E.rows.map(r=>r.v).join(),shown:[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join(),chk:$('#spChk').innerText,tot:$('#spTotV').innerText}; });
     ok(t1.pwn===undefined&&t1.img&&t1.n===4&&t1.cur==='USD'&&t1.people===4&&t1.cards==='2,2'&&t1.tip===9.9&&t1.total===69.99&&t1.amts==='35,34.99'&&t1.shown==='$35.00,$34.99'&&/subtotal del ticket/.test(t1.chk)&&/Cuadra con el total/.test(t1.chk)&&!/⚠/.test(t1.chk)&&t1.tot==='$69.99','lee el ticket (sin inyecciones), comprueba subtotal y total, propina del 18 % y 4 personas con 2 tarjetas '+JSON.stringify(t1));
@@ -586,15 +579,16 @@ const RECEIPT_REQ=[];
     const en=await pg.evaluate(()=>{ const t=$('#app').innerText; return {m:(t.match(/\b(Añadir|Guardar|Cancelar|Borrar|Tarjeta|Productos|Propina|Impuestos|personas|Compartir|Sin asignar)\b/)||[])[0]||null,ok:/Who ordered what\?/.test(t)&&/Each card pays/.test(t)&&/Card 1/.test(t)&&$('#pageTitle').innerText==='Split the bill'}; });
     ok(!en.m&&en.ok,'Dividir la cuenta en inglés '+JSON.stringify(en)); await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
     await pg.waitForTimeout(400);
-    ok(!/Hamburguesa Prueba|Bistró/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v))))&&await pg.evaluate(()=>S.splits.length===1),'el ticket se guarda cifrado');
+    ok(!/Hamburguesa Prueba|Bistró/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v))))&&await pg.evaluate(()=>S.splits.length===2),'los tickets se guardan cifrados');
     const san=await pg.evaluate(()=>{ const r=sanitizeSplits([{id:'s"><b>',cards:[{id:'a',n:'x'},{id:'b',n:500}],items:[{name:'<b>x',price:'5',to:['a','zz','a']},{price:'nope'}],cur:'<b>',mode:'raro',tipPct:500,people:-3},'x',null])[0], s2=sanitizeState({splits:[{cards:[]}],settings:{split:{tip:'<b>',ask:false}}});
-      return r.id==='sb'&&r.cards[0].n===1&&r.cards[1].n===99&&r.items[0].to.join()==='a'&&r.items[0].price===5&&r.items[1].price===0&&r.cur==='USD'&&r.mode==='even'&&r.tipPct===null&&r.people===1&&s2.splits.length===1&&s2.splits[0].cards.length===1&&s2.settings.split.tip===null&&s2.settings.split.ask===false; });
+      return r.id==='sb'&&r.cards[0].n===1&&r.cards[1].n===99&&r.items[0].to.join()==='a'&&r.items[0].price===5&&r.items[1].price===0&&r.cur==='USD'&&r.mode==='even'&&r.tipPct===null&&r.people===1&&s2.splits.length===1&&s2.splits[0].cards.length===1&&s2.settings.split.tip===null&&!('ask' in s2.settings.split); });
     ok(san,'los tickets se validan al desbloquear y al restaurar');
     ok(await pg.evaluate(()=>{ const n=SPLIT.img.length; splitOnLock(); return n===1&&!SPLIT.img.length&&!SPLIT.cur; }),'la foto solo vive en memoria y se descarta al bloquear');
     await pg.goto(U+'#resumen'); await pg.waitForTimeout(100); await pg.goto(U+'#dividir'); await pg.waitForTimeout(250);
     ok(await pg.evaluate(()=>!!document.querySelector('#spRecent [data-spo]')&&!$('#spTicket')),'los tickets anteriores se pueden volver a abrir');
     await pg.click('#spManual'); await pg.waitForTimeout(150); await pg.fill('#spFsub','100'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.src==='manual'&&!s.items.length&&$('#spTotV').innerText==='$120.00'&&[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()==='$60.00,$60.00'; }),'a mano: subtotal, propina recordada y dos tarjetas a partes iguales');
+    ok(ANTH===anth0,'Dividir la cuenta no ha hecho ninguna petición a Claude');
     await pg.evaluate(()=>{ S.splits=[]; SPLIT.cur=null; save(); }); }
   // Seguridad: CSP sin scripts incrustados, respuesta de Claude manipulada, copia manipulada, datos de noticias, utilidades
   ok(await pg.evaluate(()=>{ const c=document.querySelector('meta[http-equiv="Content-Security-Policy"]').content; return /script-src 'self';/.test(c)&&!/unsafe-inline[^;]*;\s*style/.test(c.split('script-src')[1].split(';')[0]+';style')&&![...document.scripts].some(x=>!x.src); }),'CSP sin scripts incrustados');

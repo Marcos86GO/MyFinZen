@@ -251,7 +251,7 @@ function sanitizeState(st){
   if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
   { const c=obj(s.cal), m=numStrict(c.min); // calendario: umbral de pagos importantes, notificación y días de cobro
     S2.cal={min:m!=null&&m>=0&&m<=1e7?Math.round(m):500,sys:c.sys===true,payDays:[...new Set(arr(c.payDays).map(d=>Math.round(numStrict(d)||0)).filter(d=>d>=1&&d<=31))].slice(0,4),noSug:arr(c.noSug).filter(x=>typeof x==='string'&&/^[\w:.-]{1,80}$/.test(x)).slice(-200)}; }
-  { const c=obj(s.split), t=numStrict(c.tip); S2.split={tip:t!=null&&t>=0&&t<=100?t:null,ask:c.ask!==false}; } // dividir la cuenta (split.js)
+  { const c=obj(s.split), t=numStrict(c.tip); S2.split={tip:t!=null&&t>=0&&t<=100?t:null}; } // dividir la cuenta (split.js)
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
     for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }
@@ -3108,7 +3108,6 @@ function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTM
 /* ---------- Claude con la clave del usuario ---------- */
 const MODELS={quick:'claude-haiku-5-5',default:'claude-sonnet-5-5',complex:'claude-opus-5-5'};
 function parseJSONLoose(t){ const s=String(t||'').replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,''); const a=s.indexOf('{'), b=s.lastIndexOf('}'); return JSON.parse(a>=0?s.slice(a,b+1):s); }
-// prompt: texto, o una lista de bloques de contenido (imágenes + texto) como la que usa la foto del ticket en split.js
 async function claudeCall(prompt,opts={}){
   const key=S&&S.secret&&S.secret.apiKey; if(!key) throw Object.assign(new Error(L('Añade tu clave de API de Anthropic en Copia y ajustes','Add your Anthropic API key in Backup & settings')),{code:'no_key'});
   const stream=opts.stream!==false&&!!opts.onText;
