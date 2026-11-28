@@ -12,12 +12,14 @@
      · sub / tot  subtotal y total impresos en el ticket: solo sirven para comprobar la lectura
      · tipPct     propina en % sobre el subtotal menos el descuento; si es null, tip es el importe
      · cards[].n  personas que paga esa tarjeta en el reparto a partes iguales
+   Historial: todos los tickets con importe (hasta SPLIT_MAX), con lo que pagó cada tarjeta; los vacíos se descartan (spPrune).
    S.settings.split = {tip, tipLast, mode, people, cards:[{name,n}]}: preferencias para los tickets nuevos (propina, si se recuerda
      la última elegida, modo de reparto, personas si el ticket no lo dice y tarjetas habituales con cuántas personas paga cada una).
    La foto se lee en el dispositivo con ticket.js (no hay lectura en la nube).
    Las fotos NO se guardan: viven en memoria (SPLIT.img) hasta abrir otro ticket o bloquear la app.
    ============================================================ */
-const SPLIT={cur:null,img:[],busy:false,err:null,prog:null};
+const SPLIT={cur:null,img:[],busy:false,err:null,prog:null,tab:'new',hf:null,hn:40};
+const SPLIT_MAX=1000;   // historial: como mucho los 1.000 tickets más recientes
 const SPLIT_PX=1568, SPLIT_TIPS=[0,15,18,20,22], SPLIT_CURS=['USD','EUR','MXN','GBP','CAD','JPY'];
 function spCfg(){ const s=S.settings; s.split=sanitizeSplitPrefs(s.split); return s.split; }
 const spHere=()=>typeof spHostActive==='function'?spHostActive():location.hash==='#dividir';
@@ -26,18 +28,18 @@ const spInt=(x,lo,hi,d)=>Math.max(lo,Math.min(hi,Math.round(numStrict(x)||d)));
 function sanitizeSplitPrefs(c){ c=obj(c); const t=numStrict(c.tip);
   return {tip:t!=null&&t>=0&&t<=100?t:null,tipLast:c.tipLast!==false,mode:c.mode==='items'?'items':'even',people:spInt(c.people,1,99,2),
     cards:arr(c.cards).map(x=>({name:str(obj(x).name,60).trim(),n:spInt(obj(x).n,1,99,1)})).filter(x=>x.name).slice(0,10)}; }
-// Tickets de restaurante repartidos entre tarjetas: S.splits, como mucho los 30 últimos
+// Tickets de restaurante repartidos entre tarjetas: S.splits, como mucho los SPLIT_MAX más recientes
 function sanitizeSplits(v){ const n=(x,lo,hi)=>{ const y=numStrict(x); return y!=null&&y>=lo&&y<=hi?Math.round(y*100)/100:null; };
   return arr(v).map(s0=>{ const s=obj(s0), cards=arr(s.cards).map(c=>{ c=obj(c); return {id:cleanId(c.id)||uid(),name:str(c.name,60),n:spInt(c.n,1,99,1)}; }).slice(0,20);
     if(!cards.length) cards.push({id:uid(),name:'',n:1}); const ids=new Set(cards.map(c=>c.id));
     const items=arr(s.items).map(i=>{ i=obj(i); const p=n(i.price,-1e5,1e5); return {id:cleanId(i.id)||uid(),name:str(i.name,80),qty:spInt(i.qty,1,999,1),price:p==null?0:p,to:[...new Set(arr(i.to).map(cleanId))].filter(x=>ids.has(x))}; }).slice(0,300);
     const cur=typeof s.cur==='string'&&/^[A-Z]{3}$/.test(s.cur)?s.cur:'USD';
     return {id:cleanId(s.id)||uid(),created:typeof s.created==='string'&&!isNaN(Date.parse(s.created))?s.created.slice(0,30):new Date().toISOString(),date:isoDate(s.date)||today(),place:str(s.place,80),cur,src:s.src==='photo'?'photo':'manual',items,
-      sub:n(s.sub,0,1e6),disc:n(s.disc,0,1e6)||0,tax:n(s.tax,0,1e6)||0,svc:n(s.svc,0,1e6)||0,tot:n(s.tot,0,1e6),tip:n(s.tip,0,1e6)||0,tipPct:n(s.tipPct,0,100),mode:s.mode==='items'?'items':'even',people:spInt(s.people,1,99,2),cards}; }).slice(-30); }
+      sub:n(s.sub,0,1e6),disc:n(s.disc,0,1e6)||0,tax:n(s.tax,0,1e6)||0,svc:n(s.svc,0,1e6)||0,tot:n(s.tot,0,1e6),tip:n(s.tip,0,1e6)||0,tipPct:n(s.tipPct,0,100),mode:s.mode==='items'?'items':'even',people:spInt(s.people,1,99,2),cards}; }).slice(-SPLIT_MAX); }
 function spList(){ if(!Array.isArray(S.splits)) S.splits=[]; return S.splits; }
 function spCurrent(){ return SPLIT.cur?spList().find(s=>s.id===SPLIT.cur)||null:null; }
 function spDropImgs(){ SPLIT.img.forEach(i=>{ try{ URL.revokeObjectURL(i.url); }catch(e){} }); SPLIT.img=[]; }
-function splitOnLock(){ spDropImgs(); SPLIT.cur=null; SPLIT.busy=false; SPLIT.err=null; SPLIT.prog=null; if(typeof ocrStop==='function') ocrStop(); }
+function splitOnLock(){ spDropImgs(); SPLIT.cur=null; SPLIT.busy=false; SPLIT.err=null; SPLIT.prog=null; SPLIT.tab='new'; SPLIT.hf=null; SPLIT.hn=40; if(typeof ocrStop==='function') ocrStop(); }
 const spCardName=(c,i)=>c.name||L('Tarjeta','Card')+' '+(i+1);
 function spFmt(n,cur){ if(!cur||cur==='USD') return fmt(n,2);
   try{ return new Intl.NumberFormat(LANG==='en'?'en-US':'es-ES',{style:'currency',currency:cur}).format(n); }catch(e){ return n.toFixed(2)+' '+cur; } }
@@ -110,9 +112,11 @@ function spNew(t,src){ const cur=t.cur||'USD', st=spStartCards(t.guests||null);
   const s={id:uid(),created:new Date().toISOString(),date:t.date||today(),place:t.place||'',cur,src:src==='photo'?'photo':'manual',
     items:(t.items||[]).map(i=>({id:uid(),name:i.name,qty:i.qty||1,price:i.price,to:[]})),sub:t.sub!=null?t.sub:null,disc:t.disc||0,tax:t.tax||0,svc:t.svc||0,tot:t.tot!=null?t.tot:null,
     tip:t.tip>0?t.tip:0,tipPct:t.tip>0?null:spDefTip(cur,t.svc||0),mode:spCfg().mode,people:st.people,cards:st.cards};
-  S.splits=spList().concat(s).slice(-30); SPLIT.cur=s.id; save(); return s; }
+  spPrune(); S.splits=spList().concat(s).slice(-SPLIT_MAX); SPLIT.cur=s.id; save(); return s; }
 
 /* ---------- Pantalla ---------- */
+function spTabsHTML(){ const n=spHist().length;
+  return `<div class="ntabs sp-tabs" role="tablist"><button role="tab" data-sptab="new" class="${SPLIT.tab!=='hist'?'on':''}" aria-selected="${SPLIT.tab!=='hist'}">${L('Nuevo ticket','New receipt')}</button><button role="tab" data-sptab="hist" class="${SPLIT.tab==='hist'?'on':''}" aria-selected="${SPLIT.tab==='hist'}">${L('Historial','History')}${n?` <i>${n}</i>`:''}</button></div>`; }
 const spStep=(k,v,lbl)=>`<span class="sp-step" role="group" aria-label="${esc(lbl)}"><button class="sm" data-st="${k}" data-d="-1" aria-label="${L('Menos','Fewer')}">−</button><b>${v}</b><button class="sm" data-st="${k}" data-d="1" aria-label="${L('Más','More')}">+</button></span>`;
 function spStartHTML(){
   return `<div class="card" id="spStart">${helpBtn('split')}<h2>${L('Dividir la cuenta','Split the bill')}</h2>
@@ -147,9 +151,65 @@ function spPrefsHTML(){ const P=spCfg(), tip=P.tip==null?18:P.tip;
 // Sugerencias para el nombre de una tarjeta: las tarjetas de crédito de MyFinZen (si las hay) y las habituales
 function spCardList(){ const names=[...(Array.isArray(S.accounts)?S.accounts.filter(a=>a.kind==='credit').map(a=>a.name+(a.last4?' ••'+a.last4:'')):[]),...spCfg().cards.map(c=>c.name)];
   return `<datalist id="spCardList">${[...new Set(names)].map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`; }
-function spRecentHTML(cur){ const ls=spList().filter(s=>!cur||s.id!==cur.id).slice().reverse().slice(0,10); if(!ls.length) return '';
-  return `<div class="card" id="spRecent"><h2>${L('Tickets anteriores','Earlier receipts')}</h2><div class="clist">${ls.map(s=>{ const T=spTotals(s);
-    return `<div class="srow"><span class="av" style="--h:24">${ic('receipt')}</span><span class="lm"><b>${esc(s.place||L('Ticket','Receipt'))}</b><span>${esc(dLabel(s.date))} · ${s.mode==='items'?L('por consumo','by item'):L('a partes iguales','evenly')} · ${s.cards.length} ${s.cards.length===1?L('tarjeta','card'):L('tarjetas','cards')}</span></span><b>${esc(spFmt(T.total,s.cur))}</b><button class="sm" data-spo="${esc(s.id)}">${L('Abrir','Open')}</button><button class="sm ghost" data-spx="${esc(s.id)}" aria-label="${L('Borrar','Delete')}">${ic('trash')}</button></div>`; }).join('')}</div></div>`; }
+/* ---------- Historial de tickets repartidos ---------- */
+// Un ticket empezado y abandonado (sin importe, sin productos con nombre y sin restaurante) no va al historial
+const spEmpty=s=>!(spTotals(s).total>0)&&!s.items.some(i=>i.name.trim())&&!s.place.trim();
+function spPrune(){ const n=spList().length; S.splits=spList().filter(s=>!spEmpty(s)); return S.splits.length!==n; }
+// Lo que pagó cada tarjeta en un ticket (y lo que quedó sin tarjeta)
+function spPaid(s){ const T=spTotals(s);
+  if(s.mode==='items'){ const R=spItems(s,T); return {T,rows:s.cards.map((c,i)=>({name:spCardName(c,i),v:R.rows[i].v})),rest:R.rest.v}; }
+  const E=spEven(s,T); return {T,rows:s.cards.map((c,i)=>({name:spCardName(c,i),v:E.rows[i].v})),rest:E.rest}; }
+const spHist=()=>spList().filter(s=>spTotals(s).total>0).slice().sort((a,b)=>b.date.localeCompare(a.date)||String(b.created).localeCompare(String(a.created)));
+const spNorm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+const spMonth=m=>{ try{ const t=new Intl.DateTimeFormat(LANG==='en'?'en-US':'es-ES',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(m+'-01T00:00:00Z')); return t.charAt(0).toUpperCase()+t.slice(1); }catch(e){ return m; } };
+// Suma por moneda: "$120.00 · 35,00 €"
+const spSum=list=>{ const m={}; list.forEach(([c,v])=>{ m[c]=(m[c]||0)+v; }); const e=Object.entries(m); return e.length?e.map(([c,v])=>spFmt(r2(v),c)).join(' · '):spFmt(0,'USD'); };
+const spHF=()=>SPLIT.hf||(SPLIT.hf={y:'all',card:'all',q:''});
+function spHistRows(){ const F=spHF(), q=spNorm(F.q);
+  return spHist().map(s=>Object.assign({s},spPaid(s))).filter(x=>(F.y==='all'||x.s.date.startsWith(F.y))&&(F.card==='all'||x.rows.some(r=>spNorm(r.name)===F.card))
+    &&(!q||spNorm([x.s.place,...x.s.items.map(i=>i.name),...x.rows.map(r=>r.name)].join(' ')).includes(q))); }
+function spHistHTML(){ const all=spHist(), F=spHF();
+  if(!all.length) return `<div class="card" id="spHist">${helpBtn('split_hist')}<h2>${L('Historial de tickets','Receipt history')}</h2><p class="muted" style="margin:0">${L('Aquí quedará cada ticket que repartas: la fecha, el restaurante, el total y lo que pagó cada tarjeta.','Every receipt you split will be kept here: the date, the restaurant, the total and what each card paid.')}</p></div>`;
+  const years=[...new Set(all.map(s=>s.date.slice(0,4)))], cards=new Map();
+  all.forEach(s=>spPaid(s).rows.forEach(r=>{ const k=spNorm(r.name); if(!cards.has(k)) cards.set(k,r.name); }));
+  if(F.y!=='all'&&!years.includes(F.y)) F.y='all'; if(F.card!=='all'&&!cards.has(F.card)) F.card='all';
+  return `<div class="card" id="spHist">${helpBtn('split_hist')}<h2>${L('Historial de tickets','Receipt history')}</h2>
+    <div class="row sp-hf"><label class="f">${L('Año','Year')}<select id="spHy"><option value="all">${L('Todos','All')}</option>${years.map(y=>`<option ${F.y===y?'selected':''}>${esc(y)}</option>`).join('')}</select></label>
+      <label class="f">${L('Tarjeta','Card')}<select id="spHc"><option value="all">${L('Todas','All')}</option>${[...cards].map(([k,n])=>`<option value="${esc(k)}" ${F.card===k?'selected':''}>${esc(n)}</option>`).join('')}</select></label></div>
+    <label class="f">${L('Buscar','Search')}<input id="spHq" type="search" value="${esc(F.q)}" placeholder="${L('Restaurante, producto o tarjeta','Restaurant, item or card')}"></label>
+    <div id="spHistBody">${spHistBody()}</div>
+    <div class="row" style="margin-top:12px"><button id="spCSV">${ic('upload')}${L('Exportar (CSV)','Export (CSV)')}</button></div></div>`; }
+function spHistBody(){ const list=spHistRows(), F=spHF();
+  if(!list.length) return `<p class="muted">${L('Ningún ticket coincide con el filtro.','No receipt matches the filter.')}</p>`;
+  const per=new Map(); list.forEach(x=>x.rows.forEach(r=>{ const k=spNorm(r.name); if(F.card!=='all'&&k!==F.card) return; const o=per.get(k)||{name:r.name,n:0,v:[]}; o.n++; o.v.push([x.s.cur,r.v]); per.set(k,o); }));
+  const months=new Map(); list.slice(0,SPLIT.hn).forEach(x=>{ const m=x.s.date.slice(0,7); if(!months.has(m)) months.set(m,[]); months.get(m).push(x); });
+  const mTot=new Map(); list.forEach(x=>{ const m=x.s.date.slice(0,7); if(!mTot.has(m)) mTot.set(m,[]); mTot.get(m).push([x.s.cur,x.T.total]); });
+  return `<div class="sp-hsum"><div><span>${L('Tickets','Receipts')}</span><b>${list.length}</b></div><div><span>${L('Total','Total')}</span><b>${esc(spSum(list.map(x=>[x.s.cur,x.T.total])))}</b></div></div>
+    <h3 class="sec">${L('Por tarjeta','By card')}</h3><div class="clist">${[...per.values()].sort((a,b)=>b.n-a.n).map((o,i)=>`<div class="srow"><span class="av" style="--h:${(i*67+215)%360}">${ic('card')}</span><span class="lm"><b>${esc(o.name)}</b><span>${o.n} ${o.n===1?L('ticket','receipt'):L('tickets','receipts')}</span></span><b>${esc(spSum(o.v))}</b></div>`).join('')}</div>
+    ${[...months].map(([m,xs])=>`<h3 class="sec">${esc(spMonth(m))} <span class="tot">${esc(spSum(mTot.get(m)))}</span></h3><div class="clist">${xs.map(x=>`<div class="srow sp-hrow">
+      <span class="av" style="--h:24">${ic('receipt')}</span><span class="lm"><b>${esc(x.s.place||L('Ticket','Receipt'))}</b><span>${esc(dLabel(x.s.date))} · ${x.s.mode==='items'?L('por consumo','by item'):L('a partes iguales','evenly')}</span>
+      <span class="sp-hcards">${x.rows.map(r=>`${esc(r.name)} ${esc(spFmt(r.v,x.s.cur))}`).join(' · ')}${x.rest>0?` · ${L('sin tarjeta','no card')} ${esc(spFmt(x.rest,x.s.cur))}`:''}</span></span>
+      <b>${esc(spFmt(x.T.total,x.s.cur))}</b><button class="sm" data-spo="${esc(x.s.id)}">${L('Abrir','Open')}</button><button class="sm ghost" data-spx="${esc(x.s.id)}" aria-label="${L('Borrar','Delete')}">${ic('trash')}</button></div>`).join('')}</div>`).join('')}
+    ${list.length>SPLIT.hn?`<div class="row" style="margin-top:10px"><button id="spHMore">${L(`Ver más (${list.length-SPLIT.hn})`,`Show more (${list.length-SPLIT.hn})`)}</button></div>`:''}`; }
+// CSV del historial (una fila por tarjeta y ticket). Sale de la app sin cifrar: se avisa antes de descargarlo
+function spHistCSV(list){ const cell=v=>{ v=String(v??''); if(/^[=+\-@\t\r]/.test(v)&&!/^-?\d+(\.\d+)?$/.test(v)) v="'"+v; return /[",;\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  const out=[['date','restaurant','currency','total','tip','tax','service','discount','mode','card','card_amount']];
+  list.forEach(x=>{ const s=x.s, b=[s.date,s.place,s.cur,x.T.total.toFixed(2),x.T.tip.toFixed(2),(s.tax||0).toFixed(2),(s.svc||0).toFixed(2),(s.disc||0).toFixed(2),s.mode];
+    x.rows.forEach(r=>out.push([...b,r.name,r.v.toFixed(2)])); if(x.rest>0) out.push([...b,L('Sin tarjeta','No card'),x.rest.toFixed(2)]); });
+  return out.map(r=>r.map(cell).join(',')).join('\r\n'); }
+function spDownload(name,text){ try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+text],{type:'text/csv'})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); return true; }catch(e){ return false; } }
+function spWireHist(root,redraw){ const body=()=>{ const b=$('#spHistBody'); if(b) b.innerHTML=spHistBody(); };
+  const hy=$('#spHy'), hc=$('#spHc'), hq=$('#spHq');
+  if(hy) hy.onchange=()=>{ spHF().y=hy.value; SPLIT.hn=40; body(); }; if(hc) hc.onchange=()=>{ spHF().card=hc.value; SPLIT.hn=40; body(); };
+  if(hq) hq.addEventListener('input',()=>{ spHF().q=hq.value.slice(0,80); SPLIT.hn=40; body(); });
+  root.addEventListener('click',async e=>{ const b=e.target.closest('button'); if(!b||!root.contains(b)) return; const d=b.dataset;
+    if(b.id==='spHMore'){ SPLIT.hn+=40; body(); }
+    else if(d.spo){ spDropImgs(); SPLIT.err=null; SPLIT.cur=d.spo; redraw(); window.scrollTo(0,0); }
+    else if(d.spx){ if(!await confirmModal(L('Borrar este ticket','Delete this receipt'),`<p>${L('Se borra del historial el ticket y su reparto. No se puede deshacer.','The receipt and its split are deleted from the history. It cannot be undone.')}</p>`)) return;
+      S.splits=spList().filter(x=>x.id!==d.spx); save(); redraw(); }
+    else if(b.id==='spCSV'){ const list=spHistRows(); if(!list.length) return;
+      if(!await confirmModal(L('Exportar el historial','Export the history'),`<p>${L(`Se descargará un archivo CSV con ${list.length} ${list.length===1?'ticket':'tickets'} (los del filtro): fechas, restaurantes, importes y nombres de tarjetas. <b>El archivo no va cifrado</b>: guárdalo en un sitio seguro.`,`A CSV file with ${list.length} receipt${list.length===1?'':'s'} (those in the filter) will be downloaded: dates, restaurants, amounts and card names. <b>The file is not encrypted</b>: keep it somewhere safe.`)}</p>`)) return;
+      if(spDownload(`${L('tickets','receipts')}-${today()}.csv`,spHistCSV(list))) toast(L('Historial exportado','History exported')); } }); }
 function spCheckHTML(s,T){ const F=n=>esc(spFmt(n,s.cur)), out=[];
   if(s.items.length&&s.sub!=null) out.push(Math.abs(T.items-s.sub)<0.015?`<span class="pos">✓ ${L('Los productos suman el subtotal del ticket.','The items add up to the receipt subtotal.')}</span>`
     :`<span class="neg">⚠ ${L(`Los productos suman ${F(T.items)} y el ticket dice ${F(s.sub)}: revisa los precios.`,`The items add up to ${F(T.items)} and the receipt says ${F(s.sub)}: check the prices.`)}</span>`);
@@ -171,7 +231,7 @@ const spIaHTML=it=>`${it.qty>1?`<button class="sm ghost" data-spu="${esc(it.id)}
 function spTicketHTML(s){ const T=spTotals(s), F=n=>esc(spFmt(n,s.cur)), curs=SPLIT_CURS.includes(s.cur)?SPLIT_CURS:[...SPLIT_CURS,s.cur];
   const line=(lbl,id,v)=>`<label class="sp-line"><span>${lbl}</span><input id="spF${id}" data-f="${id}" inputmode="decimal" value="${esc(spIn(v))}" placeholder="0.00"></label>`;
   return `<div class="card" id="spTicket">${helpBtn('split_ticket')}
-    <div class="row" style="padding-right:30px;margin-bottom:6px"><h2 style="margin:0">${L('Ticket','Receipt')}</h2><button class="sm" id="spNewB">${ic('plus')}${L('Otro ticket','Another receipt')}</button></div>
+    <div class="row" style="padding-right:30px;margin-bottom:6px"><h2 style="margin:0">${L('Ticket','Receipt')}</h2><button class="sm ghost" id="spHistB">${L('Historial','History')}</button><button class="sm" id="spNewB">${ic('plus')}${L('Otro ticket','Another receipt')}</button></div>
     ${SPLIT.err?`<div class="alert warn"><span class="ic">!</span><div>${esc(SPLIT.err)}</div></div>`:''}
     <div id="spWarn">${spWarnHTML(s,T)}</div>
     ${SPLIT.img.length?`<details class="sp-photo" ${s.items.length?'':'open'}><summary>${L('Ver la foto','See the photo')}</summary><div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="${L('Foto del ticket','Receipt photo')}">`).join('')}</div></details>`:''}
@@ -246,18 +306,17 @@ function spShare(s){ const txt=spShareText(s), can=typeof navigator.share==='fun
 
 VIEWS.dividir=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length) spDropImgs();
   el.innerHTML=`<div class="stack">${SPLIT.busy?`<div class="card" id="spBusy"><h2>${L('Leyendo el ticket…','Reading the receipt…')}</h2><p class="muted" id="spProg" style="margin:0">${esc(spProgText())}</p><div class="prog"><span id="spBar" style="width:0"></span></div>${SPLIT.img.length?`<div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="">`).join('')}</div>`:''}</div>`
-    :s?spTicketHTML(s)+spSplitHTML(s):spStartHTML()+spPrefsHTML()}${SPLIT.busy?'':spRecentHTML(s)}</div>`;
+    :s?spTicketHTML(s)+spSplitHTML(s):spTabsHTML()+(SPLIT.tab==='hist'?spHistHTML():spStartHTML()+spPrefsHTML())}</div>`;
   const redraw=()=>{ if(S&&spHere()) VIEWS.dividir($('#app')); };
   const files=e=>{ const fs=[...e.target.files]; e.target.value=''; spRead(fs); };
   if($('#spCam')) $('#spCam').onchange=files; if($('#spPick')) $('#spPick').onchange=files;
   if($('#spManual')) $('#spManual').onclick=()=>{ spDropImgs(); SPLIT.err=null; spNew({},'manual'); redraw(); };
-  el.querySelectorAll('[data-spo]').forEach(b=>b.onclick=()=>{ spDropImgs(); SPLIT.err=null; SPLIT.cur=b.dataset.spo; redraw(); window.scrollTo(0,0); });
-  el.querySelectorAll('[data-spx]').forEach(b=>b.onclick=async()=>{ if(!await confirmModal(L('Borrar este ticket','Delete this receipt'),`<p>${L('Se borra el ticket y su reparto. No se puede deshacer.','The receipt and its split are deleted. It cannot be undone.')}</p>`)) return;
-    S.splits=spList().filter(x=>x.id!==b.dataset.spx); save(); redraw(); });
+  el.querySelectorAll('[data-sptab]').forEach(b=>b.onclick=()=>{ SPLIT.tab=b.dataset.sptab==='hist'?'hist':'new'; redraw(); });
   const root=el.firstElementChild; // se sustituye en cada repintado: sus escuchadores no se acumulan ni pasan a otras pantallas
-  if(!s&&!SPLIT.busy){ spWirePrefs(root,redraw); return; }
+  if(!s&&!SPLIT.busy){ if(SPLIT.tab==='hist') spWireHist(root,redraw); else spWirePrefs(root,redraw); return; }
   if(!s||SPLIT.busy) return;
-  $('#spNewB').onclick=()=>{ spDropImgs(); SPLIT.err=null; SPLIT.cur=null; redraw(); window.scrollTo(0,0); };
+  const leave=tab=>{ spDropImgs(); SPLIT.err=null; SPLIT.cur=null; SPLIT.tab=tab; if(spPrune()) save(); redraw(); window.scrollTo(0,0); };
+  $('#spNewB').onclick=()=>leave('new'); $('#spHistB').onclick=()=>leave('hist');
   $('#spCur').onchange=e=>{ s.cur=e.target.value; save(); redraw(); };
   // Lo que se escribe actualiza las cifras sin repintar los campos (no se pierde el foco ni el teclado)
   root.addEventListener('input',e=>{ const t=e.target, f=t.dataset.f;

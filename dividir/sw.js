@@ -1,7 +1,7 @@
 // Dividir la cuenta (app independiente): guarda la app para usarla sin conexión. Solo código e iconos, nunca datos.
 // Comparte archivos con MyFinZen (../split.js, ../ticket.js, ../styles.css, ../help.js): si cambian, sube VERSION aquí
 // y en el sw.js de MyFinZen.
-const VERSION='d1.0.0';
+const VERSION='d1.1.0';
 const CACHE = 'mfz-dividir-' + VERSION;
 // El lector de tickets (~7 MB) va en la misma caché que usa MyFinZen: se descarga una sola vez para las dos apps
 const OCR_CACHE = 'mfz-ocr-7.0.0';
