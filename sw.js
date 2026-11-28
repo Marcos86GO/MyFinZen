@@ -1,8 +1,11 @@
 // MyFinZen service worker: guarda la app para usarla sin conexión.
 // Solo cachea los archivos de la app (código e iconos), nunca tus datos.
 // Sube VERSION en cada cambio para que los dispositivos reciban la actualización.
-const VERSION='v1.27.0';
+const VERSION='v1.28.0';
 const CACHE = 'myfinzen-' + VERSION;
+// Lector de tickets (vendor/ocr, ~7 MB): no va en ASSETS. Se guarda la primera vez que se usa en una caché propia
+// que NO se borra al actualizar la app; solo cambia (y se descarga de nuevo) si cambia esta versión.
+const OCR_CACHE = 'mfz-ocr-7.0.0';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +13,7 @@ const ASSETS = [
   './help.js',
   './app.js',
   './cal.js',
+  './ticket.js',
   './split.js',
   './sync.js',
   './vendor/pdf.min.js',
@@ -29,7 +33,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k.startsWith('myfinzen-') && k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => (k.startsWith('myfinzen-') && k !== CACHE) || (k.startsWith('mfz-ocr-') && k !== OCR_CACHE)).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -109,6 +113,10 @@ self.addEventListener('fetch', e => {
   if (req.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/share-target')) { shareTarget(e); return; }
   // Solo archivos propios; las llamadas a la API de Claude pasan directas y nunca se cachean.
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (url.pathname.includes('/vendor/ocr/')) {
+    e.respondWith(caches.open(OCR_CACHE).then(c => c.match(req).then(r => r || fetch(req).then(res => { if (res.ok) c.put(req, res.clone()); return res; }))));
+    return;
+  }
   if (req.mode === 'navigate') {
     // Página: primero la versión guardada (rápida y sin conexión); el aviso de actualización lo gestiona la app.
     e.respondWith(caches.match('./index.html').then(r => r || fetch(req)));

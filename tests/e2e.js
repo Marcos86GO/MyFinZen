@@ -529,10 +529,32 @@ const RECEIPT_REQ=[];
   // Dividir la cuenta: foto del ticket → Claude (simulado) → reparto a partes iguales y por consumo entre tarjetas
   { await pg.goto(U+'#dividir'); await pg.waitForTimeout(300);
     ok(await pg.evaluate(()=>!!$('#spCam')&&$('#spCam').getAttribute('capture')==='environment'&&!!$('#spPick')&&!!$('#spManual')&&document.querySelector('nav a.on').getAttribute('href')==='#dividir'&&$('#pageTitle').innerText==='Dividir la cuenta'),'Dividir la cuenta: foto con la cámara, elegir fotos o a mano');
-    await pg.setInputFiles('#spPick',path.join(ROOT,'icons','icon-192.png')); await pg.waitForSelector('#spNoAsk',{timeout:5000});
-    const asked=await pg.evaluate(()=>/no se guarda en MyFinZen/.test($('#modal').innerText)&&!!$('#modal .sp-thumbs img')); await pg.click('#cY'); await pg.waitForSelector('#spTicket',{timeout:8000}); await pg.waitForTimeout(200);
+    // Lector local: la foto (de un ticket inventado, con sombra y girado) se lee en el navegador sin llamar a ningún servicio
+    const ext=[]; const onReq=r=>{ if(!r.url().startsWith(U)&&!r.url().startsWith('blob:')&&!r.url().startsWith('data:')) ext.push(r.url()); }; pg.on('request',onReq);
+    await pg.setInputFiles('#spPick',path.join(FX,'receipt.jpg')); await pg.waitForSelector('#spTicket',{timeout:120000}); await pg.waitForTimeout(200); pg.off('request',onReq);
+    const loc=await pg.evaluate(async()=>{ const s=spCurrent(); const dbs=indexedDB.databases?(await indexedDB.databases()).map(d=>d.name):[];
+      const c=await caches.open('mfz-ocr-7.0.0'), cached=!!(await c.match(new URL('vendor/ocr/eng.traineddata.gz',location.href).href));
+      return {place:s.place,date:s.date,people:s.people,cards:s.cards.map(c=>c.n).join(),items:s.items.map(i=>i.qty+'|'+i.name+'|'+i.price).join(';'),sub:s.sub,tax:s.tax,tot:s.tot,chk:$('#spChk').innerText,ai:!!$('#spAI'),err:SPLIT.err,dbs,cached,src:s.src,warn:!!$('#spWarn .alert')}; });
+    ok(!ext.length&&!RECEIPT_REQ.length&&loc.items==='2|Fish Tacos|18;1|Veggie Burger|14.5;3|Lemonade|9;1|Garlic Fries|6.75;1|Churros|7.25'&&loc.sub===55.5&&loc.tax===4.3&&loc.tot===59.8&&loc.place==='Prueba Bistro'&&loc.date==='2026-11-20'&&loc.people===3&&loc.cards==='2,1'&&loc.src==='photo'&&/subtotal del ticket/.test(loc.chk)&&/Cuadra con el total/.test(loc.chk)&&!/⚠/.test(loc.chk)&&!loc.err&&!loc.warn,
+      'lector local: lee la foto del ticket en el dispositivo (productos, unidades, subtotal, impuestos, total, comensales y fecha) sin enviar nada fuera '+JSON.stringify([loc,ext.slice(0,3)]));
+    ok(loc.cached&&!loc.dbs.some(n=>n&&n!=='misfinanzas'),'el lector se guarda en la caché del service worker para usarlo sin conexión y no escribe en IndexedDB '+JSON.stringify(loc.dbs));
+    const pr=await pg.evaluate(()=>{ const es=parseReceipt('RESTAURANTE EL PRUEBA\nC/ Mayor 12, Madrid\nMesa 4  Comensales: 3\nFecha: 27/11/2026 21:40\n2 Caña                    5,00\n1 Tortilla española       9,50\n1 Pulpo a la gallega     18,90\n3 Café solo               4,50\nBase imponible           34,45\nIVA 10%                   3,45\nTOTAL                    37,90 €\nTarjeta                  37,90');
+      const us=parseReceipt('THE TEST GRILL\n123 Fake St\nSan Diego, CA 92101\nServer: Ana  Guests: 4\n11/20/2026 7:45 PM\n1 Burger              16.00\n2 Fries @ 4.50         9.00\n1 Caesar Salad        12.50\n   No croutons\n1 Steak Frites        32.00\n  + Add Egg            2.00\nHappy Hour Discount   -5.00\nSubtotal              66.50\nSales Tax 7.75%        5.15\nService Charge 18%    11.97\nTotal                 83.62\nTip                   10.00\nTotal                 93.62\nVISA ************4242  93.62');
+      const ocr=parseReceipt('\\/ PRUEBA SUSHI  -\n100 N. Example Rd\nAnytown, CA 90000 °°\n§ 2 HH Mug Prueba          $6.00     .\n3     2 1H House Prueba    $11.00\n2 HH Roll Prueba        $1590     3\n|     Subtotal          $32.90\nq Tax                     $2.54\n§ [lotal                $35.44\nSuggested Tip:\n18%: (Tip $6.38 Total $41.82)');
+      return {es:[es.place,es.cur,es.guests,es.date,es.items.map(i=>i.qty+'|'+i.price).join(),es.sub,es.tax,es.tot].join(' '),us:[us.place,us.guests,us.date,us.items.map(i=>i.qty+'|'+i.name+'|'+i.price).join(),us.sub,us.disc,us.tax,us.svc,us.tip,us.tot].join(' '),
+        ocr:[ocr.place,ocr.items.map(i=>i.qty+'|'+i.price).join(),ocr.sub,ocr.tax,ocr.tot].join(' ')}; });
+    ok(pr.es==='Restaurante El Prueba EUR 3 2026-11-27 2|5,1|9.5,1|18.9,3|4.5 37.9 0 37.9','ticket español con el IVA incluido '+pr.es);
+    ok(pr.us==='The Test Grill 4 2026-11-20 1|Burger|16,2|Fries|9,1|Caesar Salad|12.5,1|Steak Frites|32,1|Add Egg|2 71.5 5 5.15 11.97 10 93.62','ticket de EE. UU. con descuento, impuestos, servicio, propina escrita y pago '+pr.us);
+    ok(pr.ocr==='Prueba Sushi 2|6,2|11,2|15.9 32.9 2.54 35.44','errores típicos del OCR: ruido en los bordes, «[lotal», punto perdido; la tabla de propina sugerida no cuenta '+pr.ocr);
+    // Opcional: volver a leerlo con Claude (con la clave del usuario y pidiendo permiso)
+    ok(!loc.ai,'«Leer con Claude» no sale si la lectura local cuadra');
+    await pg.evaluate(()=>{ spCurrent().tot=1; route(); }); await pg.waitForTimeout(150);
+    await pg.click('#spAI'); await pg.waitForSelector('#spNoAsk',{timeout:5000});
+    const asked=await pg.evaluate(()=>/no se guarda en MyFinZen/.test($('#modal').innerText)&&!!$('#modal .sp-thumbs img')); await pg.click('#cY');
+    await pg.waitForFunction(()=>spCurrent()&&spCurrent().items.length===4&&!SPLIT.busy&&!!$('#spTicket'),null,{timeout:8000});
+    await pg.evaluate(()=>{ const s=spCurrent(); s.people=4; s.cards.forEach(c=>c.n=2); save(); route(); }); await pg.waitForTimeout(200);
     const req=RECEIPT_REQ[0]||'', rq=req?JSON.parse(req).messages[0].content:[];
-    ok(asked&&RECEIPT_REQ.length===1&&rq[0].type==='image'&&rq[0].source.type==='base64'&&rq[0].source.media_type==='image/jpeg'&&rq[0].source.data.length>200&&!/icon-192/.test(req),'pide permiso y envía a Claude solo la foto reducida en JPEG');
+    ok(asked&&RECEIPT_REQ.length===1&&rq[0].type==='image'&&rq[0].source.type==='base64'&&rq[0].source.media_type==='image/jpeg'&&rq[0].source.data.length>200&&!/icon-192/.test(req),'«Leer con Claude» es opcional: pide permiso y envía solo la foto reducida en JPEG');
     const t1=await pg.evaluate(()=>{ const s=spCurrent(), T=spTotals(s), E=spEven(s,T); return {pwn:window.__pwn,img:[...document.querySelectorAll('#app img')].every(i=>i.closest('.sp-thumbs')),n:s.items.length,cur:s.cur,people:s.people,cards:s.cards.map(c=>c.n).join(),
       tip:T.tip,total:T.total,amts:E.rows.map(r=>r.v).join(),shown:[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join(),chk:$('#spChk').innerText,tot:$('#spTotV').innerText}; });
     ok(t1.pwn===undefined&&t1.img&&t1.n===4&&t1.cur==='USD'&&t1.people===4&&t1.cards==='2,2'&&t1.tip===9.9&&t1.total===69.99&&t1.amts==='35,34.99'&&t1.shown==='$35.00,$34.99'&&/subtotal del ticket/.test(t1.chk)&&/Cuadra con el total/.test(t1.chk)&&!/⚠/.test(t1.chk)&&t1.tot==='$69.99','lee el ticket (sin inyecciones), comprueba subtotal y total, propina del 18 % y 4 personas con 2 tarjetas '+JSON.stringify(t1));
@@ -540,7 +562,12 @@ const RECEIPT_REQ=[];
     const t2=await pg.evaluate(()=>{ const s=spCurrent(), E=spEven(s,spTotals(s)); return {people:s.people,amts:E.rows.map(r=>r.v).join(),shown:[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()}; });
     ok(t2.people===5&&t2.amts==='42,27.99'&&t2.shown==='$42.00,$27.99','a partes iguales: una tarjeta cubre 3 personas y otra 2, y la suma da el total '+JSON.stringify(t2));
     await pg.fill('#spFtax','6.09'); await pg.waitForTimeout(150);
-    ok(await pg.evaluate(()=>/⚠/.test($('#spChk').innerText)&&$('#spTotV').innerText==='$70.99'&&!!document.activeElement&&document.activeElement.id==='spFtax'),'al cambiar los impuestos se recalcula sin perder el foco y avisa si no cuadra');
+    ok(await pg.evaluate(()=>/⚠/.test($('#spChk').innerText)&&/Revisa el ticket/.test($('#spWarn').innerText)&&/60\.09/.test($('#spWarn').innerText)&&$('#spTotV').innerText==='$70.99'&&!!document.activeElement&&document.activeElement.id==='spFtax'),'al cambiar los impuestos se recalcula sin perder el foco y avisa arriba de lo que no cuadra');
+    await pg.fill('#spFptot','61.09'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>spCurrent().tot===61.09&&!$('#spWarn .alert')&&!/⚠/.test($('#spChk').innerText)),'el total impreso también se puede corregir y el aviso desaparece al cuadrar');
+    await pg.fill('#spFptot','60.09'); await pg.click('#spAddIt'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>/1 producto no tiene nombre o importe/.test($('#spWarn').innerText)),'avisa de un producto sin nombre ni importe');
+    await pg.evaluate(()=>{ const s=spCurrent(); s.items=s.items.filter(i=>i.name); save(); route(); }); await pg.waitForTimeout(150);
     await pg.fill('#spFtax','5.09'); await pg.click('[data-tip="20"]'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const T=spTotals(spCurrent()); return T.tip===11&&T.total===71.09&&S.settings.split.tip===20&&$('[data-tip="20"]').classList.contains('on'); }),'propina del 20 % sobre el subtotal (y se recuerda)');
     await pg.click('[data-mode="items"]'); await pg.waitForTimeout(150);

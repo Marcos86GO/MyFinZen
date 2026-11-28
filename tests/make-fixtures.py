@@ -91,4 +91,32 @@ open(os.path.join(D,'checking.csv'),'w').write('''Posting Date,Description,Amoun
 open(os.path.join(D,'savings.csv'),'w').write('''Posting Date,Description,Amount
 10/21/2026,ONLINE TRANSFER FROM CHK,2000.00
 ''')
+# Foto de un ticket de restaurante (inventado) para el lector local: papel sobre una mesa de madera, con la sombra
+# del móvil y algo girado, como una foto real. Necesita Pillow (pip install pillow).
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
+    import random
+    rnd=random.Random(7)
+    W,H=900,1500; img=Image.new('RGB',(W,H),(176,118,72)); d=ImageDraw.Draw(img)
+    for y in range(0,H,6): d.line([(0,y),(W,y+rnd.randint(-8,8))],fill=(150+rnd.randint(-20,20),98+rnd.randint(-15,15),58+rnd.randint(-10,10)),width=3)
+    paper=Image.new('RGB',(560,1240),(246,245,240)); pd=ImageDraw.Draw(paper)
+    mono='/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'; F=ImageFont.truetype(mono,22); FB=ImageFont.truetype(mono.replace('.ttf','-Bold.ttf'),34)
+    pd.text((280,40),'PRUEBA BISTRO',font=FB,fill=(20,20,20),anchor='ma')
+    rows=[('100 Example Ave','c'),('Anytown, CA 90000','c'),('(555) 010-0000','c'),('',''),('Server: Test        Table 12',''),('Guests: 3',''),('11/20/26 8:05 PM',''),('',''),
+      ('2 Fish Tacos|$18.00',''),('1 Veggie Burger|$14.50',''),('3 Lemonade|$9.00',''),('1 Garlic Fries|$6.75',''),('1 Churros|$7.25',''),('',''),
+      ('Subtotal|$55.50',''),('Tax|$4.30',''),('Total|$59.80',''),('',''),('Suggested Tip:','c'),('18%: (Tip $10.76 Total $70.56)','c'),('20%: (Tip $11.96 Total $71.76)','c')]
+    y=110
+    for t,al in rows:
+        if '|' in t:
+            a,b=t.split('|'); pd.text((30,y),a,font=F,fill=(25,25,25)); pd.text((530,y),b,font=F,fill=(25,25,25),anchor='ra')
+        elif al=='c': pd.text((280,y),t,font=F,fill=(25,25,25),anchor='ma')
+        else: pd.text((30,y),t,font=F,fill=(25,25,25))
+        y+=38
+    img.paste(paper,(170,120))
+    sh=Image.new('L',(W,H),0); ImageDraw.Draw(sh).polygon([(0,300),(520,250),(640,700),(380,1100),(0,1150)],fill=110)
+    img=Image.composite(Image.new('RGB',(W,H),(0,0,0)),img,sh.filter(ImageFilter.GaussianBlur(12)))
+    img=img.rotate(2.5,expand=False,fillcolor=(160,105,62),resample=Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.6))
+    img.save(os.path.join(D,'receipt.jpg'),quality=85)
+except ImportError:
+    print('sin Pillow: no se genera receipt.jpg')
 print('fixtures ok')
