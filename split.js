@@ -1,4 +1,4 @@
-// MyFinZen — Dividir la cuenta: lee la foto del ticket de un restaurante con Claude y reparte el total entre
+// MyFinZen — Dividir la cuenta: lee la foto del ticket de un restaurante en el dispositivo (ticket.js) y reparte el total entre
 // varias tarjetas de crédito, a partes iguales (según cuántas personas cubre cada tarjeta) o por lo que pidió cada uno.
 // Se carga después de app.js (usa sus utilidades, S y claudeCall).
 "use strict";
@@ -10,15 +10,16 @@
      · tipPct     propina en % sobre el subtotal menos el descuento; si es null, tip es el importe
      · cards[].n  personas que paga esa tarjeta en el reparto a partes iguales
    S.settings.split = {tip, ask}: última propina elegida y si se pregunta antes de enviar la foto a Claude.
+   La foto se lee en el dispositivo con ticket.js; Claude solo si el usuario lo pide (botón «Leer con Claude», con su clave).
    Las fotos NO se guardan: viven en memoria (SPLIT.img) hasta abrir otro ticket o bloquear la app.
    ============================================================ */
-const SPLIT={cur:null,img:[],busy:false,err:null};
+const SPLIT={cur:null,img:[],busy:false,err:null,prog:null};
 const SPLIT_PX=1568, SPLIT_TIPS=[0,15,18,20,22], SPLIT_CURS=['USD','EUR','MXN','GBP','CAD','JPY'];
 function spCfg(){ const s=S.settings; if(!s.split||typeof s.split!=='object') s.split={tip:null,ask:true}; return s.split; }
 function spList(){ if(!Array.isArray(S.splits)) S.splits=[]; return S.splits; }
 function spCurrent(){ return SPLIT.cur?spList().find(s=>s.id===SPLIT.cur)||null:null; }
 function spDropImgs(){ SPLIT.img.forEach(i=>{ try{ URL.revokeObjectURL(i.url); }catch(e){} }); SPLIT.img=[]; }
-function splitOnLock(){ spDropImgs(); SPLIT.cur=null; SPLIT.busy=false; SPLIT.err=null; }
+function splitOnLock(){ spDropImgs(); SPLIT.cur=null; SPLIT.busy=false; SPLIT.err=null; SPLIT.prog=null; if(typeof ocrStop==='function') ocrStop(); }
 const spCardName=(c,i)=>c.name||L('Tarjeta','Card')+' '+(i+1);
 function spFmt(n,cur){ if(!cur||cur==='USD') return fmt(n,2);
   try{ return new Intl.NumberFormat(LANG==='en'?'en-US':'es-ES',{style:'currency',currency:cur}).format(n); }catch(e){ return n.toFixed(2)+' '+cur; } }
@@ -75,20 +76,33 @@ function spAsk(imgs){ return new Promise(res=>{
     <label class="f" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="spNoAsk" style="width:auto"> ${L('No volver a preguntar','Don\'t ask again')}</label>
     <div class="row" style="margin-top:12px"><button id="cN">${L('Escribirlo a mano','Type it by hand')}</button><button class="pri" id="cY">${L('Leer con Claude','Read with Claude')}</button></div>`);
   $('#cN').onclick=()=>{ closeModal(); res(false); }; $('#cY').onclick=()=>{ if($('#spNoAsk').checked){ spCfg().ask=false; save(); } closeModal(); res(true); }; }); }
+const spBack=()=>{ if(S&&location.hash==='#dividir') VIEWS.dividir($('#app')); };
+// Lee las fotos EN EL DISPOSITIVO (ticket.js: preparar la imagen, Tesseract y parseReceipt). Nada sale del dispositivo.
 async function spRead(files){ files=[...(files||[])].filter(f=>f&&f.size>0&&(/^image\//.test(f.type||'')||/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name||''))).slice(0,3); if(!files.length) return;
   const imgs=[]; try{ for(const f of files) imgs.push(await spShrink(f)); }catch(e){ imgs.forEach(i=>URL.revokeObjectURL(i.url)); toast(L('No he podido abrir la foto. Prueba con otra en JPEG o PNG.','I couldn\'t open the photo. Try another one in JPEG or PNG.')); return; }
-  spDropImgs(); SPLIT.err=null; const back=()=>{ if(S&&location.hash==='#dividir') VIEWS.dividir($('#app')); };
-  const hasKey=!!(S.secret&&S.secret.apiKey), go=hasKey&&(spCfg().ask===false||await spAsk(imgs));
   if(!S){ imgs.forEach(i=>URL.revokeObjectURL(i.url)); return; }
-  SPLIT.img=imgs;
-  if(!go){ spNew({},'photo'); if(!hasKey) SPLIT.err=L('Para leer la foto sola hace falta tu clave de API de Claude (Copia y ajustes). Mientras tanto, copia los importes mirando la foto.','Reading the photo automatically needs your Claude API key (Backup & settings). Meanwhile, copy the amounts from the photo.'); back(); return; }
-  SPLIT.busy=true; SPLIT.cur=null; back();
+  spDropImgs(); SPLIT.img=imgs; SPLIT.err=null; SPLIT.busy=true; SPLIT.prog=null; SPLIT.cur=null; spBack();
+  try{ const text=await ocrText(files,(st,pr,pass)=>{ SPLIT.prog={st,pr,pass}; spProg(); }); if(!S) return;
+    const r=parseReceipt(text), t=sanitizeTicket({place:r.place,date:r.date,currency:r.cur,guests:r.guests,items:r.items,subtotal:r.sub,discount:r.disc,tax:r.tax,service:r.svc,tip:r.tip,total:r.tot});
+    spNew(t,'photo');
+    if(!t.items.length&&t.tot==null&&t.sub==null) SPLIT.err=L('No he encontrado importes en la foto. Prueba con otra más cerca, recta y con buena luz, o cópialos mirando la foto.','I couldn\'t find any amounts in the photo. Try another one closer, straight and well lit, or copy them from the photo.'); }
+  catch(e){ if(!S) return; console.warn('ticket',e); spNew({},'photo'); SPLIT.err=L('No he podido leer el ticket: ','I couldn\'t read the receipt: ')+(e&&e.message||e)+' '+L('Copia los importes mirando la foto.','Copy the amounts from the photo.'); }
+  finally{ SPLIT.busy=false; SPLIT.prog=null; spBack(); } }
+function spProgText(){ const p=SPLIT.prog; if(!p||!p.st) return L('Preparando la foto…','Preparing the photo…');
+  if(p.st==='recognizing text') return (p.pass?L(`No cuadra: lectura ${p.pass+1} de 3… `,`It doesn't add up: reading ${p.pass+1} of 3… `):L('Leyendo el ticket… ','Reading the receipt… '))+Math.round(p.pr*100)+' %';
+  return L('Preparando el lector de tickets (la primera vez se descargan unos 7 MB)…','Getting the receipt reader ready (about 7 MB are downloaded the first time)…'); }
+function spProg(){ const e=$('#spProg'), b=$('#spBar'); if(e) e.textContent=spProgText(); if(b) b.style.width=Math.round(((SPLIT.prog&&SPLIT.prog.pr)||0)*100)+'%'; }
+// Opcional, con la clave de API del usuario: volver a leer la foto con Claude si la lectura local no cuadra
+async function spClaude(s){ const imgs=SPLIT.img; if(!imgs.length) return;
+  if(spCfg().ask!==false&&!await spAsk(imgs)) return; if(!S) return;
+  SPLIT.busy=true; SPLIT.prog={st:'claude',pr:0}; spBack();
   try{ const r=await claudeCall([...imgs.map(i=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:i.b64}})),{type:'text',text:SP_PROMPT}],{modelTier:'default',stream:false,maxTokens:4000});
     if(!S) return; const t=sanitizeTicket(parseJSONLoose(r.text));
     if(!t.items.length&&t.tot==null&&t.sub==null) throw new Error(L('No he encontrado un ticket en la foto.','I couldn\'t find a receipt in the photo.'));
-    spNew(t,'photo'); }
-  catch(e){ if(!S) return; spNew({},'photo'); SPLIT.err=L('No he podido leer el ticket: ','I couldn\'t read the receipt: ')+(e&&e.message||e)+L(' Copia los importes mirando la foto.',' Copy the amounts from the photo.'); }
-  finally{ SPLIT.busy=false; back(); } }
+    Object.assign(s,{place:s.place||t.place,date:t.date||s.date,cur:t.cur,items:t.items.map(i=>({id:uid(),name:i.name,qty:i.qty||1,price:i.price,to:[]})),sub:t.sub,disc:t.disc||0,tax:t.tax||0,svc:t.svc||0,tot:t.tot});
+    if(t.tip>0){ s.tip=t.tip; s.tipPct=null; } SPLIT.err=null; save(); }
+  catch(e){ if(S) SPLIT.err=L('Claude no ha podido leer el ticket: ','Claude couldn\'t read the receipt: ')+(e&&e.message||e); }
+  finally{ SPLIT.busy=false; SPLIT.prog=null; spBack(); } }
 function spDefTip(cur,svc){ if(svc>0) return 0; const t=spCfg().tip; return t!=null?t:cur==='USD'?18:0; }
 function spNew(t,src){ const g=t.guests||2, c1=Math.ceil(g/2), cur=t.cur||'USD';
   const s={id:uid(),created:new Date().toISOString(),date:t.date||today(),place:t.place||'',cur,src:src==='photo'?'photo':'manual',
@@ -103,11 +117,11 @@ function spStartHTML(){ const key=!!(S.secret&&S.secret.apiKey);
   return `<div class="card" id="spStart">${helpBtn('split')}<h2>${L('Dividir la cuenta','Split the bill')}</h2>
     <p class="sub">${L('Haz una foto del ticket del restaurante y reparte el total entre las tarjetas: a partes iguales o por lo que pidió cada uno.','Take a photo of the restaurant receipt and split the total between the cards: evenly or by what each one ordered.')}</p>
     <div class="choice">
-      <label class="btn chl"><span class="av" style="--h:215">${ic('camera')}</span><span><b>${L('Hacer una foto del ticket','Take a photo of the receipt')}</b><span class="muted">${L('Claude lee los productos, los impuestos y el total','Claude reads the items, tax and total')}</span></span><input type="file" id="spCam" accept="image/*" capture="environment"></label>
+      <label class="btn chl"><span class="av" style="--h:215">${ic('camera')}</span><span><b>${L('Hacer una foto del ticket','Take a photo of the receipt')}</b><span class="muted">${L('La app lee los productos, los impuestos y el total en tu dispositivo','The app reads the items, tax and total on your device')}</span></span><input type="file" id="spCam" accept="image/*" capture="environment"></label>
       <label class="btn chl"><span class="av" style="--h:262">${ic('upload')}</span><span><b>${L('Elegir fotos','Choose photos')}</b><span class="muted">${L('Del carrete o de tus archivos; hasta 3 si el ticket es largo','From your gallery or files; up to 3 if the receipt is long')}</span></span><input type="file" id="spPick" accept="image/*" multiple></label>
       <button id="spManual"><span class="av" style="--h:152">${ic('edit')}</span><span><b>${L('Escribirlo a mano','Type it by hand')}</b><span class="muted">${L('Sin foto: el total o los productos','No photo: the total or the items')}</span></span></button></div>
-    ${key?`<label class="f" style="display:flex;gap:8px;align-items:center;margin:12px 2px 0"><input type="checkbox" id="spAskBox" style="width:auto" ${spCfg().ask!==false?'checked':''}> ${L('Preguntar antes de enviar la foto a Claude','Ask before sending the photo to Claude')}</label>`
-      :`<p class="muted" style="margin:12px 2px 0">${L('Para que la app lea la foto sola, añade tu clave de API de Claude en <a href="#ajustes">Copia y ajustes</a>. Sin ella, la foto se queda a la vista para que copies los importes.','For the app to read the photo by itself, add your Claude API key in <a href="#ajustes">Backup & settings</a>. Without it, the photo stays on screen so you can copy the amounts.')}</p>`}</div>`; }
+    <p class="muted" style="margin:12px 2px 0">${L('La foto se lee en este dispositivo y no sale de él. La primera vez se descarga el lector de tickets (unos 7 MB); después funciona también sin conexión.','The photo is read on this device and never leaves it. The first time, the receipt reader is downloaded (about 7 MB); after that it also works offline.')}</p>
+    ${key?`<label class="f" style="display:flex;gap:8px;align-items:center;margin:8px 2px 0"><input type="checkbox" id="spAskBox" style="width:auto" ${spCfg().ask!==false?'checked':''}> ${L('Preguntar antes de enviar la foto a Claude (solo si pulsas «Leer con Claude»)','Ask before sending the photo to Claude (only if you press "Read with Claude")')}</label>`:''}</div>`; }
 function spRecentHTML(cur){ const ls=spList().filter(s=>!cur||s.id!==cur.id).slice().reverse().slice(0,10); if(!ls.length) return '';
   return `<div class="card" id="spRecent"><h2>${L('Tickets anteriores','Earlier receipts')}</h2><div class="clist">${ls.map(s=>{ const T=spTotals(s);
     return `<div class="srow"><span class="av" style="--h:24">${ic('receipt')}</span><span class="lm"><b>${esc(s.place||L('Ticket','Receipt'))}</b><span>${esc(dLabel(s.date))} · ${s.mode==='items'?L('por consumo','by item'):L('a partes iguales','evenly')} · ${s.cards.length} ${s.cards.length===1?L('tarjeta','card'):L('tarjetas','cards')}</span></span><b>${esc(spFmt(T.total,s.cur))}</b><button class="sm" data-spo="${esc(s.id)}">${L('Abrir','Open')}</button><button class="sm ghost" data-spx="${esc(s.id)}" aria-label="${L('Borrar','Delete')}">${ic('trash')}</button></div>`; }).join('')}</div></div>`; }
@@ -122,6 +136,7 @@ function spTicketHTML(s){ const T=spTotals(s), F=n=>esc(spFmt(n,s.cur)), curs=SP
   return `<div class="card" id="spTicket">${helpBtn('split_ticket')}
     <div class="row" style="padding-right:30px;margin-bottom:6px"><h2 style="margin:0">${L('Ticket','Receipt')}</h2><button class="sm" id="spNewB">${ic('plus')}${L('Otro ticket','Another receipt')}</button></div>
     ${SPLIT.err?`<div class="alert warn"><span class="ic">!</span><div>${esc(SPLIT.err)}</div></div>`:''}
+    ${SPLIT.img.length&&S.secret&&S.secret.apiKey&&(!s.items.length||/⚠/.test(spCheckHTML(s,T)))?`<p style="margin:0 0 8px"><button class="sm ghost" id="spAI">${ic('spark')}${L('Leer con Claude','Read with Claude')}</button> <span class="muted" style="font-size:12.5px">${L('si la lectura no cuadra; envía la foto a Anthropic','if the reading doesn\'t add up; sends the photo to Anthropic')}</span></p>`:''}
     ${SPLIT.img.length?`<details class="sp-photo" ${s.items.length?'':'open'}><summary>${L('Ver la foto','See the photo')}</summary><div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="${L('Foto del ticket','Receipt photo')}">`).join('')}</div></details>`:''}
     <div class="row"><label class="f">${L('Restaurante','Restaurant')}<input id="spPlace" data-f="place" maxlength="80" value="${esc(s.place)}" placeholder="${L('Nombre (opcional)','Name (optional)')}"></label>
       <label class="f" style="flex:0 1 150px;min-width:130px">${L('Fecha','Date')}<input type="date" id="spDate" data-f="date" value="${esc(s.date)}"></label>
@@ -191,7 +206,7 @@ function spShare(s){ const txt=spShareText(s), can=typeof navigator.share==='fun
   if(can) $('#spSh').onclick=async()=>{ try{ await navigator.share({text:txt}); closeModal(); }catch(e){} }; }
 
 VIEWS.dividir=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length) spDropImgs();
-  el.innerHTML=`<div class="stack">${SPLIT.busy?`<div class="card" id="spBusy"><h2>${L('Leyendo el ticket…','Reading the receipt…')}</h2><p class="muted" style="margin:0">${L('Claude está leyendo los productos y los importes. Tarda unos segundos.','Claude is reading the items and amounts. It takes a few seconds.')}</p>${SPLIT.img.length?`<div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="">`).join('')}</div>`:''}</div>`
+  el.innerHTML=`<div class="stack">${SPLIT.busy?`<div class="card" id="spBusy"><h2>${L('Leyendo el ticket…','Reading the receipt…')}</h2><p class="muted" id="spProg" style="margin:0">${SPLIT.prog&&SPLIT.prog.st==='claude'?L('Claude está leyendo los productos y los importes.','Claude is reading the items and amounts.'):esc(spProgText())}</p><div class="prog"><span id="spBar" style="width:0"></span></div>${SPLIT.img.length?`<div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="">`).join('')}</div>`:''}</div>`
     :s?spTicketHTML(s)+spSplitHTML(s):spStartHTML()}${SPLIT.busy?'':spRecentHTML(s)}</div>`;
   const redraw=()=>{ if(S&&location.hash==='#dividir') VIEWS.dividir($('#app')); };
   const files=e=>{ const fs=[...e.target.files]; e.target.value=''; spRead(fs); };
@@ -201,7 +216,7 @@ VIEWS.dividir=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length)
   el.querySelectorAll('[data-spo]').forEach(b=>b.onclick=()=>{ spDropImgs(); SPLIT.err=null; SPLIT.cur=b.dataset.spo; redraw(); window.scrollTo(0,0); });
   el.querySelectorAll('[data-spx]').forEach(b=>b.onclick=async()=>{ if(!await confirmModal(L('Borrar este ticket','Delete this receipt'),`<p>${L('Se borra el ticket y su reparto. No se puede deshacer.','The receipt and its split are deleted. It cannot be undone.')}</p>`)) return;
     S.splits=spList().filter(x=>x.id!==b.dataset.spx); save(); redraw(); });
-  if(!s) return;
+  if(!s||SPLIT.busy) return;
   const root=el.firstElementChild; // se sustituye en cada repintado: sus escuchadores no se acumulan ni pasan a otras pantallas
   $('#spNewB').onclick=()=>{ spDropImgs(); SPLIT.err=null; SPLIT.cur=null; redraw(); window.scrollTo(0,0); };
   $('#spCur').onchange=e=>{ s.cur=e.target.value; save(); redraw(); };
@@ -232,5 +247,6 @@ VIEWS.dividir=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length)
     else if(b.id==='spAddIt'){ const it={id:uid(),name:'',qty:1,price:0,to:[]}; s.items.push(it); save(); redraw(); const n=document.querySelector(`[data-it="${CSS.escape(it.id)}"][data-k="name"]`); if(n) n.focus(); return; }
     else if(b.id==='spAddC'){ if(s.cards.length>=20) return; s.cards.push({id:uid(),name:'',n:1}); const nC=s.cards.reduce((a,x)=>a+x.n,0); if(s.mode==='even'&&nC>s.people) s.people=nC; }
     else if(b.id==='spShare'){ spShare(s); return; }
+    else if(b.id==='spAI'){ spClaude(s); return; }
     else return;
     save(); redraw(); }); };
