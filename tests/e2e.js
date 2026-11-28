@@ -564,24 +564,40 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     await pg.evaluate(()=>{ const s=spCurrent(); s.items=s.items.filter(i=>i.name); save(); route(); }); await pg.waitForTimeout(150);
     await pg.fill('#spFtax','5.09'); await pg.click('[data-tip="20"]'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const T=spTotals(spCurrent()); return T.tip===11&&T.total===71.09&&S.settings.split.tip===20&&$('[data-tip="20"]').classList.contains('on'); }),'propina del 20 % sobre el subtotal (y se recuerda)');
+    // Por persona: 1) personas con nombre, 2) tarjetas y a quién paga cada una, 3) qué pidió cada persona; resultado por tarjeta y por persona
     await pg.click('[data-mode="items"]'); await pg.waitForTimeout(150);
-    const ids=await pg.evaluate(()=>{ const s=spCurrent(); return {it:s.items.map(i=>i.id),c:s.cards.map(c=>c.id)}; });
-    await pg.click(`[data-as="${ids.it[0]}"][data-c="${ids.c[0]}"]`); await pg.click(`[data-as="${ids.it[1]}"][data-c="${ids.c[1]}"]`); await pg.click(`[data-as="${ids.it[2]}"][data-c="*"]`); await pg.waitForTimeout(150);
-    const t3=await pg.evaluate(()=>{ const s=spCurrent(), T=spTotals(s), R=spItems(s,T), sum=R.rows.reduce((a,r)=>a+Math.round(r.v*100),0)+Math.round(R.rest.v*100);
-      return {sum,tot:Math.round(T.total*100),items:R.rows.map(r=>r.items).join(),un:R.nUn,unv:R.rest.v,res:$('#spRes').innerText,shared:s.items[2].to.length}; });
-    ok(t3.sum===t3.tot&&t3.items==='26.5,22'&&t3.un===1&&t3.unv>6.5&&t3.shared===2&&/Sin asignar/.test(t3.res)&&/Cada tarjeta paga/.test(t3.res),'por consumo: cada tarjeta paga lo suyo más su parte de impuestos y propina; lo compartido a medias; avisa de lo que falta '+JSON.stringify(t3));
-    await pg.click(`[data-spu="${ids.it[2]}"]`); await pg.waitForTimeout(150);
-    ok(await pg.evaluate(()=>{ const s=spCurrent(), c=s.items.filter(i=>i.name==='Cerveza Prueba'); return s.items.length===5&&c.length===2&&c.every(i=>i.qty===1&&i.price===8&&i.to.length===2); }),'una línea con 2 unidades se separa en dos productos');
+    const pm=await pg.evaluate(()=>{ const s=spCurrent(); return {n:s.persons.length,who:s.cards.map(c=>c.who.length).join(),steps:[...document.querySelectorAll('#spSplit .sp-step-h')].map(e=>e.innerText),ids:{p:s.persons.map(p=>p.id),c:s.cards.map(c=>c.id),it:s.items.map(i=>i.id)}}; });
+    ok(pm.n===5&&pm.who==='3,2'&&pm.steps.length===3&&/^1\. Personas/.test(pm.steps[0])&&/^2\. Tarjetas/.test(pm.steps[1])&&/^3\. ¿Qué pidió cada persona\?/.test(pm.steps[2]),'por persona: tres pasos y las personas salen de lo que había a partes iguales '+JSON.stringify([pm.n,pm.who,pm.steps]));
+    const P=pm.ids.p, C=pm.ids.c, IT=pm.ids.it;
+    for(const [i,n] of [[0,'Ana'],[1,'Luis'],[2,'Marta'],[3,'Pedro'],[4,'Sara']]) await pg.fill(`[data-pn="${P[i]}"]`,n);
+    await pg.waitForTimeout(100);
+    const named=await pg.evaluate(c=>document.querySelector(`[data-cwho="${c}"]`).innerText.includes('Ana')&&/Ana/.test(document.querySelector('#spAssign').innerText)&&document.activeElement&&document.activeElement.dataset.pn!=null,C[0]);
+    await pg.click(`[data-cw="${C[1]}"][data-p="${P[2]}"]`); await pg.waitForTimeout(100);   // Marta pasa a la tarjeta 2
+    await pg.click(`[data-as="${IT[0]}"][data-c="${P[0]}"]`); await pg.click(`[data-as="${IT[1]}"][data-c="${P[3]}"]`); await pg.click(`[data-as="${IT[2]}"][data-c="*"]`); await pg.waitForTimeout(150);
+    const t3=await pg.evaluate(()=>{ const s=spCurrent(), T=spTotals(s), R=spPeople(s,T), c=x=>Math.round(x*100);
+      const res=$('#spRes').innerText;
+      return {who:s.cards.map(c=>c.who.length).join(),sum:R.cards.reduce((a,r)=>a+c(r.v),0)+c(R.free.v)+c(R.un.v),tot:c(T.total),per:R.persons.reduce((a,r)=>a+c(r.v),0)+c(R.un.v),
+        items:R.persons.map(r=>r.items).join(),un:R.un.n,cardsFirst:res.indexOf('Cada tarjeta paga')>=0&&res.indexOf('Cada tarjeta paga')<res.indexOf('Cada persona'),lines:res.includes('Ana, Luis')&&res.includes('Pedro, Sara, Marta'),shared:s.items[2].to.length}; });
+    ok(named&&t3.who==='2,3'&&t3.sum===t3.tot&&t3.per===t3.tot&&t3.items==='21.7,3.2,3.2,17.2,3.2'&&t3.un===1&&t3.shared===5&&t3.cardsFirst&&t3.lines,'por persona: cada producto a su persona (o entre todos), cada tarjeta paga lo de sus personas y se ve primero por tarjeta y luego por persona '+JSON.stringify(t3));
+    await pg.click('#spAddP'); await pg.waitForTimeout(150); const newP=await pg.evaluate(()=>{ const s=spCurrent(); return s.persons[s.persons.length-1].id; });
+    await pg.fill(`[data-pn="${newP}"]`,'Leo'); await pg.waitForTimeout(100);
+    const free=await pg.evaluate(()=>{ const r=$('#spRes').innerText; return /Sin tarjeta/.test(r)&&/Leo/.test(r); });
+    await pg.click(`[data-ppx="${newP}"]`); await pg.waitForTimeout(150);
+    ok(free&&await pg.evaluate(()=>spCurrent().persons.length===5&&!/Sin tarjeta/.test($('#spRes').innerText)),'una persona que no va en ninguna tarjeta sale «Sin tarjeta»; se puede quitar');
+    await pg.click(`[data-spu="${IT[2]}"]`); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>{ const s=spCurrent(), c=s.items.filter(i=>i.name==='Cerveza Prueba'); return s.items.length===5&&c.length===2&&c.every(i=>i.qty===1&&i.price===8&&i.to.length===5); }),'una línea con 2 unidades se separa en dos productos (con las mismas personas)');
     await pg.click('#spShare'); await pg.waitForTimeout(150);
-    ok(await pg.evaluate(()=>{ const t=$('#spTxt').innerText; return /sin cifrar/.test($('#modal').innerText)&&/Tarjeta 1: \$/.test(t)&&/Hamburguesa Prueba/.test(t)&&/Total: \$71\.09/.test(t); }),'compartir el reparto avisa de que el texto sale sin cifrar'); await pg.click('#mc');
+    ok(await pg.evaluate(()=>{ const t=$('#spTxt').innerText; return /sin cifrar/.test($('#modal').innerText)&&/Tarjeta 1 \(Ana, Luis\): \$/.test(t)&&/Cada persona:/.test(t)&&/Ana: \$[\d.]+ — Hamburguesa Prueba/.test(t)&&/Total: \$71\.09/.test(t)&&t.indexOf('Cada tarjeta paga')<t.indexOf('Cada persona'); }),'compartir el reparto (por tarjeta y por persona) avisa de que el texto sale sin cifrar'); await pg.click('#mc');
     if(process.env.SHOTS){ for(const [lg,w,n] of [['es',412,'dividir-movil'],['en',412,'en-dividir-movil'],['es',1200,'dividir-escritorio']]){ await pg.setViewportSize({width:w,height:900}); await pg.evaluate(l=>setLang(l),lg); await pg.waitForTimeout(250); await pg.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
       await pg.evaluate(()=>{ spCurrent().mode='even'; route(); }); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/dividir-iguales-escritorio.png',fullPage:true}); await pg.evaluate(()=>{ spCurrent().mode='items'; }); await pg.setViewportSize({width:412,height:900}); await pg.evaluate(()=>setLang('es')); }
     await pg.evaluate(()=>setLang('en')); await pg.waitForTimeout(200);
-    const en=await pg.evaluate(()=>{ const t=$('#app').innerText; return {m:(t.match(/\b(Añadir|Guardar|Cancelar|Borrar|Tarjeta|Productos|Propina|Impuestos|personas|Compartir|Sin asignar)\b/)||[])[0]||null,ok:/Who ordered what\?/.test(t)&&/Each card pays/.test(t)&&/Card 1/.test(t)&&$('#pageTitle').innerText==='Split the bill'}; });
+    const en=await pg.evaluate(()=>{ const t=$('#app').innerText; return {m:(t.match(/\b(Añadir|Guardar|Cancelar|Borrar|Tarjeta|Productos|Propina|Impuestos|personas|Compartir|Sin asignar)\b/)||[])[0]||null,ok:/What did each person order\?/.test(t)&&/Each card pays/.test(t)&&/Each person/.test(t)&&/Card 1/.test(t)&&/By person/.test(t)&&$('#pageTitle').innerText==='Split the bill'}; });
     ok(!en.m&&en.ok,'Dividir la cuenta en inglés '+JSON.stringify(en)); await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
     await pg.waitForTimeout(400);
     ok(!/Hamburguesa Prueba|Bistró/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v))))&&await pg.evaluate(()=>S.splits.length===2),'los tickets se guardan cifrados');
     const san=await pg.evaluate(()=>{ const r=sanitizeSplits([{id:'s"><b>',cards:[{id:'a',n:'x'},{id:'b',n:500}],items:[{name:'<b>x',price:'5',to:['a','zz','a']},{price:'nope'}],cur:'<b>',mode:'raro',tipPct:500,people:-3},'x',null])[0], s2=sanitizeState({splits:[{cards:[]}],settings:{split:{tip:'<b>',ask:false}}});
+      const mg=sanitizeSplits([{cards:[{id:'a',n:2},{id:'b',n:1}],items:[{name:'x',price:5,to:['b']}],mode:'items',sub:5,tipPct:0}])[0], mR=spPeople(mg,spTotals(mg));
+      if(!(mg.persons.length===3&&mg.cards[0].who.length===2&&mg.cards[1].who.join()==='b'&&mg.items[0].to.join()==='b'&&mR.cards[1].v===5&&mR.cards[0].v===0)) return false;
       return r.id==='sb'&&r.cards[0].n===1&&r.cards[1].n===99&&r.items[0].to.join()==='a'&&r.items[0].price===5&&r.items[1].price===0&&r.cur==='USD'&&r.mode==='even'&&r.tipPct===null&&r.people===1&&s2.splits.length===1&&s2.splits[0].cards.length===1&&s2.settings.split.tip===null&&!('ask' in s2.settings.split); });
     ok(san,'los tickets se validan al desbloquear y al restaurar');
     ok(await pg.evaluate(()=>{ const n=SPLIT.img.length; splitOnLock(); return n===1&&!SPLIT.img.length&&!SPLIT.cur; }),'la foto solo vive en memoria y se descarta al bloquear');
@@ -599,12 +615,13 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     await pg.click('#spNewB'); await pg.waitForTimeout(100); await pg.click('#spManual'); await pg.waitForTimeout(100); await pg.click('#spHistB'); await pg.waitForTimeout(200);
     const h=await pg.evaluate(()=>({n:spList().length,rows:document.querySelectorAll('#spHist .sp-hrow').length,tab:$('[data-sptab="hist"]').innerText,sum:$('#spHist .sp-hsum').innerText,
       months:[...document.querySelectorAll('#spHistBody h3.sec')].map(e=>e.innerText),cards:$('#spHistBody').innerText.includes('Visa Historial'),line:[...document.querySelectorAll('#spHist .sp-hrow')].find(r=>/Bar Historial/.test(r.innerText)).innerText}));
-    ok(h.n===3&&h.rows===3&&/Historial\s*3/.test(h.tab)&&/3/.test(h.sum)&&h.months.some(m=>/^Noviembre de 2026/.test(m))&&h.cards&&/Visa Historial \$60\.00/.test(h.line)&&/\$120\.00/.test(h.line),'historial: tickets por mes con lo que pagó cada tarjeta; el ticket vacío no se guarda '+JSON.stringify(h));
-    await pg.selectOption('#spHc','visa historial'); await pg.waitForTimeout(100); const byCard=await pg.evaluate(()=>document.querySelectorAll('#spHist .sp-hrow').length);
-    await pg.selectOption('#spHc','all'); await pg.fill('#spHq','fish tacos'); await pg.waitForTimeout(100); const bySearch=await pg.evaluate(()=>[...document.querySelectorAll('#spHist .sp-hrow')].map(r=>r.innerText.split('\n')[0]).join());
+    const noCards=await pg.evaluate(()=>!$('#spHc')&&!/Por tarjeta/.test($('#spHist').innerText));
+    ok(noCards&&h.n===3&&h.rows===3&&/Historial\s*3/.test(h.tab)&&/3/.test(h.sum)&&h.months.some(m=>/^Noviembre de 2026/.test(m))&&h.cards&&/Visa Historial \$60\.00/.test(h.line)&&/\$120\.00/.test(h.line),'historial solo por tickets (sin apartado ni filtro por tarjeta): por mes, con lo que se pagó con cada tarjeta; el ticket vacío no se guarda '+JSON.stringify(h));
+    await pg.fill('#spHq','fish tacos'); await pg.waitForTimeout(100); const bySearch=await pg.evaluate(()=>[...document.querySelectorAll('#spHist .sp-hrow')].map(r=>r.innerText.split('\n')[0]).join());
     await pg.fill('#spHq',''); await pg.waitForTimeout(100);
-    const [csv,csvN]=await pg.evaluate(()=>{ const l=spHistRows(); return [spHistCSV(l),l.reduce((a,x)=>a+x.rows.length+(x.rest>0?1:0),1)]; });
-    ok(byCard===1&&/Prueba Bistro/.test(bySearch)&&!/Bar Historial/.test(bySearch)&&csv.split('\r\n')[0].startsWith('date,restaurant,currency,total')&&csv.split('\r\n').length===csvN&&csvN>=7&&/Bar Historial,USD,120\.00/.test(csv)&&/Visa Historial,60\.00/.test(csv)&&/"'=cmd"|'=cmd/.test(await pg.evaluate(()=>spHistCSV([{s:{date:'2026-01-01',place:'=cmd',cur:'USD',tax:0,svc:0,disc:0,mode:'even'},T:{total:1,tip:0},rows:[{name:'+x',v:1}],rest:0}]))),'historial: filtro por tarjeta, búsqueda y CSV (una fila por tarjeta, sin fórmulas)');
+    const csv=await pg.evaluate(()=>spHistCSV(spHistRows())), byName=await pg.evaluate(()=>{ SPLIT.hf.q='pedro'; const n=spHistRows().length; SPLIT.hf.q=''; return n; });
+    const inj=await pg.evaluate(()=>{ const t=sanitizeSplits([{place:'=cmd',cards:[{name:'+x'}],sub:1,tipPct:0}])[0]; return spHistCSV([Object.assign({s:t},spPaid(t))]); });
+    ok(/Prueba Bistro/.test(bySearch)&&!/Bar Historial/.test(bySearch)&&byName===1&&csv.split('\r\n')[0]==='date,restaurant,currency,subtotal,discount,tax,service,tip,total,mode,cards,people'&&csv.split('\r\n').length===4&&/Bar Historial,USD,100\.00,.*,120\.00,even,Visa Historial 60\.00/.test(csv)&&/by person,.*Ana [\d.]+ \| Luis/.test(csv)&&/'=cmd/.test(inj)&&/'\+x/.test(inj),'historial: búsqueda (también por persona) y CSV con una fila por ticket, sin fórmulas');
     await pg.click('#spCSV'); await pg.waitForTimeout(100); const warnCSV=await pg.evaluate(()=>/no va cifrado/.test($('#modal').innerText)); await pg.click('#cN');
     await pg.click('#spHist .sp-hrow [data-spx]'); await pg.click('#cY'); await pg.waitForTimeout(150);
     ok(warnCSV&&await pg.evaluate(()=>spList().length===2&&document.querySelectorAll('#spHist .sp-hrow').length===2),'exportar avisa de que el archivo no va cifrado; borrar un ticket del historial');
@@ -631,8 +648,8 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     await dv.fill('[data-pcn="0"]','Visa Ana'); await dv.fill('[data-pcn="1"]','Amex Luis'); await dv.click('[data-st="pc:0"][data-d="1"]'); await dv.waitForTimeout(150);
     ok(await dv.evaluate(()=>{ const p=S.settings.split; return p.mode==='items'&&p.tip===20&&p.cards.map(c=>c.name+':'+c.n).join()==='Visa Ana:2,Amex Luis:1'&&/Visa Ana, Amex Luis/.test($('#spPrefs .sp-psum').innerText); }),'preferencias: modo, propina y tarjetas habituales con sus personas');
     await dv.setInputFiles('#spPick',path.join(FX,'receipt.jpg')); await dv.waitForSelector('#spTicket',{timeout:120000}); await dv.waitForTimeout(200);
-    const dt=await dv.evaluate(()=>{ const s=spCurrent(); return {mode:s.mode,tip:s.tipPct,people:s.people,cards:s.cards.map(c=>c.name+':'+c.n).join(),items:s.items.length,sub:s.sub,tot:s.tot,warn:!!$('#spWarn .alert')}; });
-    ok(dt.mode==='items'&&dt.tip===20&&dt.people===3&&dt.cards==='Visa Ana:2,Amex Luis:1'&&dt.items===5&&dt.sub===55.5&&dt.tot===59.8&&!dt.warn,'la foto se lee en el dispositivo y el ticket nuevo empieza con las preferencias del usuario '+JSON.stringify(dt));
+    const dt=await dv.evaluate(()=>{ const s=spCurrent(); return {mode:s.mode,tip:s.tipPct,people:s.people,cards:s.cards.map(c=>c.name+':'+c.n).join(),items:s.items.length,sub:s.sub,tot:s.tot,warn:!!$('#spWarn .alert'),persons:s.persons.length,who:s.cards.map(c=>c.who.length).join()}; });
+    ok(dt.mode==='items'&&dt.who==='2,1'&&dt.persons===3&&dt.tip===20&&dt.people===3&&dt.cards==='Visa Ana:2,Amex Luis:1'&&dt.items===5&&dt.sub===55.5&&dt.tot===59.8&&!dt.warn,'la foto se lee en el dispositivo y el ticket nuevo empieza con las preferencias del usuario '+JSON.stringify(dt));
     await dv.waitForTimeout(400);
     const idb=await dv.evaluate(()=>IDB.get('profiles').then(v=>JSON.stringify(v)));
     ok(/Ana Prueba/.test(idb)&&!/Visa Ana|Fish Tacos|Prueba Bistro|55\.5/.test(idb),'los tickets y las preferencias se guardan cifrados (solo el nombre del usuario se ve sin entrar)');
@@ -679,7 +696,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500); await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=S.splits[0].id; route(); }); await dv.waitForTimeout(200);
     const tEn=await dv.$eval('body',e=>e.innerText); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200); const pEn=await dv.$eval('body',e=>e.innerText);
     const ESW=/\b(Añadir|Guardar|Cancelar|Borrar|Contraseña|Entrar|Salir|Tarjetas|Productos|Propina|Impuestos|personas|Compartir|usuario|Seguridad|Idioma)\b/;
-    ok(!ESW.test(gEn+tEn+pEn)&&/Hi, Ana Prueba/.test(gEn)&&/Who ordered what\?/.test(tEn)&&/Profile & security/.test(pEn),'app independiente en inglés '+((gEn+tEn+pEn).match(ESW)||[''])[0]);
+    ok(!ESW.test(gEn+tEn+pEn)&&/Hi, Ana Prueba/.test(gEn)&&/What did each person order\?/.test(tEn)&&/Profile & security/.test(pEn),'app independiente en inglés '+((gEn+tEn+pEn).match(ESW)||[''])[0]);
     if(process.env.SHOTS){ for(const [lg,w,n,h] of [['es',412,'dividir-app-movil',''],['es',412,'dividir-app-perfil','#perfil'],['en',412,'en-dividir-app-movil',''],['es',1200,'dividir-app-escritorio',''],['en',1200,'en-dividir-app-escritorio','']]){
         await dv.setViewportSize({width:w,height:900}); await dv.evaluate(([l,h])=>{ location.hash=h; setLang(l); },[lg,h]); await dv.waitForTimeout(300); await dv.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
       await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=null; route(); }); await dv.waitForTimeout(200); await dv.screenshot({path:process.env.SHOTS+'/dividir-app-inicio.png',fullPage:true}); }

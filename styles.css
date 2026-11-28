@@ -442,3 +442,8 @@ body.locked .topbar,body.locked main,body.locked .drawer,body.locked .fab,body.l
 .sp-hrow{align-items:flex-start}.sp-hrow > b{white-space:nowrap;font-variant-numeric:tabular-nums;margin-top:2px}
 .sp-hrow .lm span.sp-hcards{white-space:normal;color:var(--text-2)}
 @media (max-width:420px){.sp-hrow{flex-wrap:wrap}.sp-hrow .lm{flex-basis:calc(100% - 52px)}.sp-hrow > b{margin-left:52px;flex:1}}
+.sp-whol{font-size:12.5px;color:var(--text-2);margin-top:2px}.sp-who{margin-top:4px}.sp-who button.sp-oth{opacity:.55}
+.sp-person .lm input{min-height:38px;padding:7px 10px;font-size:14.5px}
+.sp-step-h{color:var(--text);font-size:14px}
+.sp-pres{align-items:flex-start}.sp-pres > b{white-space:nowrap;font-variant-numeric:tabular-nums;font-size:16px;margin-top:2px}
+.sp-pres .lm span{white-space:normal}.sp-pres .lm span.sp-pitems{color:var(--text-2);font-size:12px}
