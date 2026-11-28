@@ -38,12 +38,13 @@ const ICONS={
   news:'M5 5h12v14H6a1 1 0 0 1-1-1zM17 9h2a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0M8 9h6M8 13h6M8 16h4', pin:'M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11zM12 8a2 2 0 1 1 0 4a2 2 0 1 1 0-4z', piggy:'M5 11a7 6 0 0 1 13-2h2v4l-2 1v3h-3v-2H9v2H6v-3a6 6 0 0 1-1-3zM15 10h.01',
   thumbUp:'M7 11v9H4v-9zM7 11l4-7a2 2 0 0 1 2 2v4h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 16.8 20H7', thumbDown:'M7 13V4H4v9zM7 13l4 7a2 2 0 0 0 2-2v-4h5a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 16.8 4H7',
   calendar:'M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4', left:'M15 6l-6 6 6 6',
-  layers:'M12 4l9 5-9 5-9-5zM3 14l9 5 9-5', star:'M12 4l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z'
+  layers:'M12 4l9 5-9 5-9-5zM3 14l9 5 9-5', camera:'M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM12 10a3.5 3.5 0 1 1 0 7a3.5 3.5 0 1 1 0-7z',
+  split:'M12 21v-8M12 13L6 7M12 13l6-6M6 7v4M6 7h4M18 7v4M18 7h-4', star:'M12 4l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z'
 };
 const ic=(n,cls)=>`<svg class="ico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]||''}"/></svg>`;
 // Menú: orden pedido por el usuario. Lo que no cabe va en "Más".
 const NAV=[['resumen','Resumen','Overview','home'],['flujo','Movimientos','Transactions','flow'],['cuentas','Cuentas','Accounts','wallet'],['inversiones','Inversiones','Investments','trend'],['hipotecas','Hipotecas','Mortgages','house'],['impuestos','Impuestos','Taxes','receipt'],['calendario','Calendario','Calendar','calendar']];
-const NAV_MORE=[['alquiler','Casa en alquiler','Rental','building'],['claude','Claude','Claude','spark'],['ayuda','Manual','Manual','book'],['ajustes','Copia y ajustes','Backup & settings','sliders']];
+const NAV_MORE=[['dividir','Dividir la cuenta','Split the bill','split'],['alquiler','Casa en alquiler','Rental','building'],['claude','Claude','Claude','spark'],['ayuda','Manual','Manual','book'],['ajustes','Copia y ajustes','Backup & settings','sliders']];
 const NAV_PARENT={noticias:'inversiones',jubilacion:'inversiones',importar:'cuentas'};
 function navLabel(v){ const n=[...NAV,...NAV_MORE].find(x=>x[0]===(NAV_PARENT[v]||v)); return n?L(n[1],n[2]):'MyFinZen'; }
 function applyStatic(){
@@ -206,6 +207,14 @@ const arr=v=>Array.isArray(v)?v:[];
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
 const ACC_NUM=['rate','payment','extra','escrow','rent','hoa','taxYear','insYear','maint','otherMonthly','mortgagePay','buildingBasis','inService','apr','contributed','stmtDay'];
 function sanitizeHoldingRow(x){ x=obj(x); const n=k=>numStrict(x[k]); const r={sym:str(x.sym,40).trim(),name:str(x.name,120),qty:n('qty')??NaN,avg:n('avg')??NaN,cost:n('cost'),value:n('value')||0,gain:n('gain')}; if(x.fund) r.fund=true; if(x.cls) r.cls=str(x.cls,40); return r; }
+// Tickets de restaurante repartidos entre tarjetas (split.js): S.splits, como mucho los 30 últimos
+function sanitizeSplits(v){ const n=(x,lo,hi)=>{ const y=numStrict(x); return y!=null&&y>=lo&&y<=hi?Math.round(y*100)/100:null; }, int=(x,lo,hi,d)=>Math.max(lo,Math.min(hi,Math.round(numStrict(x)||d)));
+  return arr(v).map(s0=>{ const s=obj(s0), cards=arr(s.cards).map(c=>{ c=obj(c); return {id:cleanId(c.id)||uid(),name:str(c.name,60),n:int(c.n,1,99,1)}; }).slice(0,20);
+    if(!cards.length) cards.push({id:uid(),name:'',n:1}); const ids=new Set(cards.map(c=>c.id));
+    const items=arr(s.items).map(i=>{ i=obj(i); const p=n(i.price,-1e5,1e5); return {id:cleanId(i.id)||uid(),name:str(i.name,80),qty:int(i.qty,1,999,1),price:p==null?0:p,to:[...new Set(arr(i.to).map(cleanId))].filter(x=>ids.has(x))}; }).slice(0,300);
+    const cur=typeof s.cur==='string'&&/^[A-Z]{3}$/.test(s.cur)?s.cur:'USD';
+    return {id:cleanId(s.id)||uid(),created:typeof s.created==='string'&&!isNaN(Date.parse(s.created))?s.created.slice(0,30):new Date().toISOString(),date:isoDate(s.date)||today(),place:str(s.place,80),cur,src:s.src==='photo'?'photo':'manual',items,
+      sub:n(s.sub,0,1e6),disc:n(s.disc,0,1e6)||0,tax:n(s.tax,0,1e6)||0,svc:n(s.svc,0,1e6)||0,tot:n(s.tot,0,1e6),tip:n(s.tip,0,1e6)||0,tipPct:n(s.tipPct,0,100),mode:s.mode==='items'?'items':'even',people:int(s.people,1,99,2),cards}; }).slice(-30); }
 function sanitizeState(st){
   if(!st||typeof st!=='object'||Array.isArray(st)) throw Object.assign(new Error(L('Datos no válidos','Invalid data')),{code:'notbackup'});
   const o=Object.assign(blankState(),st);
@@ -242,6 +251,7 @@ function sanitizeState(st){
   if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
   { const c=obj(s.cal), m=numStrict(c.min); // calendario: umbral de pagos importantes, notificación y días de cobro
     S2.cal={min:m!=null&&m>=0&&m<=1e7?Math.round(m):500,sys:c.sys===true,payDays:[...new Set(arr(c.payDays).map(d=>Math.round(numStrict(d)||0)).filter(d=>d>=1&&d<=31))].slice(0,4),noSug:arr(c.noSug).filter(x=>typeof x==='string'&&/^[\w:.-]{1,80}$/.test(x)).slice(-200)}; }
+  { const c=obj(s.split), t=numStrict(c.tip); S2.split={tip:t!=null&&t>=0&&t<=100?t:null,ask:c.ask!==false}; } // dividir la cuenta (split.js)
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
     for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }
@@ -264,6 +274,7 @@ function sanitizeState(st){
     if(typeof r.key==='string'&&/^[\w:.-]{1,80}$/.test(r.key)) x.key=r.key; if(nm) x.name=nm; if(a!=null&&a>0&&a<1e8) x.amount=Math.round(a*100)/100;
     if(['w','b','m','q','s','y'].includes(r.freq)) x.freq=r.freq; if(isoDate(r.next)) x.next=r.next; if(r.cat) x.cat=str(r.cat,60); if(r.notify===true||r.notify===false) x.notify=r.notify; if(r.off===true) x.off=true; return x;
   }).filter(r=>r.key||(r.name&&r.amount&&r.freq&&r.next)).slice(0,500);
+  o.splits=sanitizeSplits(o.splits);
   o.holdingsHist=arr(o.holdingsHist).map(h=>{ h=obj(h); return {acc:cleanId(h.acc),date:isoDate(h.date),rows:arr(h.rows).map(r=>({sym:str(obj(r).sym,40),value:numStrict(obj(r).value)||0,cost:numStrict(obj(r).cost)}))}; }).filter(h=>h.acc&&h.date);
   { const sec=obj(o.secret), out={}; if(typeof sec.apiKey==='string'&&/^sk-ant-[\w-]+$/.test(sec.apiKey)) out.apiKey=sec.apiKey;
     const y=obj(sec.sync); if(['dropbox','file','manual'].includes(y.p)){ out.sync={p:y.p,dev:cleanId(y.dev)||uid()}; if(typeof y.rt==='string'&&/^[\w.~+/=-]{8,400}$/.test(y.rt)) out.sync.rt=y.rt; if(typeof y.last==='string'&&!isNaN(Date.parse(y.last))) out.sync.last=y.last.slice(0,30); }
@@ -675,7 +686,7 @@ function route(){ if(!S) return;
   window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
 /* Solo se repinta si cambia el ancho: al abrir el teclado del móvil cambia la altura y repintar quitaba el foco de la casilla */
-let resizeT, lastW=window.innerWidth; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return; if(window.innerWidth===lastW) return; lastW=window.innerWidth; const ae=document.activeElement; if(ae&&ae.matches&&ae.matches('input,textarea,select')&&$('#app').contains(ae)) return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
+let resizeT, lastW=window.innerWidth; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return; if(window.innerWidth===lastW) return; lastW=window.innerWidth; const ae=document.activeElement; if(ae&&ae.matches&&ae.matches('input,textarea,select')&&$('#app').contains(ae)) return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias','dividir'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
 
 /* ---------- Resumen ---------- */
 // Avisos plegados en una línea: "N cosas por revisar" o "Todo en orden"
@@ -3029,7 +3040,7 @@ async function unlockWithPasskey(){
 }
 /* ---------- Bloqueo ---------- */
 let lockTimer=null, hiddenAt=0;
-function lockNow(){ SHARED_FILES=null; SK_PENDING=null; if(typeof syncOnLock==='function') syncOnLock(); if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
+function lockNow(){ SHARED_FILES=null; SK_PENDING=null; if(typeof syncOnLock==='function') syncOnLock(); if(typeof splitOnLock==='function') splitOnLock(); if(S) flushSave(); clearTimeout(lockTimer); if(VAULT.dkRaw) VAULT.dkRaw.fill(0); VAULT.dk=null; VAULT.dkRaw=null; S=null; REC=null; NEWS.data=null; NEWS.tk='all'; NEWS.q=''; NEWS.shown=null; NEWS.showLow=false; { const f=$('#nfb'); if(f) f.remove(); } closeModal(); $('#app').innerHTML=''; showGate('unlock',true); }
 function bumpLock(){ clearTimeout(lockTimer); if(!S) return; const m=(S.settings&&S.settings.lockMin)||5; lockTimer=setTimeout(()=>{ if(S) lockNow(); },m*60000); }
 ['pointerdown','keydown','scroll','touchstart'].forEach(ev=>window.addEventListener(ev,()=>{ if(S) bumpLock(); },{passive:true}));
 document.addEventListener('visibilitychange',()=>{ if(document.hidden){ hiddenAt=Date.now(); if(S) flushSave(); } else if(S&&hiddenAt&&Date.now()-hiddenAt>((S.settings.lockMin||5)*60000)) lockNow(); });
@@ -3097,6 +3108,7 @@ function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTM
 /* ---------- Claude con la clave del usuario ---------- */
 const MODELS={quick:'claude-haiku-5-5',default:'claude-sonnet-5-5',complex:'claude-opus-5-5'};
 function parseJSONLoose(t){ const s=String(t||'').replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,''); const a=s.indexOf('{'), b=s.lastIndexOf('}'); return JSON.parse(a>=0?s.slice(a,b+1):s); }
+// prompt: texto, o una lista de bloques de contenido (imágenes + texto) como la que usa la foto del ticket en split.js
 async function claudeCall(prompt,opts={}){
   const key=S&&S.secret&&S.secret.apiKey; if(!key) throw Object.assign(new Error(L('Añade tu clave de API de Anthropic en Copia y ajustes','Add your Anthropic API key in Backup & settings')),{code:'no_key'});
   const stream=opts.stream!==false&&!!opts.onText;

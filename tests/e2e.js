@@ -10,12 +10,18 @@ let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed+
 // Respuesta "envenenada" de Claude, como si el texto de un PDF hubiera intentado manipularla
 const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__pwn=1">',account_kind:'cash',period_end:'2026-10-12"><img src=x onerror="window.__pwn=2">',ending_balance:'1"><img src=x onerror="window.__pwn=3">',
   transactions:[{date:'<img src=x onerror="window.__pwn=4">',description:'x',amount:5},{date:'2026-10-01',description:'<img src=x onerror="window.__pwn=5">',amount:-10},{date:'2026-10-02',description:'y',amount:'9"><img src=x>'}],tax_forms:[]};
+// Ticket de restaurante leído de una foto (inventado), también con intentos de inyección
+const TICKET={place:'<img src=x onerror="window.__pwn=20">Bistró Prueba',date:'2026-11-27',currency:'usd',guests:4,subtotal:55,discount:null,tax:5.09,service:null,tip:null,total:60.09,
+  items:[{name:'Hamburguesa Prueba',qty:1,price:18.5},{name:'Ensalada Prueba',qty:1,price:14},{name:'Cerveza Prueba',qty:2,price:16},{name:'<img src=x onerror="window.__pwn=21">',qty:1,price:6.5},{name:'Malo',qty:1,price:'12"><img src=x>'}]};
+const RECEIPT_REQ=[];
 (async()=>{
   const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const pg=await ctx.newPage();
   const errs=[]; pg.on('pageerror',e=>{ errs.push(e.message); console.log('PAGEERR',e.stack); }); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
   const cdp=await ctx.newCDPSession(pg); await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
   await pg.route('https://api.anthropic.com/**',r=>{ const body=JSON.parse(r.request().postData());
+    const ct=body.messages&&body.messages[0]&&body.messages[0].content;
+    if(Array.isArray(ct)&&ct.some(c=>c.type==='text'&&/^You read restaurant receipts/.test(c.text))){ RECEIPT_REQ.push(r.request().postData()); return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:'```json\n'+JSON.stringify(TICKET)+'\n```'}],stop_reason:'end_turn'})}); }
     const prompt=String(body.messages&&body.messages[0]&&body.messages[0].content||'');
     if(!body.stream&&prompt.startsWith('You extract data')) return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:JSON.stringify(EVIL)}],stop_reason:'end_turn'})});
     if(!body.stream) return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({content:[{type:'text',text:'OK'}],stop_reason:'end_turn'})});
@@ -203,7 +209,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   await pg.goto(U+'#flujo'); await pg.waitForTimeout(300);
   // Menú lateral y botón +
   await pg.click('#menuBtn'); await pg.waitForTimeout(250);
-  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos,#calendario'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
+  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos,#calendario'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#dividir,#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
   await pg.click('#nav a[href="#cuentas"]'); await pg.waitForTimeout(300); ok(await pg.evaluate(()=>!document.body.classList.contains('menu-open')&&location.hash==='#cuentas'&&document.querySelector('#pageTitle').innerText==='Cuentas'),'el menú se cierra al elegir y el título cambia');
   await pg.click('#fab'); await pg.click('#fabTx'); await pg.fill('#nAmt','12.5'); await pg.fill('#nDesc','Café de prueba'); await pg.selectOption('#nCat','Restaurantes'); await pg.click('#nAdd'); await pg.waitForTimeout(200);
   ok(await pg.evaluate(()=>S.tx.some(t=>t.desc==='Café de prueba'&&t.amount===-12.5&&t.src==='manual')),'botón +: añadir un movimiento');
@@ -505,7 +511,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
     ok(r.rows>0&&r.match&&r.pressed==='true'&&one.on&&cat==='0'&&go.h==='#flujo'&&go.cat===want.cat&&go.month===want.last,'Resumen: «Adónde va tu gasto» reparte todo el gasto del mes por categoría y lleva a sus movimientos '+JSON.stringify([r,one.on,go]));
     await pg.evaluate(()=>{ flujoFilter.cat='all'; flujoFilter.month='all'; SPEND_P=12; }); }
   // Inglés en todas las pantallas
-  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','calendario','claude','ayuda','ajustes']; const bad=[];
+  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','calendario','dividir','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
   for(const v of views){ await pg.goto(U+'#'+v); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push(v+': '+m[0]); }
   for(const tab of ['resumen','perfil','optimizar','turbotax']){ await pg.goto(U+'#impuestos'); await pg.evaluate(t=>{taxSel.tab=t;route();},tab); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push('impuestos/'+tab+': '+m[0]); }
@@ -520,6 +526,49 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(500); await pg.$eval('#recBox',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/flujo-escritorio.png'}); await pg.goto(U+'#hipotecas'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/hipotecas-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300); await pg.fill('#sKey','sk-ant-test'); await pg.click('#sKeySave'); await pg.waitForTimeout(300);
   await pg.click('#sKeyTest'); await pg.waitForTimeout(600); ok(/Funciona/.test(await pg.$eval('#sKeyMsg',e=>e.innerText)),'clave de API (mock)');
+  // Dividir la cuenta: foto del ticket → Claude (simulado) → reparto a partes iguales y por consumo entre tarjetas
+  { await pg.goto(U+'#dividir'); await pg.waitForTimeout(300);
+    ok(await pg.evaluate(()=>!!$('#spCam')&&$('#spCam').getAttribute('capture')==='environment'&&!!$('#spPick')&&!!$('#spManual')&&document.querySelector('nav a.on').getAttribute('href')==='#dividir'&&$('#pageTitle').innerText==='Dividir la cuenta'),'Dividir la cuenta: foto con la cámara, elegir fotos o a mano');
+    await pg.setInputFiles('#spPick',path.join(ROOT,'icons','icon-192.png')); await pg.waitForSelector('#spNoAsk',{timeout:5000});
+    const asked=await pg.evaluate(()=>/no se guarda en MyFinZen/.test($('#modal').innerText)&&!!$('#modal .sp-thumbs img')); await pg.click('#cY'); await pg.waitForSelector('#spTicket',{timeout:8000}); await pg.waitForTimeout(200);
+    const req=RECEIPT_REQ[0]||'', rq=req?JSON.parse(req).messages[0].content:[];
+    ok(asked&&RECEIPT_REQ.length===1&&rq[0].type==='image'&&rq[0].source.type==='base64'&&rq[0].source.media_type==='image/jpeg'&&rq[0].source.data.length>200&&!/icon-192/.test(req),'pide permiso y envía a Claude solo la foto reducida en JPEG');
+    const t1=await pg.evaluate(()=>{ const s=spCurrent(), T=spTotals(s), E=spEven(s,T); return {pwn:window.__pwn,img:[...document.querySelectorAll('#app img')].every(i=>i.closest('.sp-thumbs')),n:s.items.length,cur:s.cur,people:s.people,cards:s.cards.map(c=>c.n).join(),
+      tip:T.tip,total:T.total,amts:E.rows.map(r=>r.v).join(),shown:[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join(),chk:$('#spChk').innerText,tot:$('#spTotV').innerText}; });
+    ok(t1.pwn===undefined&&t1.img&&t1.n===4&&t1.cur==='USD'&&t1.people===4&&t1.cards==='2,2'&&t1.tip===9.9&&t1.total===69.99&&t1.amts==='35,34.99'&&t1.shown==='$35.00,$34.99'&&/subtotal del ticket/.test(t1.chk)&&/Cuadra con el total/.test(t1.chk)&&!/⚠/.test(t1.chk)&&t1.tot==='$69.99','lee el ticket (sin inyecciones), comprueba subtotal y total, propina del 18 % y 4 personas con 2 tarjetas '+JSON.stringify(t1));
+    await pg.click('#spCards [data-d="1"]'); await pg.waitForTimeout(150);
+    const t2=await pg.evaluate(()=>{ const s=spCurrent(), E=spEven(s,spTotals(s)); return {people:s.people,amts:E.rows.map(r=>r.v).join(),shown:[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()}; });
+    ok(t2.people===5&&t2.amts==='42,27.99'&&t2.shown==='$42.00,$27.99','a partes iguales: una tarjeta cubre 3 personas y otra 2, y la suma da el total '+JSON.stringify(t2));
+    await pg.fill('#spFtax','6.09'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>/⚠/.test($('#spChk').innerText)&&$('#spTotV').innerText==='$70.99'&&!!document.activeElement&&document.activeElement.id==='spFtax'),'al cambiar los impuestos se recalcula sin perder el foco y avisa si no cuadra');
+    await pg.fill('#spFtax','5.09'); await pg.click('[data-tip="20"]'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>{ const T=spTotals(spCurrent()); return T.tip===11&&T.total===71.09&&S.settings.split.tip===20&&$('[data-tip="20"]').classList.contains('on'); }),'propina del 20 % sobre el subtotal (y se recuerda)');
+    await pg.click('[data-mode="items"]'); await pg.waitForTimeout(150);
+    const ids=await pg.evaluate(()=>{ const s=spCurrent(); return {it:s.items.map(i=>i.id),c:s.cards.map(c=>c.id)}; });
+    await pg.click(`[data-as="${ids.it[0]}"][data-c="${ids.c[0]}"]`); await pg.click(`[data-as="${ids.it[1]}"][data-c="${ids.c[1]}"]`); await pg.click(`[data-as="${ids.it[2]}"][data-c="*"]`); await pg.waitForTimeout(150);
+    const t3=await pg.evaluate(()=>{ const s=spCurrent(), T=spTotals(s), R=spItems(s,T), sum=R.rows.reduce((a,r)=>a+Math.round(r.v*100),0)+Math.round(R.rest.v*100);
+      return {sum,tot:Math.round(T.total*100),items:R.rows.map(r=>r.items).join(),un:R.nUn,unv:R.rest.v,res:$('#spRes').innerText,shared:s.items[2].to.length}; });
+    ok(t3.sum===t3.tot&&t3.items==='26.5,22'&&t3.un===1&&t3.unv>6.5&&t3.shared===2&&/Sin asignar/.test(t3.res)&&/Cada tarjeta paga/.test(t3.res),'por consumo: cada tarjeta paga lo suyo más su parte de impuestos y propina; lo compartido a medias; avisa de lo que falta '+JSON.stringify(t3));
+    await pg.click(`[data-spu="${ids.it[2]}"]`); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>{ const s=spCurrent(), c=s.items.filter(i=>i.name==='Cerveza Prueba'); return s.items.length===5&&c.length===2&&c.every(i=>i.qty===1&&i.price===8&&i.to.length===2); }),'una línea con 2 unidades se separa en dos productos');
+    await pg.click('#spShare'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>{ const t=$('#spTxt').innerText; return /sin cifrar/.test($('#modal').innerText)&&/Tarjeta 1: \$/.test(t)&&/Hamburguesa Prueba/.test(t)&&/Total: \$71\.09/.test(t); }),'compartir el reparto avisa de que el texto sale sin cifrar'); await pg.click('#mc');
+    if(process.env.SHOTS){ for(const [lg,w,n] of [['es',412,'dividir-movil'],['en',412,'en-dividir-movil'],['es',1200,'dividir-escritorio']]){ await pg.setViewportSize({width:w,height:900}); await pg.evaluate(l=>setLang(l),lg); await pg.waitForTimeout(250); await pg.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
+      await pg.evaluate(()=>{ spCurrent().mode='even'; route(); }); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/dividir-iguales-escritorio.png',fullPage:true}); await pg.evaluate(()=>{ spCurrent().mode='items'; }); await pg.setViewportSize({width:412,height:900}); await pg.evaluate(()=>setLang('es')); }
+    await pg.evaluate(()=>setLang('en')); await pg.waitForTimeout(200);
+    const en=await pg.evaluate(()=>{ const t=$('#app').innerText; return {m:(t.match(/\b(Añadir|Guardar|Cancelar|Borrar|Tarjeta|Productos|Propina|Impuestos|personas|Compartir|Sin asignar)\b/)||[])[0]||null,ok:/Who ordered what\?/.test(t)&&/Each card pays/.test(t)&&/Card 1/.test(t)&&$('#pageTitle').innerText==='Split the bill'}; });
+    ok(!en.m&&en.ok,'Dividir la cuenta en inglés '+JSON.stringify(en)); await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
+    await pg.waitForTimeout(400);
+    ok(!/Hamburguesa Prueba|Bistró/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v))))&&await pg.evaluate(()=>S.splits.length===1),'el ticket se guarda cifrado');
+    const san=await pg.evaluate(()=>{ const r=sanitizeSplits([{id:'s"><b>',cards:[{id:'a',n:'x'},{id:'b',n:500}],items:[{name:'<b>x',price:'5',to:['a','zz','a']},{price:'nope'}],cur:'<b>',mode:'raro',tipPct:500,people:-3},'x',null])[0], s2=sanitizeState({splits:[{cards:[]}],settings:{split:{tip:'<b>',ask:false}}});
+      return r.id==='sb'&&r.cards[0].n===1&&r.cards[1].n===99&&r.items[0].to.join()==='a'&&r.items[0].price===5&&r.items[1].price===0&&r.cur==='USD'&&r.mode==='even'&&r.tipPct===null&&r.people===1&&s2.splits.length===1&&s2.splits[0].cards.length===1&&s2.settings.split.tip===null&&s2.settings.split.ask===false; });
+    ok(san,'los tickets se validan al desbloquear y al restaurar');
+    ok(await pg.evaluate(()=>{ const n=SPLIT.img.length; splitOnLock(); return n===1&&!SPLIT.img.length&&!SPLIT.cur; }),'la foto solo vive en memoria y se descarta al bloquear');
+    await pg.goto(U+'#resumen'); await pg.waitForTimeout(100); await pg.goto(U+'#dividir'); await pg.waitForTimeout(250);
+    ok(await pg.evaluate(()=>!!document.querySelector('#spRecent [data-spo]')&&!$('#spTicket')),'los tickets anteriores se pueden volver a abrir');
+    await pg.click('#spManual'); await pg.waitForTimeout(150); await pg.fill('#spFsub','100'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.src==='manual'&&!s.items.length&&$('#spTotV').innerText==='$120.00'&&[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()==='$60.00,$60.00'; }),'a mano: subtotal, propina recordada y dos tarjetas a partes iguales');
+    await pg.evaluate(()=>{ S.splits=[]; SPLIT.cur=null; save(); }); }
   // Seguridad: CSP sin scripts incrustados, respuesta de Claude manipulada, copia manipulada, datos de noticias, utilidades
   ok(await pg.evaluate(()=>{ const c=document.querySelector('meta[http-equiv="Content-Security-Policy"]').content; return /script-src 'self';/.test(c)&&!/unsafe-inline[^;]*;\s*style/.test(c.split('script-src')[1].split(';')[0]+';style')&&![...document.scripts].some(x=>!x.src); }),'CSP sin scripts incrustados');
   await pg.goto(U+'#importar'); await pg.waitForTimeout(200); await pg.setInputFiles('#fPDF',path.join(FX,'bank.pdf')); await pg.waitForTimeout(1500); await pg.click('#gAI'); await pg.waitForTimeout(200); await pg.click('#cY'); await pg.waitForTimeout(800);
