@@ -1,14 +1,14 @@
 {
-  "name": "Dividir la cuenta",
-  "short_name": "Dividir",
-  "description": "Reparte el ticket del restaurante entre tarjetas. La foto se lee en tu dispositivo y tus datos se guardan cifrados.",
+  "name": "WhosBill",
+  "short_name": "WhosBill",
+  "description": "Quién paga qué en el ticket del restaurante: por tarjeta y por persona. La foto se lee en tu dispositivo y tus datos se guardan cifrados.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#f4f4f1",
-  "theme_color": "#0f8b7a",
+  "theme_color": "#5b4cf0",
   "lang": "es",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

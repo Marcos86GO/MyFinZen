@@ -1,13 +1,13 @@
-// MyFinZen — Lector local de tickets de restaurante: todo ocurre en el dispositivo, sin enviar la foto a ningún sitio.
+// WhosBill — Lector local de tickets de restaurante: todo ocurre en el dispositivo, sin enviar la foto a ningún sitio.
 //   1. ticketPrep: busca el papel en la foto, lo recorta, lo escala y lo pasa a blanco y negro con un umbral
 //      adaptativo (las sombras del móvil sobre el ticket no tapan el texto).
-//   2. ocrText: reconocimiento de texto con Tesseract (vendor/ocr, Apache 2.0) en un worker. Se descarga la primera
+//   2. ocrText: reconocimiento de texto con Tesseract (whosbill/vendor/ocr, Apache 2.0) en un worker. Se descarga la primera
 //      vez (~7 MB) y el service worker lo guarda en su propia caché, que no se borra al actualizar la app.
 //   3. parseReceipt: entiende el texto (productos, subtotal, descuento, impuestos, servicio, propina y total).
 // Se carga antes de split.js. parseReceipt no usa el DOM (se prueba aparte con textos inventados).
 "use strict";
 const OCR={w:null,p:null,log:null,idle:null};
-const OCR_BASE=(()=>{ try{ return new URL('vendor/ocr/',document.currentScript.src).href; }catch(e){ return 'vendor/ocr/'; } })();   // junto a ticket.js, se cargue desde donde se cargue
+const OCR_BASE=(()=>{ try{ return new URL('../vendor/ocr/',document.currentScript.src).href; }catch(e){ return 'whosbill/vendor/ocr/'; } })();   // whosbill/vendor/ocr, se cargue desde donde se cargue
 // ¿Admite el navegador WebAssembly SIMD? (el motor que se incluye lo necesita: Chrome 91+, Safari 16.4+, Firefox 89+)
 function ocrSimd(){ try{ return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11])); }catch(e){ return false; } }
 function ocrLib(){ if(window.Tesseract) return Promise.resolve();

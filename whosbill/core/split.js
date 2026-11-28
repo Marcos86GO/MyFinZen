@@ -1,7 +1,8 @@
-// MyFinZen — Dividir la cuenta: lee la foto del ticket de un restaurante en el dispositivo (ticket.js) y reparte el total entre
+// WhosBill — módulo: lee la foto del ticket de un restaurante en el dispositivo (ticket.js) y reparte el total entre
 // varias tarjetas de crédito, a partes iguales (según cuántas personas cubre cada tarjeta) o por persona (lo que pidió cada una).
 // Todo es local: la foto no sale del dispositivo y todo lo leído se puede corregir a mano.
-// Lo comparten MyFinZen (se carga después de app.js y ticket.js) y la app independiente dividir/ (después de dividir/app.js).
+// Es el mismo código para la app independiente (whosbill/, se carga después de whosbill/app.js) y para MyFinZen, que lo integra
+// (index.html lo carga después de app.js). Ver whosbill/README.md: interfaz que da la app anfitriona.
 // La app anfitriona da: S, save, VIEWS, L, LANG, fmt, esc, num, numStrict, r2, uid, today, isoDate, dLabel, str, arr, obj, cleanId,
 // ic, helpBtn, openModal, closeModal, confirmModal, toast y $; si define spHostActive(), dice cuándo se ve esta pantalla.
 "use strict";
@@ -24,7 +25,7 @@ const SPLIT={cur:null,img:[],busy:false,err:null,prog:null,tab:'new',hf:null,hn:
 const SPLIT_MAX=1000;   // historial: como mucho los 1.000 tickets más recientes
 const SPLIT_PX=1568, SPLIT_TIPS=[0,15,18,20,22], SPLIT_CURS=['USD','EUR','MXN','GBP','CAD','JPY'];
 function spCfg(){ const s=S.settings; s.split=sanitizeSplitPrefs(s.split); return s.split; }
-const spHere=()=>typeof spHostActive==='function'?spHostActive():location.hash==='#dividir';
+const spHere=()=>typeof spHostActive==='function'?spHostActive():location.hash==='#whosbill';
 /* ---------- Validación (al desbloquear y al restaurar; la usan sanitizeState de MyFinZen y la app independiente) ---------- */
 const spInt=(x,lo,hi,d)=>Math.max(lo,Math.min(hi,Math.round(numStrict(x)||d)));
 function sanitizeSplitPrefs(c){ c=obj(c); const t=numStrict(c.tip);
@@ -113,7 +114,7 @@ function sanitizeTicket(res){ res=obj(res); const n=(x,lo,hi)=>{ const y=numStri
   return {place:str(res.place,80).trim(),date:isoDate(res.date),cur:/^[A-Z]{3}$/.test(cur)?cur:'USD',guests:g>=1&&g<=99?Math.round(g):null,
     items:arr(res.items).map(i=>{ i=obj(i); return {name:str(i.name,80).trim(),qty:Math.max(1,Math.min(999,Math.round(numStrict(i.qty)||1))),price:n(i.price,-1e5,1e5)}; }).filter(i=>i.name&&i.price!=null).slice(0,300),
     sub:n(res.subtotal,0,1e6),disc:Math.abs(n(res.discount,-1e6,1e6)||0),tax:n(res.tax,0,1e6)||0,svc:n(res.service,0,1e6)||0,tip:n(res.tip,0,1e6),tot:n(res.total,0,1e6)}; }
-const spBack=()=>{ if(S&&spHere()) VIEWS.dividir($('#app')); };
+const spBack=()=>{ if(S&&spHere()) VIEWS.whosbill($('#app')); };
 // Lee las fotos EN EL DISPOSITIVO (ticket.js: preparar la imagen, Tesseract y parseReceipt). Nada sale del dispositivo.
 async function spRead(files){ files=[...(files||[])].filter(f=>f&&f.size>0&&(/^image\//.test(f.type||'')||/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name||''))).slice(0,3); if(!files.length) return;
   const imgs=[]; try{ for(const f of files) imgs.push(await spShrink(f)); }catch(e){ imgs.forEach(i=>URL.revokeObjectURL(i.url)); toast(L('No he podido abrir la foto. Prueba con otra en JPEG o PNG.','I couldn\'t open the photo. Try another one in JPEG or PNG.')); return; }
@@ -149,14 +150,14 @@ function spTabsHTML(){ const n=spHist().length;
   return `<div class="ntabs sp-tabs" role="tablist"><button role="tab" data-sptab="new" class="${SPLIT.tab!=='hist'?'on':''}" aria-selected="${SPLIT.tab!=='hist'}">${L('Nuevo ticket','New receipt')}</button><button role="tab" data-sptab="hist" class="${SPLIT.tab==='hist'?'on':''}" aria-selected="${SPLIT.tab==='hist'}">${L('Historial','History')}${n?` <i>${n}</i>`:''}</button></div>`; }
 const spStep=(k,v,lbl)=>`<span class="sp-step" role="group" aria-label="${esc(lbl)}"><button class="sm" data-st="${k}" data-d="-1" aria-label="${L('Menos','Fewer')}">−</button><b>${v}</b><button class="sm" data-st="${k}" data-d="1" aria-label="${L('Más','More')}">+</button></span>`;
 function spStartHTML(){
-  return `<div class="card" id="spStart">${helpBtn('split')}<h2>${L('Dividir la cuenta','Split the bill')}</h2>
+  return `<div class="card" id="spStart">${helpBtn('split')}<h2>${L('Reparte un ticket','Split a receipt')}</h2>
     <p class="sub">${L('Haz una foto del ticket del restaurante y reparte el total entre las tarjetas: a partes iguales o por persona, según lo que pidió cada una.','Take a photo of the restaurant receipt and split the total between the cards: evenly or by person, according to what each one ordered.')}</p>
     <div class="choice">
       <label class="btn chl"><span class="av" style="--h:215">${ic('camera')}</span><span><b>${L('Hacer una foto del ticket','Take a photo of the receipt')}</b><span class="muted">${L('La app lee los productos, los impuestos y el total en tu dispositivo','The app reads the items, tax and total on your device')}</span></span><input type="file" id="spCam" accept="image/*" capture="environment"></label>
       <label class="btn chl"><span class="av" style="--h:262">${ic('upload')}</span><span><b>${L('Elegir fotos','Choose photos')}</b><span class="muted">${L('Del carrete o de tus archivos; hasta 3 si el ticket es largo','From your gallery or files; up to 3 if the receipt is long')}</span></span><input type="file" id="spPick" accept="image/*" multiple></label>
       <button id="spManual"><span class="av" style="--h:152">${ic('edit')}</span><span><b>${L('Escribirlo a mano','Type it by hand')}</b><span class="muted">${L('Sin foto: el total o los productos','No photo: the total or the items')}</span></span></button></div>
     <p class="muted" style="margin:12px 2px 0">${L('La foto se lee en este dispositivo y no sale de él. La primera vez se descarga el lector de tickets (unos 7 MB); después funciona también sin conexión.','The photo is read on this device and never leaves it. The first time, the receipt reader is downloaded (about 7 MB); after that it also works offline.')}</p>
-    ${typeof spHostActive==='function'?'':`<p class="muted" style="margin:8px 2px 0">${L('También existe como app independiente, con sus propios usuarios, para quien no use MyFinZen:','It also exists as a standalone app, with its own users, for people who don\'t use MyFinZen:')} <a href="dividir/" id="spStandalone" target="_blank" rel="noopener">${L('abrir Dividir la cuenta','open Split the bill')}</a>.</p>`}
+    ${typeof spHostActive==='function'?'':`<p class="muted" style="margin:8px 2px 0">${L('WhosBill también es una app independiente, con sus propios usuarios, para quien no use MyFinZen:','WhosBill is also a standalone app, with its own users, for people who don\'t use MyFinZen:')} <a href="whosbill/" id="spStandalone" target="_blank" rel="noopener">${L('abrir WhosBill','open WhosBill')}</a>.</p>`}
 </div>`; }
 // Preferencias del reparto (para los tickets nuevos)
 const spModeL=m=>m==='items'?L('por persona','by person'):L('a partes iguales','evenly');
@@ -260,7 +261,7 @@ const spIaHTML=it=>`${it.qty>1?`<button class="sm ghost" data-spu="${esc(it.id)}
 function spTicketHTML(s){ const T=spTotals(s), F=n=>esc(spFmt(n,s.cur)), curs=SPLIT_CURS.includes(s.cur)?SPLIT_CURS:[...SPLIT_CURS,s.cur];
   const line=(lbl,id,v)=>`<label class="sp-line"><span>${lbl}</span><input id="spF${id}" data-f="${id}" inputmode="decimal" value="${esc(spIn(v))}" placeholder="0.00"></label>`;
   return `<div class="card" id="spTicket">${helpBtn('split_ticket')}
-    <div class="row" style="padding-right:30px;margin-bottom:6px"><h2 style="margin:0">${L('Ticket','Receipt')}</h2><button class="sm ghost" id="spHistB">${L('Historial','History')}</button><button class="sm" id="spNewB">${ic('plus')}${L('Otro ticket','Another receipt')}</button></div>
+    <div class="row" style="padding-right:30px;margin-bottom:6px;flex-wrap:nowrap"><h2 style="margin:0;min-width:0">${L('Ticket','Receipt')}</h2><button class="sm ghost" id="spHistB">${L('Historial','History')}</button><button class="sm" id="spNewB">${ic('plus')}${L('Otro ticket','Another receipt')}</button></div>
     ${SPLIT.err?`<div class="alert warn"><span class="ic">!</span><div>${esc(SPLIT.err)}</div></div>`:''}
     <div id="spWarn">${spWarnHTML(s,T)}</div>
     ${SPLIT.img.length?`<details class="sp-photo" ${s.items.length?'':'open'}><summary>${L('Ver la foto','See the photo')}</summary><div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="${L('Foto del ticket','Receipt photo')}">`).join('')}</div></details>`:''}
@@ -358,10 +359,10 @@ function spShare(s){ const txt=spShareText(s), can=typeof navigator.share==='fun
   $('#spCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(txt); toast(L('Copiado','Copied')); }catch(e){ toast(L('No se ha podido copiar','Couldn\'t copy')); } };
   if(can) $('#spSh').onclick=async()=>{ try{ await navigator.share({text:txt}); closeModal(); }catch(e){} }; }
 
-VIEWS.dividir=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length) spDropImgs();
+VIEWS.whosbill=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length) spDropImgs();
   el.innerHTML=`<div class="stack">${SPLIT.busy?`<div class="card" id="spBusy"><h2>${L('Leyendo el ticket…','Reading the receipt…')}</h2><p class="muted" id="spProg" style="margin:0">${esc(spProgText())}</p><div class="prog"><span id="spBar" style="width:0"></span></div>${SPLIT.img.length?`<div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="">`).join('')}</div>`:''}</div>`
     :s?spTicketHTML(s)+spSplitHTML(s):spTabsHTML()+(SPLIT.tab==='hist'?spHistHTML():spStartHTML()+spPrefsHTML())}</div>`;
-  const redraw=()=>{ if(S&&spHere()) VIEWS.dividir($('#app')); };
+  const redraw=()=>{ if(S&&spHere()) VIEWS.whosbill($('#app')); };
   const files=e=>{ const fs=[...e.target.files]; e.target.value=''; spRead(fs); };
   if($('#spCam')) $('#spCam').onchange=files; if($('#spPick')) $('#spPick').onchange=files;
   if($('#spManual')) $('#spManual').onclick=()=>{ spDropImgs(); SPLIT.err=null; spNew({},'manual'); redraw(); };

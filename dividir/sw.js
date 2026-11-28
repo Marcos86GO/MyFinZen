@@ -1,42 +1,17 @@
-// Dividir la cuenta (app independiente): guarda la app para usarla sin conexión. Solo código e iconos, nunca datos.
-// Comparte archivos con MyFinZen (../split.js, ../ticket.js, ../styles.css, ../help.js): si cambian, sube VERSION aquí
-// y en el sw.js de MyFinZen.
-const VERSION='d1.3.0';
-const CACHE = 'mfz-dividir-' + VERSION;
-// El lector de tickets (~7 MB) va en la misma caché que usa MyFinZen: se descarga una sola vez para las dos apps
-const OCR_CACHE = 'mfz-ocr-7.0.0';
-const ASSETS = [
-  './',
-  './index.html',
-  './app.js',
-  './style.css',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-192-maskable.png',
-  './icons/icon-512-maskable.png',
-  './icons/apple-touch-icon.png',
-  '../styles.css',
-  '../help.js',
-  '../ticket.js',
-  '../split.js'
-];
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))));
-});
+// «Dividir la cuenta» (/dividir/) ahora es WhosBill (/whosbill/). Este service worker sustituye al de la app antigua en los
+// dispositivos que la tenían instalada: borra su caché, se da de baja y lleva las ventanas abiertas a WhosBill.
+// (Los usuarios y tickets se conservan: WhosBill los trae de la base 'mfz-dividir' al abrirse.)
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k.startsWith('mfz-dividir-') && k !== CACHE).map(k => caches.delete(k))))
-    .then(() => self.clients.claim()));
+  e.waitUntil((async () => {
+    for (const k of await caches.keys()) if (k.startsWith('mfz-dividir-')) await caches.delete(k);
+    await self.clients.claim();
+    const to = new URL('../whosbill/', self.registration.scope).href;
+    for (const c of await self.clients.matchAll({ type: 'window' })) { try { await c.navigate(to); } catch (err) {} }
+    await self.registration.unregister();
+  })());
 });
-self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipWaiting(); });
+// Mientras tanto, cualquier página de /dividir/ va a WhosBill
 self.addEventListener('fetch', e => {
-  const req = e.request, url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.includes('/vendor/ocr/')) {
-    e.respondWith(caches.open(OCR_CACHE).then(c => c.match(req).then(r => r || fetch(req).then(res => { if (res.ok) c.put(req, res.clone()); return res; }))));
-    return;
-  }
-  if (req.mode === 'navigate') { e.respondWith(caches.open(CACHE).then(c => c.match('./index.html')).then(r => r || fetch(req))); return; }
-  e.respondWith(caches.open(CACHE).then(c => c.match(req)).then(r => r || fetch(req)));
+  if (e.request.mode === 'navigate') e.respondWith(Response.redirect(new URL('../whosbill/', self.registration.scope).href, 302));
 });
