@@ -534,8 +534,8 @@ const RECEIPT_REQ=[];
     await pg.setInputFiles('#spPick',path.join(FX,'receipt.jpg')); await pg.waitForSelector('#spTicket',{timeout:120000}); await pg.waitForTimeout(200); pg.off('request',onReq);
     const loc=await pg.evaluate(async()=>{ const s=spCurrent(); const dbs=indexedDB.databases?(await indexedDB.databases()).map(d=>d.name):[];
       const c=await caches.open('mfz-ocr-7.0.0'), cached=!!(await c.match(new URL('vendor/ocr/eng.traineddata.gz',location.href).href));
-      return {place:s.place,date:s.date,people:s.people,cards:s.cards.map(c=>c.n).join(),items:s.items.map(i=>i.qty+'|'+i.name+'|'+i.price).join(';'),sub:s.sub,tax:s.tax,tot:s.tot,chk:$('#spChk').innerText,ai:!!$('#spAI'),err:SPLIT.err,dbs,cached,src:s.src}; });
-    ok(!ext.length&&!RECEIPT_REQ.length&&loc.items==='2|Fish Tacos|18;1|Veggie Burger|14.5;3|Lemonade|9;1|Garlic Fries|6.75;1|Churros|7.25'&&loc.sub===55.5&&loc.tax===4.3&&loc.tot===59.8&&loc.place==='Prueba Bistro'&&loc.date==='2026-11-20'&&loc.people===3&&loc.cards==='2,1'&&loc.src==='photo'&&/subtotal del ticket/.test(loc.chk)&&/Cuadra con el total/.test(loc.chk)&&!/⚠/.test(loc.chk)&&!loc.err,
+      return {place:s.place,date:s.date,people:s.people,cards:s.cards.map(c=>c.n).join(),items:s.items.map(i=>i.qty+'|'+i.name+'|'+i.price).join(';'),sub:s.sub,tax:s.tax,tot:s.tot,chk:$('#spChk').innerText,ai:!!$('#spAI'),err:SPLIT.err,dbs,cached,src:s.src,warn:!!$('#spWarn .alert')}; });
+    ok(!ext.length&&!RECEIPT_REQ.length&&loc.items==='2|Fish Tacos|18;1|Veggie Burger|14.5;3|Lemonade|9;1|Garlic Fries|6.75;1|Churros|7.25'&&loc.sub===55.5&&loc.tax===4.3&&loc.tot===59.8&&loc.place==='Prueba Bistro'&&loc.date==='2026-11-20'&&loc.people===3&&loc.cards==='2,1'&&loc.src==='photo'&&/subtotal del ticket/.test(loc.chk)&&/Cuadra con el total/.test(loc.chk)&&!/⚠/.test(loc.chk)&&!loc.err&&!loc.warn,
       'lector local: lee la foto del ticket en el dispositivo (productos, unidades, subtotal, impuestos, total, comensales y fecha) sin enviar nada fuera '+JSON.stringify([loc,ext.slice(0,3)]));
     ok(loc.cached&&!loc.dbs.some(n=>n&&n!=='misfinanzas'),'el lector se guarda en la caché del service worker para usarlo sin conexión y no escribe en IndexedDB '+JSON.stringify(loc.dbs));
     const pr=await pg.evaluate(()=>{ const es=parseReceipt('RESTAURANTE EL PRUEBA\nC/ Mayor 12, Madrid\nMesa 4  Comensales: 3\nFecha: 27/11/2026 21:40\n2 Caña                    5,00\n1 Tortilla española       9,50\n1 Pulpo a la gallega     18,90\n3 Café solo               4,50\nBase imponible           34,45\nIVA 10%                   3,45\nTOTAL                    37,90 €\nTarjeta                  37,90');
@@ -562,7 +562,12 @@ const RECEIPT_REQ=[];
     const t2=await pg.evaluate(()=>{ const s=spCurrent(), E=spEven(s,spTotals(s)); return {people:s.people,amts:E.rows.map(r=>r.v).join(),shown:[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()}; });
     ok(t2.people===5&&t2.amts==='42,27.99'&&t2.shown==='$42.00,$27.99','a partes iguales: una tarjeta cubre 3 personas y otra 2, y la suma da el total '+JSON.stringify(t2));
     await pg.fill('#spFtax','6.09'); await pg.waitForTimeout(150);
-    ok(await pg.evaluate(()=>/⚠/.test($('#spChk').innerText)&&$('#spTotV').innerText==='$70.99'&&!!document.activeElement&&document.activeElement.id==='spFtax'),'al cambiar los impuestos se recalcula sin perder el foco y avisa si no cuadra');
+    ok(await pg.evaluate(()=>/⚠/.test($('#spChk').innerText)&&/Revisa el ticket/.test($('#spWarn').innerText)&&/60\.09/.test($('#spWarn').innerText)&&$('#spTotV').innerText==='$70.99'&&!!document.activeElement&&document.activeElement.id==='spFtax'),'al cambiar los impuestos se recalcula sin perder el foco y avisa arriba de lo que no cuadra');
+    await pg.fill('#spFptot','61.09'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>spCurrent().tot===61.09&&!$('#spWarn .alert')&&!/⚠/.test($('#spChk').innerText)),'el total impreso también se puede corregir y el aviso desaparece al cuadrar');
+    await pg.fill('#spFptot','60.09'); await pg.click('#spAddIt'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>/1 producto no tiene nombre o importe/.test($('#spWarn').innerText)),'avisa de un producto sin nombre ni importe');
+    await pg.evaluate(()=>{ const s=spCurrent(); s.items=s.items.filter(i=>i.name); save(); route(); }); await pg.waitForTimeout(150);
     await pg.fill('#spFtax','5.09'); await pg.click('[data-tip="20"]'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const T=spTotals(spCurrent()); return T.tip===11&&T.total===71.09&&S.settings.split.tip===20&&$('[data-tip="20"]').classList.contains('on'); }),'propina del 20 % sobre el subtotal (y se recuerda)');
     await pg.click('[data-mode="items"]'); await pg.waitForTimeout(150);

@@ -131,12 +131,24 @@ function spCheckHTML(s,T){ const F=n=>esc(spFmt(n,s.cur)), out=[];
   if(s.tot!=null) out.push(Math.abs(T.printed-s.tot)<0.015||Math.abs(T.total-s.tot)<0.015?`<span class="pos">✓ ${L(`Cuadra con el total del ticket (${F(s.tot)}).`,`It matches the receipt total (${F(s.tot)}).`)}</span>`
     :`<span class="neg">⚠ ${L(`El ticket dice ${F(s.tot)} de total y la suma da ${F(T.printed)}: revisa los impuestos, los cargos y el descuento.`,`The receipt says ${F(s.tot)} in total and the sum is ${F(T.printed)}: check the tax, charges and discount.`)}</span>`);
   return out.join('<br>'); }
+// Lo que no cuadra o no se ha reconocido: se avisa arriba del ticket y todo se puede corregir (se recalcula al momento)
+function spIssues(s,T){ const F=n=>spFmt(n,s.cur), out=[], photo=s.src==='photo';
+  if(s.items.length&&s.sub!=null&&Math.abs(T.items-s.sub)>=0.015) out.push(L(`Los productos suman ${F(T.items)} y el subtotal del ticket es ${F(s.sub)}: falta algún producto o hay un importe mal leído.`,`The items add up to ${F(T.items)} and the receipt subtotal is ${F(s.sub)}: an item is missing or an amount was misread.`));
+  if(s.tot!=null&&Math.abs(T.printed-s.tot)>=0.015&&Math.abs(T.total-s.tot)>=0.015) out.push(L(`El total del ticket es ${F(s.tot)} y la suma da ${F(T.printed)}: revisa los impuestos, el cargo de servicio y el descuento.`,`The receipt total is ${F(s.tot)} and the sum is ${F(T.printed)}: check the tax, service charge and discount.`));
+  if(photo&&s.items.length&&s.sub==null) out.push(L('No he reconocido el subtotal del ticket: escríbelo en «Subtotal del ticket» para comprobar los productos.','I couldn\'t recognize the receipt subtotal: type it in "Receipt subtotal" to check the items.'));
+  if(photo&&s.tot==null&&(s.items.length||s.sub!=null)) out.push(L('No he reconocido el total del ticket: escríbelo en «Total del ticket» para comprobar la suma.','I couldn\'t recognize the receipt total: type it in "Receipt total" to check the sum.'));
+  if(photo&&!s.items.length&&s.sub==null&&s.tot==null) out.push(L('No he reconocido ningún importe: añade los productos o escribe el subtotal.','I couldn\'t recognize any amount: add the items or type the subtotal.'));
+  const bad=s.items.filter(i=>!i.name.trim()||!i.price).length; if(bad) out.push(L(`${bad} ${bad===1?'producto no tiene':'productos no tienen'} nombre o importe.`,`${bad} item${bad===1?' has':'s have'} no name or amount.`));
+  return out; }
+function spWarnHTML(s,T){ const I=spIssues(s,T); if(!I.length) return '';
+  return `<div class="alert warn"><span class="ic">!</span><div><b>${L('Revisa el ticket: la lectura no cuadra','Check the receipt: the reading doesn\'t add up')}</b><ul class="sp-iss">${I.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><span class="muted">${L('Toca cualquier dato para corregirlo; las cifras se recalculan al momento. Compara con la foto.','Tap any figure to fix it; the amounts update instantly. Compare with the photo.')}</span></div></div>`; }
 function spTicketHTML(s){ const T=spTotals(s), F=n=>esc(spFmt(n,s.cur)), curs=SPLIT_CURS.includes(s.cur)?SPLIT_CURS:[...SPLIT_CURS,s.cur];
   const line=(lbl,id,v)=>`<label class="sp-line"><span>${lbl}</span><input id="spF${id}" data-f="${id}" inputmode="decimal" value="${esc(spIn(v))}" placeholder="0.00"></label>`;
   return `<div class="card" id="spTicket">${helpBtn('split_ticket')}
     <div class="row" style="padding-right:30px;margin-bottom:6px"><h2 style="margin:0">${L('Ticket','Receipt')}</h2><button class="sm" id="spNewB">${ic('plus')}${L('Otro ticket','Another receipt')}</button></div>
     ${SPLIT.err?`<div class="alert warn"><span class="ic">!</span><div>${esc(SPLIT.err)}</div></div>`:''}
-    ${SPLIT.img.length&&S.secret&&S.secret.apiKey&&(!s.items.length||/⚠/.test(spCheckHTML(s,T)))?`<p style="margin:0 0 8px"><button class="sm ghost" id="spAI">${ic('spark')}${L('Leer con Claude','Read with Claude')}</button> <span class="muted" style="font-size:12.5px">${L('si la lectura no cuadra; envía la foto a Anthropic','if the reading doesn\'t add up; sends the photo to Anthropic')}</span></p>`:''}
+    <div id="spWarn">${spWarnHTML(s,T)}</div>
+    ${SPLIT.img.length&&S.secret&&S.secret.apiKey&&spIssues(s,T).length?`<p style="margin:0 0 8px"><button class="sm ghost" id="spAI">${ic('spark')}${L('Leer con Claude','Read with Claude')}</button> <span class="muted" style="font-size:12.5px">${L('si la lectura no cuadra; envía la foto a Anthropic','if the reading doesn\'t add up; sends the photo to Anthropic')}</span></p>`:''}
     ${SPLIT.img.length?`<details class="sp-photo" ${s.items.length?'':'open'}><summary>${L('Ver la foto','See the photo')}</summary><div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="${L('Foto del ticket','Receipt photo')}">`).join('')}</div></details>`:''}
     <div class="row"><label class="f">${L('Restaurante','Restaurant')}<input id="spPlace" data-f="place" maxlength="80" value="${esc(s.place)}" placeholder="${L('Nombre (opcional)','Name (optional)')}"></label>
       <label class="f" style="flex:0 1 150px;min-width:130px">${L('Fecha','Date')}<input type="date" id="spDate" data-f="date" value="${esc(s.date)}"></label>
@@ -156,7 +168,9 @@ function spTicketHTML(s){ const T=spTotals(s), F=n=>esc(spFmt(n,s.cur)), curs=SP
       <div class="nchips" id="spTips">${SPLIT_TIPS.map(p=>`<button data-tip="${p}" class="${s.tipPct===p?'on':''}" aria-pressed="${s.tipPct===p}">${p?p+' %':L('Sin propina','No tip')}</button>`).join('')}
         <input id="spTipAmt" data-f="tipAmt" inputmode="decimal" class="sp-tipin ${s.tipPct==null?'on':''}" value="${s.tipPct==null?esc(spIn(s.tip)):''}" placeholder="${L('Otra cantidad','Other amount')}" aria-label="${L('Propina en importe','Tip amount')}"></div>
       <div class="sp-line sp-total"><span>${L('Total a pagar','Total to pay')}</span><b id="spTotV">${F(T.total)}</b></div>
-      <div id="spChk" class="sp-chk">${spCheckHTML(s,T)}</div></div></div>`; }
+      <div id="spChk" class="sp-chk">${spCheckHTML(s,T)}</div>
+      <div class="sp-print"><span class="muted">${L('Como dice el ticket (para comprobar la lectura)','As printed on the receipt (to check the reading)')}</span>
+        ${s.items.length?line(L('Subtotal del ticket','Receipt subtotal'),'psub',s.sub):''}${line(L('Total del ticket','Receipt total'),'ptot',s.tot)}</div></div></div>`; }
 function spEvenRes(s,E){ const F=n=>esc(spFmt(n,s.cur));
   return `${E.over?`<div class="alert warn"><span class="ic">!</span><div>${L(`Las tarjetas cubren ${E.N} personas y sois ${s.people}: reparto entre ${E.N}.`,`The cards cover ${E.N} people and you are ${s.people}: splitting among ${E.N}.`)}</div></div>`:''}
     ${E.restN>0?`<div class="srow sp-rest"><span class="av round" style="background:var(--warn);color:#1a1a19">?</span><span class="lm"><b>${L('Sin tarjeta','No card')}</b><span>${E.restN} ${E.restN===1?L('persona: efectivo u otro pago','person: cash or another payment'):L('personas: efectivo u otro pago','people: cash or another payment')}</span></span><b>${F(E.rest)}</b></div>`:''}
@@ -187,7 +201,7 @@ function spSplitHTML(s){ const T=spTotals(s), E=spEven(s,T);
     <div id="spRes">${s.mode==='even'?spEvenRes(s,E):spItemsRes(s,spItems(s,T))}</div>
     <div class="row" style="margin-top:14px"><button class="pri" id="spShare">${L('Compartir el reparto','Share the split')}</button></div></div>`; }
 function spPaint(s){ const T=spTotals(s), F=n=>esc(spFmt(n,s.cur)), set=(id,h)=>{ const e=document.getElementById(id); if(e) e.innerHTML=h; };
-  set('spSubV',F(T.base)); set('spTipV',F(T.tip)); set('spTotV',F(T.total)); set('spChk',spCheckHTML(s,T));
+  set('spSubV',F(T.base)); set('spTipV',F(T.tip)); set('spTotV',F(T.total)); set('spChk',spCheckHTML(s,T)); set('spWarn',spWarnHTML(s,T));
   if(s.mode==='even'){ const E=spEven(s,T); E.rows.forEach(r=>{ const e=document.querySelector(`[data-amt="${CSS.escape(r.id)}"]`); if(e) e.textContent=spFmt(r.v,s.cur); }); set('spRes',spEvenRes(s,E)); }
   else { set('spAssign',spAssignHTML(s)); set('spRes',spItemsRes(s,spItems(s,T))); } }
 // Texto para mandar a quien paga: sale de la app sin cifrar, así que se enseña antes
@@ -199,7 +213,7 @@ function spShareText(s){ const T=spTotals(s), F=n=>spFmt(n,s.cur), out=[[s.place
     if(R.nUn) out.push(`${L('Sin asignar','Unassigned')}: ${F(R.rest.v)} — ${R.rest.names.join(', ')}`); }
   return out.join('\n'); }
 function spShare(s){ const txt=spShareText(s), can=typeof navigator.share==='function';
-  openModal(`<h2>${L('Compartir el reparto','Share the split')}</h2><p class="muted">${L('Este texto sale de MyFinZen sin cifrar. Compártelo solo con quien vaya a pagar.','This text leaves MyFinZen unencrypted. Share it only with whoever is paying.')}</p><pre id="spTxt">${esc(txt)}</pre>
+  openModal(`<h2>${L('Compartir el reparto','Share the split')}</h2>${spIssues(s,spTotals(s)).length?`<div class="alert warn"><span class="ic">!</span><div>${L('El ticket todavía no cuadra: revisa los importes antes de compartir el reparto.','The receipt still doesn\'t add up: check the amounts before sharing the split.')}</div></div>`:''}<p class="muted">${L('Este texto sale de MyFinZen sin cifrar. Compártelo solo con quien vaya a pagar.','This text leaves MyFinZen unencrypted. Share it only with whoever is paying.')}</p><pre id="spTxt">${esc(txt)}</pre>
     <div class="row" style="margin-top:12px"><button id="mc">${L('Cerrar','Close')}</button><button id="spCopy">${L('Copiar','Copy')}</button>${can?`<button class="pri" id="spSh">${L('Compartir','Share')}</button>`:''}</div>`);
   $('#mc').onclick=closeModal;
   $('#spCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(txt); toast(L('Copiado','Copied')); }catch(e){ toast(L('No se ha podido copiar','Couldn\'t copy')); } };
@@ -224,6 +238,7 @@ VIEWS.dividir=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length)
   root.addEventListener('input',e=>{ const t=e.target, f=t.dataset.f;
     if(f==='place') s.place=t.value.slice(0,80); else if(f==='date'){ if(isoDate(t.value)) s.date=t.value; }
     else if(f==='tipAmt'){ s.tipPct=null; s.tip=Math.max(0,spNum(t.value)); root.querySelectorAll('#spTips [data-tip]').forEach(b=>{ b.classList.remove('on'); b.setAttribute('aria-pressed','false'); }); t.classList.add('on'); }
+    else if(f==='psub'||f==='ptot'){ const v=t.value.trim(); s[f==='psub'?'sub':'tot']=v?Math.max(0,spNum(v)):null; }
     else if(['sub','disc','tax','svc'].includes(f)) s[f]=f==='sub'?(t.value.trim()?Math.max(0,spNum(t.value)):null):Math.max(0,spNum(t.value));
     else if(t.dataset.it){ const it=s.items.find(x=>x.id===t.dataset.it); if(!it) return; const k=t.dataset.k;
       if(k==='name') it.name=t.value.slice(0,80); else if(k==='qty') it.qty=Math.max(1,Math.min(999,parseInt(t.value)||1)); else if(k==='price') it.price=spNum(t.value); }
