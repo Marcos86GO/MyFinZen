@@ -4,7 +4,7 @@
 // Uso: npm i && npx playwright install chromium && npm run fixtures && npm test
 const {chromium}=require('playwright');const http=require('http');const fs=require('fs');const path=require('path');
 const ROOT=path.resolve(__dirname,'..'), FX=path.join(__dirname,'fixtures'), PORT=8899;
-const types={'.html':'text/html','.js':'application/javascript','.png':'image/png','.webmanifest':'application/manifest+json'};
+const types={'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.jpg':'image/jpeg','.webmanifest':'application/manifest+json'};
 const srv=http.createServer((q,r)=>{let f=decodeURIComponent(q.url.split('?')[0]);if(f.endsWith('/'))f+='index.html';const fp=path.join(ROOT,f);if(!fp.startsWith(ROOT)||!fs.existsSync(fp)){r.writeHead(404);return r.end();}r.writeHead(200,{'content-type':types[path.extname(fp)]||'text/plain'});fs.createReadStream(fp).pipe(r);}).listen(PORT);
 let failed=0; const ok=(c,m)=>{ console.log((c?'✓ ':'✗ ')+m); if(!c) failed++; };
 // Respuesta "envenenada" de Claude, como si el texto de un PDF hubiera intentado manipularla
@@ -526,6 +526,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
   await pg.click('#sKeyTest'); await pg.waitForTimeout(600); ok(/Funciona/.test(await pg.$eval('#sKeyMsg',e=>e.innerText)),'clave de API (mock)');
   // Dividir la cuenta: foto del ticket → lector local → reparto a partes iguales y por consumo entre tarjetas (todo en el dispositivo)
   { const anth0=ANTH; await pg.goto(U+'#dividir'); await pg.waitForTimeout(300);
+    ok(await pg.evaluate(()=>!!$('#spPrefs')&&$('#spStandalone')&&$('#spStandalone').getAttribute('href')==='dividir/'),'MyFinZen: preferencias de reparto y enlace a la app independiente');
     ok(await pg.evaluate(()=>!!$('#spCam')&&$('#spCam').getAttribute('capture')==='environment'&&!!$('#spPick')&&!!$('#spManual')&&document.querySelector('nav a.on').getAttribute('href')==='#dividir'&&$('#pageTitle').innerText==='Dividir la cuenta'),'Dividir la cuenta: foto con la cámara, elegir fotos o a mano');
     // Lector local: la foto (de un ticket inventado, con sombra y girado) se lee en el navegador sin llamar a ningún servicio
     const ext=[]; const onReq=r=>{ if(!r.url().startsWith(U)&&!r.url().startsWith('blob:')&&!r.url().startsWith('data:')) ext.push(r.url()); }; pg.on('request',onReq);
@@ -589,7 +590,66 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     await pg.click('#spManual'); await pg.waitForTimeout(150); await pg.fill('#spFsub','100'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.src==='manual'&&!s.items.length&&$('#spTotV').innerText==='$120.00'&&[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()==='$60.00,$60.00'; }),'a mano: subtotal, propina recordada y dos tarjetas a partes iguales');
     ok(ANTH===anth0,'Dividir la cuenta no ha hecho ninguna petición a Claude');
-    await pg.evaluate(()=>{ S.splits=[]; SPLIT.cur=null; save(); }); }
+    // Preferencias en MyFinZen: tarjetas habituales y modo por defecto para los tickets nuevos
+    await pg.evaluate(()=>{ SPLIT.cur=null; route(); }); await pg.waitForTimeout(150);
+    await pg.click('#spPrefs > summary'); await pg.click('[data-pmode="items"]'); await pg.click('#spPAdd'); await pg.click('#spPAdd'); await pg.fill('[data-pcn="0"]','Visa Prueba'); await pg.fill('[data-pcn="1"]','Amex Prueba'); await pg.waitForTimeout(150);
+    await pg.click('#spManual'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.mode==='items'&&s.cards.map(c=>c.name+':'+c.n).join()==='Visa Prueba:1,Amex Prueba:1'&&S.settings.split.cards.length===2; }),'MyFinZen: los tickets nuevos empiezan con las preferencias (modo y tarjetas habituales)');
+    await pg.evaluate(()=>{ S.splits=[]; SPLIT.cur=null; S.settings.split={}; save(); }); }
+  // App independiente «Dividir la cuenta» (dividir/): usuarios locales cifrados, preferencias y el mismo reparto (todo en el dispositivo)
+  { const dv=await ctx.newPage(), derr=[], dext=[]; dv.on('pageerror',e=>derr.push(e.message)); dv.on('console',m=>{ if(m.type()==='error') derr.push(m.text()); });
+    dv.on('request',r=>{ if(!r.url().startsWith(U)&&!/^(blob|data):/.test(r.url())) dext.push(r.url()); });
+    const dcdp=await ctx.newCDPSession(dv); await dcdp.send('WebAuthn.enable');
+    await dcdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
+    await dv.goto(U+'dividir/'); await dv.waitForTimeout(800);
+    ok(await dv.evaluate(()=>!!$('#gName')&&!document.querySelector('#nav')&&document.title==='Dividir la cuenta'&&/Crea tu usuario/.test($('#gate').innerText)),'app independiente: se abre en dividir/ (el service worker de MyFinZen no la sustituye) y pide crear un usuario');
+    const DP1='frase de prueba Ana 1', DP2='frase de prueba Luis 2';
+    await dv.fill('#gName','Ana Prueba'); await dv.fill('#g1','corta'); await dv.fill('#g2','corta'); await dv.click('#gGo'); await dv.waitForTimeout(100);
+    const short=await dv.evaluate(()=>/al menos 10/.test($('#gMsg').innerText));
+    await dv.fill('#g1',DP1); await dv.fill('#g2',DP1); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
+    const recA=await dv.$eval('#gRec',e=>e.innerText.trim()); await dv.check('#gOk'); await dv.click('#gNext'); await dv.waitForSelector('#pkGo',{timeout:5000}); await dv.click('#pkGo'); await dv.waitForTimeout(1500);
+    ok(short&&/^[A-Z0-9]{4}(-[A-Z0-9]{4}){5}$/.test(recA)&&await dv.evaluate(()=>!!S&&SES.p.name==='Ana Prueba'&&SES.p.pk.length===1&&!!$('#spStart')&&$('#uBtn').textContent.includes('Ana Prueba')),'crea el usuario con contraseña, clave de recuperación y passkey (PRF)');
+    await dv.click('#spPrefs > summary'); await dv.click('[data-pmode="items"]'); await dv.click('[data-ptip="20"]'); await dv.click('#spPAdd'); await dv.click('#spPAdd');
+    await dv.fill('[data-pcn="0"]','Visa Ana'); await dv.fill('[data-pcn="1"]','Amex Luis'); await dv.click('[data-st="pc:0"][data-d="1"]'); await dv.waitForTimeout(150);
+    ok(await dv.evaluate(()=>{ const p=S.settings.split; return p.mode==='items'&&p.tip===20&&p.cards.map(c=>c.name+':'+c.n).join()==='Visa Ana:2,Amex Luis:1'&&/Visa Ana, Amex Luis/.test($('#spPrefs .sp-psum').innerText); }),'preferencias: modo, propina y tarjetas habituales con sus personas');
+    await dv.setInputFiles('#spPick',path.join(FX,'receipt.jpg')); await dv.waitForSelector('#spTicket',{timeout:120000}); await dv.waitForTimeout(200);
+    const dt=await dv.evaluate(()=>{ const s=spCurrent(); return {mode:s.mode,tip:s.tipPct,people:s.people,cards:s.cards.map(c=>c.name+':'+c.n).join(),items:s.items.length,sub:s.sub,tot:s.tot,warn:!!$('#spWarn .alert')}; });
+    ok(dt.mode==='items'&&dt.tip===20&&dt.people===3&&dt.cards==='Visa Ana:2,Amex Luis:1'&&dt.items===5&&dt.sub===55.5&&dt.tot===59.8&&!dt.warn,'la foto se lee en el dispositivo y el ticket nuevo empieza con las preferencias del usuario '+JSON.stringify(dt));
+    await dv.waitForTimeout(400);
+    const idb=await dv.evaluate(()=>IDB.get('profiles').then(v=>JSON.stringify(v)));
+    ok(/Ana Prueba/.test(idb)&&!/Visa Ana|Fish Tacos|Prueba Bistro|55\.5/.test(idb),'los tickets y las preferencias se guardan cifrados (solo el nombre del usuario se ve sin entrar)');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]'); await dv.fill('#gP','contraseña mala 123'); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    const bad=await dv.evaluate(()=>!S&&/Contraseña incorrecta/.test($('#gMsg').innerText));
+    await dv.fill('#gP',DP1); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    ok(bad&&await dv.evaluate(()=>!!S&&S.splits.length===1&&S.splits[0].items.length===5&&!SPLIT.img.length),'salir y volver a entrar: la contraseña mala no abre; la buena trae los tickets (la foto no se guarda)');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('#gNew'); await dv.fill('#gName','Luis Prueba'); await dv.fill('#g1',DP2); await dv.fill('#g2',DP2); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
+    await dv.check('#gOk'); await dv.click('#gNext'); await dv.waitForSelector('#mc',{timeout:5000}); await dv.click('#mc'); await dv.waitForTimeout(200);
+    ok(await dv.evaluate(()=>SES.p.name==='Luis Prueba'&&S.splits.length===0&&S.settings.split.mode==='even'&&!S.settings.split.cards.length&&PROFILES.length===2),'un segundo usuario empieza sin los tickets ni las preferencias del primero');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.click('#gPk'); await dv.waitForTimeout(1500);
+    ok(await dv.evaluate(()=>!!S&&SES.p.name==='Ana Prueba'&&S.splits.length===1),'entrar con passkey');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.click('#gForgot');
+    await dv.fill('#gR',recA.toLowerCase()); await dv.fill('#g1','frase nueva de Ana 3'); await dv.fill('#g2','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
+    const recA2=await dv.$eval('#gRec',e=>e.innerText.trim()); await dv.check('#gOk'); await dv.click('#gNext'); await dv.waitForTimeout(300);
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    ok(recA2!==recA&&await dv.evaluate(()=>!!S&&S.splits.length===1),'con la clave de recuperación se pone una contraseña nueva (y se da otra clave)');
+    await dv.click('#uBtn'); await dv.waitForTimeout(200);
+    ok(await dv.evaluate(()=>location.hash==='#perfil'&&!!$('#pfSec')&&/Passkey|Android|Windows|Mac|Dispositivo/.test($('#pfSec').innerText)&&$('#pageTitle').innerText==='Perfil y seguridad'),'pantalla de perfil y seguridad');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Luis Prueba")'); await dv.fill('#gP',DP2); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    await dv.click('#uBtn'); await dv.waitForTimeout(200); await dv.click('#pfDelGo'); await dv.fill('#dl0',DP2); await dv.click('#dlGo'); await dv.waitForTimeout(800);
+    ok(await dv.evaluate(()=>!S&&PROFILES.length===1&&PROFILES[0].name==='Ana Prueba'&&!/Luis/.test($('#gate').innerText)),'borrar un usuario (con su contraseña) no toca a los demás');
+    await dv.evaluate(()=>setLang('en')); await dv.waitForTimeout(200); await dv.click('[data-pid]'); await dv.waitForTimeout(100); const gEn=await dv.$eval('#gate',e=>e.innerText);
+    await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500); await dv.evaluate(()=>{ SPLIT.cur=S.splits[0].id; route(); }); await dv.waitForTimeout(200);
+    const tEn=await dv.$eval('body',e=>e.innerText); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200); const pEn=await dv.$eval('body',e=>e.innerText);
+    const ESW=/\b(Añadir|Guardar|Cancelar|Borrar|Contraseña|Entrar|Salir|Tarjetas|Productos|Propina|Impuestos|personas|Compartir|usuario|Seguridad|Idioma)\b/;
+    ok(!ESW.test(gEn+tEn+pEn)&&/Hi, Ana Prueba/.test(gEn)&&/Who ordered what\?/.test(tEn)&&/Profile & security/.test(pEn),'app independiente en inglés '+((gEn+tEn+pEn).match(ESW)||[''])[0]);
+    if(process.env.SHOTS){ for(const [lg,w,n,h] of [['es',412,'dividir-app-movil',''],['es',412,'dividir-app-perfil','#perfil'],['en',412,'en-dividir-app-movil',''],['es',1200,'dividir-app-escritorio',''],['en',1200,'en-dividir-app-escritorio','']]){
+        await dv.setViewportSize({width:w,height:900}); await dv.evaluate(([l,h])=>{ location.hash=h; setLang(l); },[lg,h]); await dv.waitForTimeout(300); await dv.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
+      await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=null; route(); }); await dv.waitForTimeout(200); await dv.screenshot({path:process.env.SHOTS+'/dividir-app-inicio.png',fullPage:true}); }
+    await dv.evaluate(()=>setLang('es'));
+    await dv.reload(); await dv.waitForTimeout(800);
+    ok(await dv.evaluate(()=>!!navigator.serviceWorker.controller&&/\/dividir\/sw\.js$/.test(navigator.serviceWorker.controller.scriptURL)&&/Hola, Ana Prueba/.test($('#gate').innerText)),'tiene su propio service worker (instalable y sin conexión) y recuerda al único usuario');
+    ok(!dext.length&&!derr.length,'la app independiente no se conecta a nada fuera de la app y no da errores '+JSON.stringify([dext.slice(0,3),derr.slice(0,3)]));
+    await dv.close(); }
   // Seguridad: CSP sin scripts incrustados, respuesta de Claude manipulada, copia manipulada, datos de noticias, utilidades
   ok(await pg.evaluate(()=>{ const c=document.querySelector('meta[http-equiv="Content-Security-Policy"]').content; return /script-src 'self';/.test(c)&&!/unsafe-inline[^;]*;\s*style/.test(c.split('script-src')[1].split(';')[0]+';style')&&![...document.scripts].some(x=>!x.src); }),'CSP sin scripts incrustados');
   await pg.goto(U+'#importar'); await pg.waitForTimeout(200); await pg.setInputFiles('#fPDF',path.join(FX,'bank.pdf')); await pg.waitForTimeout(1500); await pg.click('#gAI'); await pg.waitForTimeout(200); await pg.click('#cY'); await pg.waitForTimeout(800);
