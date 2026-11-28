@@ -642,10 +642,18 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(bad&&await dv.evaluate(()=>!!S&&S.splits.length===1&&S.splits[0].items.length===5&&!SPLIT.img.length),'salir y volver a entrar: la contraseña mala no abre; la buena trae los tickets (la foto no se guarda)');
     await dv.click('[data-sptab="hist"]'); await dv.waitForTimeout(150);
     ok(await dv.evaluate(()=>document.querySelectorAll('#spHist .sp-hrow').length===1&&/Visa Ana/.test($('#spHist').innerText)&&/Prueba Bistro/.test($('#spHist').innerText)),'app independiente: el historial guarda el ticket con lo que pagó cada tarjeta');
-    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('#gNew'); await dv.fill('#gName','Luis Prueba'); await dv.fill('#g1',DP2); await dv.fill('#g2',DP2); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
+    // Segundo usuario que elige inglés al crearse: el formulario cambia de idioma sin perder lo escrito
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('#gNew'); await dv.fill('#gName','Luis Prueba'); await dv.fill('#g1',DP2); await dv.fill('#g2',DP2);
+    const nlangES=await dv.evaluate(()=>$('[data-nlang="es"]').classList.contains('on')&&!document.querySelector('#gate .langsw'));
+    await dv.click('[data-nlang="en"]'); await dv.waitForTimeout(150);
+    const nlangEN=await dv.evaluate(()=>$('[data-nlang="en"]').getAttribute('aria-checked')==='true'&&$('#gGo').innerText==='Create user'&&$('#gName').value==='Luis Prueba'&&$('#g1').value.length>9&&$('#g2').value===$('#g1').value);
+    await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
     await dv.check('#gOk'); await dv.click('#gNext'); await dv.waitForSelector('#mc',{timeout:5000}); await dv.click('#mc'); await dv.waitForTimeout(200);
+    ok(nlangES&&nlangEN&&await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='Split the bill'&&/New receipt/.test($('#app').innerText)),'al crear el usuario se elige su idioma preferido (inglés) y la app sale en ese idioma');
     ok(await dv.evaluate(()=>SES.p.name==='Luis Prueba'&&S.splits.length===0&&S.settings.split.mode==='even'&&!S.settings.split.cards.length&&PROFILES.length===2),'un segundo usuario empieza sin los tickets ni las preferencias del primero');
-    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.click('#gPk'); await dv.waitForTimeout(1500);
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.waitForTimeout(100);
+    ok(await dv.evaluate(()=>/Hola, Ana Prueba/.test($('#gate').innerText)&&/Entrar/.test($('#gate').innerText)),'la pantalla de entrada de cada usuario sale en su idioma');
+    await dv.click('#gPk'); await dv.waitForTimeout(1500);
     ok(await dv.evaluate(()=>!!S&&SES.p.name==='Ana Prueba'&&S.splits.length===1),'entrar con passkey');
     await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.click('#gForgot');
     await dv.fill('#gR',recA.toLowerCase()); await dv.fill('#g1','frase nueva de Ana 3'); await dv.fill('#g2','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
@@ -654,11 +662,21 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(recA2!==recA&&await dv.evaluate(()=>!!S&&S.splits.length===1),'con la clave de recuperación se pone una contraseña nueva (y se da otra clave)');
     await dv.click('#uBtn'); await dv.waitForTimeout(200);
     ok(await dv.evaluate(()=>location.hash==='#perfil'&&!!$('#pfSec')&&/Passkey|Android|Windows|Mac|Dispositivo/.test($('#pfSec').innerText)&&$('#pageTitle').innerText==='Perfil y seguridad'),'pantalla de perfil y seguridad');
-    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Luis Prueba")'); await dv.fill('#gP',DP2); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Luis Prueba")'); await dv.waitForTimeout(100); const luisEn=await dv.evaluate(()=>/Hi, Luis Prueba/.test($('#gate').innerText));
+    await dv.fill('#gP',DP2); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    ok(luisEn&&await dv.evaluate(()=>document.documentElement.lang==='en'&&['Split the bill','Profile & security'].includes($('#pageTitle').innerText)),'y al entrar se aplica su idioma');
     await dv.click('#uBtn'); await dv.waitForTimeout(200); await dv.click('#pfDelGo'); await dv.fill('#dl0',DP2); await dv.click('#dlGo'); await dv.waitForTimeout(800);
     ok(await dv.evaluate(()=>!S&&PROFILES.length===1&&PROFILES[0].name==='Ana Prueba'&&!/Luis/.test($('#gate').innerText)),'borrar un usuario (con su contraseña) no toca a los demás');
-    await dv.evaluate(()=>setLang('en')); await dv.waitForTimeout(200); await dv.click('[data-pid]'); await dv.waitForTimeout(100); const gEn=await dv.$eval('#gate',e=>e.innerText);
-    await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500); await dv.evaluate(()=>{ SPLIT.cur=S.splits[0].id; route(); }); await dv.waitForTimeout(200);
+    // Cambiar el idioma preferido en Perfil: se guarda para ese usuario
+    await dv.click('[data-pid]'); await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    const anaEs=await dv.evaluate(()=>$('#pageTitle').innerText==='Dividir la cuenta'); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200);
+    await dv.selectOption('#pfLang','en'); await dv.waitForTimeout(400);
+    const saved=await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='Profile & security'&&$('#pfLang').value==='en');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.evaluate(()=>{ useLang('es'); showGate('pick'); });
+    const stored=await dv.evaluate(()=>IDB.get('profiles').then(v=>v.find(p=>p.name==='Ana Prueba').lang));
+    await dv.click('[data-pid]'); await dv.waitForTimeout(100); const gEn=await dv.$eval('#gate',e=>e.innerText);
+    ok(anaEs&&saved&&stored==='en'&&/Hi, Ana Prueba/.test(gEn),'el idioma preferido se cambia en Perfil y se recuerda para ese usuario');
+    await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500); await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=S.splits[0].id; route(); }); await dv.waitForTimeout(200);
     const tEn=await dv.$eval('body',e=>e.innerText); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200); const pEn=await dv.$eval('body',e=>e.innerText);
     const ESW=/\b(Añadir|Guardar|Cancelar|Borrar|Contraseña|Entrar|Salir|Tarjetas|Productos|Propina|Impuestos|personas|Compartir|usuario|Seguridad|Idioma)\b/;
     ok(!ESW.test(gEn+tEn+pEn)&&/Hi, Ana Prueba/.test(gEn)&&/Who ordered what\?/.test(tEn)&&/Profile & security/.test(pEn),'app independiente en inglés '+((gEn+tEn+pEn).match(ESW)||[''])[0]);
