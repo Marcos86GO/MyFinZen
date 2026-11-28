@@ -1,0 +1,7 @@
+/* Dividir la cuenta (app independiente): lo propio; el resto viene de ../styles.css (MyFinZen) */
+@media(min-width:1000px){ .topbar{margin-left:0} main{margin:0 auto;max-width:860px} }
+.topbar{padding-right:8px}
+#uBtn{gap:8px;font-weight:550;font-size:14px}
+.av.sm{width:30px;height:30px;font-size:12px}
+.gate-users{margin:0 -22px}.gate-users .lrow{padding:10px 22px}
+.gate-card a{color:var(--accent)}

@@ -207,14 +207,6 @@ const arr=v=>Array.isArray(v)?v:[];
 const obj=v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
 const ACC_NUM=['rate','payment','extra','escrow','rent','hoa','taxYear','insYear','maint','otherMonthly','mortgagePay','buildingBasis','inService','apr','contributed','stmtDay'];
 function sanitizeHoldingRow(x){ x=obj(x); const n=k=>numStrict(x[k]); const r={sym:str(x.sym,40).trim(),name:str(x.name,120),qty:n('qty')??NaN,avg:n('avg')??NaN,cost:n('cost'),value:n('value')||0,gain:n('gain')}; if(x.fund) r.fund=true; if(x.cls) r.cls=str(x.cls,40); return r; }
-// Tickets de restaurante repartidos entre tarjetas (split.js): S.splits, como mucho los 30 últimos
-function sanitizeSplits(v){ const n=(x,lo,hi)=>{ const y=numStrict(x); return y!=null&&y>=lo&&y<=hi?Math.round(y*100)/100:null; }, int=(x,lo,hi,d)=>Math.max(lo,Math.min(hi,Math.round(numStrict(x)||d)));
-  return arr(v).map(s0=>{ const s=obj(s0), cards=arr(s.cards).map(c=>{ c=obj(c); return {id:cleanId(c.id)||uid(),name:str(c.name,60),n:int(c.n,1,99,1)}; }).slice(0,20);
-    if(!cards.length) cards.push({id:uid(),name:'',n:1}); const ids=new Set(cards.map(c=>c.id));
-    const items=arr(s.items).map(i=>{ i=obj(i); const p=n(i.price,-1e5,1e5); return {id:cleanId(i.id)||uid(),name:str(i.name,80),qty:int(i.qty,1,999,1),price:p==null?0:p,to:[...new Set(arr(i.to).map(cleanId))].filter(x=>ids.has(x))}; }).slice(0,300);
-    const cur=typeof s.cur==='string'&&/^[A-Z]{3}$/.test(s.cur)?s.cur:'USD';
-    return {id:cleanId(s.id)||uid(),created:typeof s.created==='string'&&!isNaN(Date.parse(s.created))?s.created.slice(0,30):new Date().toISOString(),date:isoDate(s.date)||today(),place:str(s.place,80),cur,src:s.src==='photo'?'photo':'manual',items,
-      sub:n(s.sub,0,1e6),disc:n(s.disc,0,1e6)||0,tax:n(s.tax,0,1e6)||0,svc:n(s.svc,0,1e6)||0,tot:n(s.tot,0,1e6),tip:n(s.tip,0,1e6)||0,tipPct:n(s.tipPct,0,100),mode:s.mode==='items'?'items':'even',people:int(s.people,1,99,2),cards}; }).slice(-30); }
 function sanitizeState(st){
   if(!st||typeof st!=='object'||Array.isArray(st)) throw Object.assign(new Error(L('Datos no válidos','Invalid data')),{code:'notbackup'});
   const o=Object.assign(blankState(),st);
@@ -251,7 +243,7 @@ function sanitizeState(st){
   if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
   { const c=obj(s.cal), m=numStrict(c.min); // calendario: umbral de pagos importantes, notificación y días de cobro
     S2.cal={min:m!=null&&m>=0&&m<=1e7?Math.round(m):500,sys:c.sys===true,payDays:[...new Set(arr(c.payDays).map(d=>Math.round(numStrict(d)||0)).filter(d=>d>=1&&d<=31))].slice(0,4),noSug:arr(c.noSug).filter(x=>typeof x==='string'&&/^[\w:.-]{1,80}$/.test(x)).slice(-200)}; }
-  { const c=obj(s.split), t=numStrict(c.tip); S2.split={tip:t!=null&&t>=0&&t<=100?t:null}; } // dividir la cuenta (split.js)
+  S2.split=sanitizeSplitPrefs(s.split); // dividir la cuenta (split.js, cargado siempre con app.js)
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
     for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }

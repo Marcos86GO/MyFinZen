@@ -7,7 +7,7 @@
 // Se carga antes de split.js. parseReceipt no usa el DOM (se prueba aparte con textos inventados).
 "use strict";
 const OCR={w:null,p:null,log:null,idle:null};
-const OCR_BASE='vendor/ocr/';
+const OCR_BASE=(()=>{ try{ return new URL('vendor/ocr/',document.currentScript.src).href; }catch(e){ return 'vendor/ocr/'; } })();   // junto a ticket.js, se cargue desde donde se cargue
 // ¿Admite el navegador WebAssembly SIMD? (el motor que se incluye lo necesita: Chrome 91+, Safari 16.4+, Firefox 89+)
 function ocrSimd(){ try{ return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11])); }catch(e){ return false; } }
 function ocrLib(){ if(window.Tesseract) return Promise.resolve();

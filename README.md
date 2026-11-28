@@ -14,6 +14,7 @@ En **español e inglés** (*Copia y ajustes → Idioma*). Cada sección tiene un
 - **Contraseña maestra** (PBKDF2-SHA256, 600.000 iteraciones), **passkey** con huella o cara (WebAuthn PRF) y **clave de recuperación** de un solo uso. Sin ellas, los datos son ilegibles. Nadie puede recuperarlas por ti.
 - **Bloqueo automático** tras unos minutos sin uso.
 - Los extractos (PDF y CSV) se leen dentro del navegador; los archivos no se suben a ningún sitio.
+- **Dividir la cuenta también es una app independiente** en `/dividir/` (instalable aparte), con usuarios locales: cada uno con su contraseña, passkey y clave de recuperación, y sus tickets y preferencias cifrados en el dispositivo.
 - **Las fotos de tickets también se leen en el dispositivo** (Tesseract.js, copiado en `vendor/ocr/`): ni la foto ni el texto salen de él, y la foto no se guarda.
 - **Calendario y avisos sin servidor.** El calendario (extractos disponibles, pagos recurrentes y nóminas) se calcula en el dispositivo. Si activas la notificación de pagos importantes, la app guarda fuera de lo cifrado solo las fechas de los avisos y cuántos pagos son, nunca nombres ni importes.
 - **Claude es opcional.** Si añades tu propia clave de API de Anthropic, la app envía a Claude solo resúmenes de cifras o texto con números de cuenta, SSN, teléfonos, emails y direcciones ocultos, y siempre con tu confirmación. La clave se guarda cifrada y no se incluye en las copias.
