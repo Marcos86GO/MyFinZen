@@ -1,39 +1,39 @@
-// Dividir la cuenta — app independiente (https://…/MyFinZen/dividir/). Reparte el ticket de un restaurante entre tarjetas.
-// Usa el mismo código que «Dividir la cuenta» de MyFinZen (../split.js y el lector local ../ticket.js) y añade usuarios
+// WhosBill — app independiente (https://…/MyFinZen/whosbill/): quién paga qué en el ticket de un restaurante, por tarjeta y por
+// persona. Es el anfitrión del módulo (core/split.js y el lector local core/ticket.js, que MyFinZen también integra) y añade usuarios
 // locales: cada usuario tiene sus tickets y sus preferencias cifrados en este dispositivo (AES-GCM 256 con una clave aleatoria
 // envuelta por su contraseña —PBKDF2-SHA256, 600.000 iteraciones—, su clave de recuperación y sus passkeys con PRF).
 // Sin servidor: nada sale del dispositivo. Este archivo se carga antes de ticket.js y split.js (les da las utilidades).
 "use strict";
 if(window.top!==window.self){ try{ window.top.location.replace(window.self.location.href); }catch(e){} document.documentElement.innerHTML=''; throw new Error('No se puede abrir dentro de un marco'); }
 /* ---------- ¿Página equivocada? ----------
-   Una versión antigua del service worker de MyFinZen (anterior a v1.29.0) responde a cualquier dirección de /MyFinZen/,
-   también a /dividir/, con la página de MyFinZen; esa página carga entonces este archivo (dividir/app.js) y se quedaría en
-   blanco. Aquí se instala el service worker propio de esta app (alcance dividir/, más concreto que el de MyFinZen) y se
-   recarga: desde ese momento /dividir/ lo sirve su propio service worker. Solo se intenta una vez por pestaña. */
+   Una versión antigua del service worker de MyFinZen (anterior a v1.32.0) responde a cualquier dirección de /MyFinZen/,
+   también a /whosbill/, con la página de MyFinZen; esa página carga entonces este archivo (whosbill/app.js) y se quedaría en
+   blanco. Aquí se instala el service worker propio de esta app (alcance whosbill/, más concreto que el de MyFinZen) y se
+   recarga: desde ese momento /whosbill/ lo sirve su propio service worker. Solo se intenta una vez por pestaña. */
 if(!document.getElementById('uBtn')){
-  const es=/^es\b/i.test(navigator.language||''), t=(a,b)=>es?a:b, again=(()=>{ try{ const n=+sessionStorage.getItem('mfz-dv-fix')||0; sessionStorage.setItem('mfz-dv-fix',String(n+1)); return n>0; }catch(e){ return true; } })();
-  document.title=t('Dividir la cuenta','Split the bill');
-  document.body.className=''; document.body.innerHTML=`<div style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:16px;text-align:center"><b>${t('Dividir la cuenta','Split the bill')}</b><p id="dvFix">${t('Preparando la app…','Getting the app ready…')}</p></div>`;
+  const es=/^es\b/i.test(navigator.language||''), t=(a,b)=>es?a:b, again=(()=>{ try{ const n=+sessionStorage.getItem('wb-fix')||0; sessionStorage.setItem('wb-fix',String(n+1)); return n>0; }catch(e){ return true; } })();
+  document.title='WhosBill';
+  document.body.className=''; document.body.innerHTML=`<div style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:16px;text-align:center"><b>WhosBill</b><p id="dvFix">${t('Preparando la app…','Getting the app ready…')}</p></div>`;
   const fail=()=>{ const m=document.getElementById('dvFix'); if(m) m.textContent=t('No se ha podido abrir. Cierra esta pestaña, abre MyFinZen, pulsa «Actualizar» si te lo ofrece y vuelve a abrir esta dirección.','It could not be opened. Close this tab, open MyFinZen, press "Update" if offered, and open this address again.'); };
   if(again||!('serviceWorker' in navigator)) fail();
-  // se espera a que ESTE registro (alcance dividir/) esté activo; navigator.serviceWorker.ready daría el de MyFinZen
+  // se espera a que ESTE registro (alcance whosbill/) esté activo; navigator.serviceWorker.ready daría el de MyFinZen
   else navigator.serviceWorker.register('sw.js').then(reg=>new Promise((res,rej)=>{ if(reg.active) return res();
     const w=reg.installing||reg.waiting; if(!w) return rej(); w.addEventListener('statechange',()=>{ if(w.state==='activated') res(); else if(w.state==='redundant') rej(); }); setTimeout(()=>reg.active?res():rej(),20000); }))
     .then(()=>location.reload()).catch(fail);
-  throw new Error('dividir: página servida por otro service worker');
+  throw new Error('whosbill: página servida por otro service worker');
 }
-try{ sessionStorage.removeItem('mfz-dv-fix'); }catch(e){}
+try{ sessionStorage.removeItem('wb-fix'); }catch(e){}
 /* ---------- Idioma ----------
    Cada usuario tiene el suyo (profiles[].lang, en claro porque hace falta antes de entrar: «Hola, Ana» ya sale en su idioma).
-   Antes de elegir usuario se usa el último idioma usado en este navegador (mfz-lang, la misma preferencia que MyFinZen). */
+   Antes de elegir usuario se usa el último idioma usado en este navegador (whosbill-lang; la primera vez, el de MyFinZen). */
 let LANG='es';
-try{ const s=localStorage.getItem('mfz-lang'); LANG=(s==='es'||s==='en')?s:(/^es\b/i.test(navigator.language||'')?'es':'en'); }catch(e){}
+try{ const s=localStorage.getItem('whosbill-lang')||localStorage.getItem('mfz-lang'); LANG=(s==='es'||s==='en')?s:(/^es\b/i.test(navigator.language||'')?'es':'en'); }catch(e){}
 const L=(es,en)=>LANG==='en'?en:es;
 // who: el usuario cuyo idioma preferido cambia (el que ha entrado, o el de la pantalla «Hola, …»); sin él, solo esta pantalla
-function setLang(l,who){ LANG=l==='en'?'en':'es'; try{ localStorage.setItem('mfz-lang',LANG); }catch(e){}
+function setLang(l,who){ LANG=l==='en'?'en':'es'; try{ localStorage.setItem('whosbill-lang',LANG); }catch(e){}
   const p=who||SES.p; if(p&&p.lang!==LANG){ p.lang=LANG; if(typeof saveProfiles==='function') saveProfiles(); }
   applyStatic(); if(S) route(); else showGate(GATE.mode,GATE.arg); }
-const useLang=l=>{ if((l==='es'||l==='en')&&l!==LANG){ LANG=l; try{ localStorage.setItem('mfz-lang',LANG); }catch(e){} } };
+const useLang=l=>{ if((l==='es'||l==='en')&&l!==LANG){ LANG=l; try{ localStorage.setItem('whosbill-lang',LANG); }catch(e){} } };
 /* ---------- Utilidades (las mismas que MyFinZen) ---------- */
 const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -64,7 +64,7 @@ function openModal(html){ $('#modal').innerHTML=html; $('#modalBg').classList.ad
 function closeModal(){ $('#modalBg').classList.remove('show'); }
 $('#modalBg').addEventListener('click',e=>{ if(e.target.id==='modalBg') closeModal(); });
 function confirmModal(title,body){ return new Promise(res=>{ openModal(`<h2>${title}</h2>${body}<div class="row" style="margin-top:12px"><button id="cN">${L('Cancelar','Cancel')}</button><button class="pri" id="cY">${L('Continuar','Continue')}</button></div>`); $('#cN').onclick=()=>{closeModal();res(false)}; $('#cY').onclick=()=>{closeModal();res(true)}; }); }
-/* ---------- Ayuda: icono (i) en cada tarjeta; textos en ../help.js ---------- */
+/* ---------- Ayuda: icono (i) en cada tarjeta; textos en core/help.js ---------- */
 function helpBtn(key){ return `<button class="ib" data-help="${key}" aria-label="${L('Qué es esto','What is this')}" title="${L('Qué es esto','What is this')}">i</button>`; }
 function showHelp(key){ const h0=(window.HELP||{})[key], h=h0&&(h0[LANG]||h0.es); if(!h) return;
   openModal(`<div class="help"><h2>${h.t}</h2>${h.d.map(p=>`<p>${p}</p>`).join('')}${h.steps&&h.steps.length?`<p><b>${L('Cómo usarlo','How to use it')}</b></p><ol>${h.steps.map(x=>`<li>${x}</li>`).join('')}</ol>`:''}</div><div class="row" style="margin-top:12px"><button class="pri" id="mc">${L('Entendido','Got it')}</button></div>`);
@@ -74,14 +74,14 @@ const VIEWS={};
 let S=null;
 
 /* ============================================================
-   Usuarios (perfiles) en IndexedDB 'mfz-dividir' → 'profiles' = [{id, name, created, updated, pw, rec, pk[], data}]
+   Usuarios (perfiles) en IndexedDB 'whosbill' → 'profiles' = [{id, name, created, updated, pw, rec, pk[], data}]
    · name: lo único en claro (para elegir quién eres al entrar)
    · pw / rec: la clave de los datos (DK) envuelta por la contraseña / la clave de recuperación (PBKDF2 + AES-GCM)
    · pk: passkeys con PRF (HKDF → clave de envoltura); data: {splits, settings} cifrado con la DK
    Nada más se guarda fuera: ni tickets, ni importes, ni fotos.
    ============================================================ */
 const IDB={db:null,
-  open(){ return new Promise(res=>{ try{ const r=indexedDB.open('mfz-dividir',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>{ IDB.db=r.result; res(true); }; r.onerror=()=>res(false); }catch(e){ res(false); } }); },
+  open(){ return new Promise(res=>{ try{ const r=indexedDB.open('whosbill',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>{ IDB.db=r.result; res(true); }; r.onerror=()=>res(false); }catch(e){ res(false); } }); },
   tx(mode,fn){ return new Promise((res,rej)=>{ const t=IDB.db.transaction('kv',mode), q=fn(t.objectStore('kv')); t.oncomplete=()=>res(q&&q.result); t.onerror=t.onabort=()=>rej(t.error); }); },
   get(k){ return IDB.tx('readonly',s=>s.get(k)).catch(()=>null); }, set(k,v){ return IDB.tx('readwrite',s=>s.put(v,k)).then(()=>true).catch(()=>false); }};
 const TE=new TextEncoder(), TD=new TextDecoder();
@@ -92,7 +92,7 @@ const b64u=buf=>b64(buf).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')
 const fromU=s=>unb64(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));
 const PW_ITER=600000, REC_ITER=200000, PW_MIN=10;
 async function kdfPass(pass,salt,it){ const k=await crypto.subtle.importKey('raw',TE.encode(pass),'PBKDF2',false,['deriveKey']); return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:it,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); }
-async function kdfPrf(out){ const base=await crypto.subtle.importKey('raw',out,'HKDF',false,['deriveKey']); return crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:TE.encode('mfz-dividir-prf-v1'),info:TE.encode('profile-kek')},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); }
+async function kdfPrf(out){ const base=await crypto.subtle.importKey('raw',out,'HKDF',false,['deriveKey']); return crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:TE.encode('mfz-dividir-prf-v1')/* nombre antiguo: lo necesitan las passkeys ya creadas */,info:TE.encode('profile-kek')},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); }
 async function seal(key,bytes){ const iv=rnd(12); const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,bytes); return {iv:b64(iv),ct:b64(ct)}; }
 async function unseal(key,o){ return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(o.iv)},key,unb64(o.ct))); }
 async function wrapPw(pass,raw,it){ const salt=rnd(16); return {salt:b64(salt),it,wrap:await seal(await kdfPass(pass,salt,it),raw)}; }
@@ -110,6 +110,12 @@ function blankData(){ return {v:1,created:new Date().toISOString(),splits:[],set
 function sanitizeData(st){ const o=obj(st), s=obj(o.settings);
   return {v:1,created:typeof o.created==='string'?o.created.slice(0,30):new Date().toISOString(),splits:sanitizeSplits(o.splits),settings:{split:sanitizeSplitPrefs(s.split),lockMin:[1,2,5,10,15,30].includes(+s.lockMin)?+s.lockMin:5}}; }
 let PROFILES=[]; const SES={p:null,dk:null,dkRaw:null};
+// Usuarios creados cuando la app se llamaba «Dividir la cuenta» (/dividir/, base 'mfz-dividir'): se traen una vez, tal cual (cifrados)
+async function migrateOld(){ if(await IDB.get('profiles')) return;
+  const old=await new Promise(res=>{ try{ const r=indexedDB.open('mfz-dividir'); r.onupgradeneeded=()=>{ try{ r.transaction.abort(); }catch(e){} };
+    r.onsuccess=()=>{ const db=r.result; if(!db.objectStoreNames.contains('kv')){ db.close(); return res(null); } const q=db.transaction('kv').objectStore('kv').get('profiles'); q.onsuccess=()=>{ db.close(); res(q.result||null); }; q.onerror=()=>{ db.close(); res(null); }; };
+    r.onerror=()=>res(null); }catch(e){ res(null); } });
+  if(Array.isArray(old)&&old.length&&await IDB.set('profiles',old)) try{ indexedDB.deleteDatabase('mfz-dividir'); }catch(e){} }
 async function setDK(raw){ SES.dkRaw=raw; SES.dk=await crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['encrypt','decrypt']); }
 async function loadData(p){ const raw=await unseal(SES.dk,p.data); S=sanitizeData(JSON.parse(TD.decode(raw))); raw.fill(0); SES.p=p; }
 // Escrituras en cola: nunca se guarda una versión vieja encima de una nueva
@@ -130,7 +136,7 @@ const passkeysOK=()=>!!(window.PublicKeyCredential&&navigator.credentials&&windo
 const noPrf=()=>Object.assign(new Error(L('Este dispositivo o navegador no admite passkeys con cifrado (PRF). Usa la contraseña.','This device or browser doesn\'t support passkeys with encryption (PRF). Use the password.')),{code:'noprf'});
 function deviceName(){ const u=navigator.userAgent; if(/Android/.test(u)) return 'Android'; if(/iPhone|iPad/.test(u)) return 'iPhone/iPad'; if(/Mac/.test(u)) return 'Mac'; if(/Windows/.test(u)) return 'Windows'; return L('Dispositivo','Device'); }
 async function addPasskey(){ const p=SES.p, prfSalt=rnd(32);
-  const cred=await navigator.credentials.create({publicKey:{rp:{name:'Dividir la cuenta',id:location.hostname},user:{id:rnd(16),name:'Dividir · '+p.name,displayName:p.name},challenge:rnd(32),
+  const cred=await navigator.credentials.create({publicKey:{rp:{name:'WhosBill',id:location.hostname},user:{id:rnd(16),name:'WhosBill · '+p.name,displayName:p.name},challenge:rnd(32),
     pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{residentKey:'preferred',userVerification:'required'},timeout:120000,extensions:{prf:{eval:{first:prfSalt}}}}});
   const ext=cred.getClientExtensionResults()||{}; if(!ext.prf||ext.prf.enabled===false) throw noPrf();
   let out=ext.prf.results&&ext.prf.results.first;
@@ -165,7 +171,7 @@ function showGate(mode,arg){ const g=$('#gate'); if(mode==='pick'&&!PROFILES.len
   if((mode==='unlock'||mode==='recover')&&arg&&arg.lang) useLang(arg.lang);   // la pantalla de un usuario sale en su idioma
   g.style.display='flex'; document.body.classList.add('locked');
   const who=mode==='unlock'||mode==='recover'?arg:null;
-  const box=(html,noSw)=>{ g.innerHTML=`<div class="gate-card"><div class="gate-logo"><img src="icons/icon-192.png" alt=""><div><b>${L('Dividir la cuenta','Split the bill')}</b><div class="muted">${L('Tickets repartidos entre tarjetas, cifrados en tu dispositivo','Receipts split between cards, encrypted on your device')}</div></div></div>${html}${noSw?'':langSwitch()}</div>`;
+  const box=(html,noSw)=>{ g.innerHTML=`<div class="gate-card"><div class="gate-logo"><img src="icons/icon-192.png" alt=""><div><b class="wb-mark">Whos<span>Bill</span></b><div class="muted">${L('Quién paga qué, por tarjeta y por persona. Cifrado en tu dispositivo.','Who pays what, by card and by person. Encrypted on your device.')}</div></div></div>${html}${noSw?'':langSwitch()}</div>`;
     g.querySelectorAll('.langsw [data-lang]').forEach(b=>b.onclick=()=>setLang(b.dataset.lang,who)); };
   const msg=t=>{ const m=$('#gMsg'); if(m) m.textContent=t; };
   if(mode==='pick'){
@@ -225,13 +231,13 @@ function enterApp(first){ const p=SES.p; if(p){ if(p.lang) useLang(p.lang); else
 
 /* ---------- Pantallas ---------- */
 const spHostActive=()=>!!S&&location.hash!=='#perfil';   // split.js: cuándo se ve su pantalla
-function applyStatic(){ document.documentElement.lang=LANG; document.title=L('Dividir la cuenta','Split the bill');
-  const t=$('#pageTitle'); if(t) t.textContent=location.hash==='#perfil'?L('Perfil y seguridad','Profile & security'):L('Dividir la cuenta','Split the bill');
+function applyStatic(){ document.documentElement.lang=LANG; document.title='WhosBill';
+  const t=$('#pageTitle'); if(t){ if(location.hash==='#perfil') t.textContent=L('Perfil y seguridad','Profile & security'); else t.innerHTML='Whos<span style="color:var(--accent)">Bill</span>'; }
   const u=$('#uBtn'); if(u){ u.innerHTML=S&&SES.p?`<span class="av round sm" style="--h:${avHue(SES.p.name)}">${avInit(SES.p.name)}</span><span class="hide-sm">${esc(SES.p.name)}</span>`:''; u.setAttribute('aria-label',L('Perfil y seguridad','Profile & security')); u.title=L('Perfil y seguridad','Profile & security'); }
   const lb=$('#lockBtn'); if(lb){ lb.innerHTML=ic('lock')+`<span class="hide-sm">${L('Salir','Sign out')}</span>`; lb.title=L('Salir (bloquear)','Sign out (lock)'); lb.setAttribute('aria-label',L('Salir (bloquear)','Sign out (lock)')); }
   const bk=$('#backBtn'); if(bk){ bk.innerHTML=ic('left'); bk.style.display=location.hash==='#perfil'?'':'none'; bk.setAttribute('aria-label',L('Volver','Back')); }
   $('#updTxt').textContent=L('Hay una versión nueva.','A new version is available.'); $('#updGo').textContent=L('Actualizar','Update'); }
-function route(){ if(!S) return; applyStatic(); const v=location.hash==='#perfil'?'perfil':'dividir';
+function route(){ if(!S) return; applyStatic(); const v=location.hash==='#perfil'?'perfil':'whosbill';
   try{ VIEWS[v]($('#app')); }catch(e){ console.warn('vista',v,e); $('#app').innerHTML=`<div class="alert crit"><span class="ic">!</span><div><b>${L('Algo ha fallado al mostrar esta pantalla.','Something went wrong showing this screen.')}</b> ${L('Tus datos no se han tocado. Recarga la app.','Your data hasn\'t been touched. Reload the app.')}<div class="muted">${esc(String(e&&e.message||e))}</div></div></div>`; }
   window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
@@ -250,7 +256,7 @@ VIEWS.perfil=(el)=>{ const p=SES.p;
     <div class="card" id="pfDel">${helpBtn('div_delete')}<h2>${L('Borrar este usuario','Delete this user')}</h2>
       <p class="muted">${L('Borra de este dispositivo el usuario, sus tickets, sus preferencias y sus passkeys. No se puede deshacer.','Deletes the user, their receipts, preferences and passkeys from this device. It cannot be undone.')}</p>
       <button class="dan" id="pfDelGo">${ic('trash')}${L('Borrar usuario','Delete user')}</button></div>
-    <p class="muted" style="text-align:center">${L('Dividir la cuenta forma parte de','Split the bill is part of')} <a href="../" target="_blank" rel="noopener">MyFinZen</a>. ${L('Sin servidor: tus datos no salen de este dispositivo.','No server: your data never leaves this device.')}</p></div>`;
+    <p class="muted" style="text-align:center">${L('WhosBill es un módulo de','WhosBill is a module of')} <a href="../" target="_blank" rel="noopener">MyFinZen</a>, ${L('que también lo integra con su propio usuario.','which also integrates it with its own user.')} ${L('Sin servidor: tus datos no salen de este dispositivo.','No server: your data never leaves this device.')}</p></div>`;
   $('#pfNameGo').onclick=async()=>{ const n=$('#pfName').value.trim().slice(0,40); if(!n) return; if(PROFILES.some(x=>x!==p&&x.name.toLowerCase()===n.toLowerCase())) return toast(L('Ya hay un usuario con ese nombre','There is already a user with that name')); p.name=n; await persist(); applyStatic(); toast(L('Guardado','Saved')); };
   $('#pfLang').onchange=e=>{ setLang(e.target.value); toast(L('Idioma guardado','Language saved')); };
   $('#pfLock').onchange=e=>{ S.settings.lockMin=+e.target.value; save(); bumpLock(); toast(L('Guardado','Saved')); };
@@ -285,14 +291,14 @@ VIEWS.perfil=(el)=>{ const p=SES.p;
 (async function(){
   if(!await IDB.open()){ document.body.innerHTML=`<div style="padding:24px;font-family:sans-serif"><h2>${L('Este navegador no permite guardar datos','This browser doesn\'t allow saving data')}</h2><p>${L('Ábrelo en Chrome, Safari, Edge o Firefox sin modo incógnito.','Open it in Chrome, Safari, Edge or Firefox outside private mode.')}</p></div>`; return; }
   try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
-  PROFILES=sanitizeProfiles(await IDB.get('profiles'));
+  await migrateOld(); PROFILES=sanitizeProfiles(await IDB.get('profiles'));
   if(document.readyState==='loading') await new Promise(r=>document.addEventListener('DOMContentLoaded',r,{once:true}));   // split.js y ticket.js ya cargados
   $('#lockBtn').onclick=()=>{ if(S) lockNow('pick'); };
   $('#uBtn').onclick=()=>{ if(S) location.hash='#perfil'; };
   $('#backBtn').onclick=()=>{ location.hash=''; };
   applyStatic(); showGate(PROFILES.length===1?'unlock':'pick',PROFILES[0]);
   // El aviso de versión nueva solo tiene sentido si esta página ya la sirve el service worker de esta app (no el de MyFinZen)
-  const own=w=>!!w&&/\/dividir\/sw\.js$/.test(w.scriptURL);
+  const own=w=>!!w&&/\/whosbill\/sw\.js$/.test(w.scriptURL);
   if('serviceWorker' in navigator){ try{ const hadOwn=own(navigator.serviceWorker.controller); const reg=await navigator.serviceWorker.register('sw.js');
     const ready=w=>{ $('#updBar').style.display='flex'; $('#updGo').onclick=()=>{ persist().finally(()=>w.postMessage('skipWaiting')); }; };
     if(reg.waiting&&hadOwn) ready(reg.waiting);

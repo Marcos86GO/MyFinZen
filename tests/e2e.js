@@ -13,7 +13,7 @@ const EVIL={doc_type:'bank_statement',institution:'<img src=x onerror="window.__
 // Ticket de restaurante (inventado) como si lo hubiera leído el lector local, también con intentos de inyección
 const TICKET={place:'<img src=x onerror="window.__pwn=20">Bistró Prueba',date:'2026-11-27',currency:'usd',guests:4,subtotal:55,discount:null,tax:5.09,service:null,tip:null,total:60.09,
   items:[{name:'Hamburguesa Prueba',qty:1,price:18.5},{name:'Ensalada Prueba',qty:1,price:14},{name:'Cerveza Prueba',qty:2,price:16},{name:'<img src=x onerror="window.__pwn=21">',qty:1,price:6.5},{name:'Malo',qty:1,price:'12"><img src=x>'}]};
-let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ninguna)
+let ANTH=0; // peticiones a la API de Claude (WhosBill no debe hacer ninguna)
 (async()=>{
   const b=await chromium.launch(); const ctx=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}); const pg=await ctx.newPage();
   const errs=[]; pg.on('pageerror',e=>{ errs.push(e.message); console.log('PAGEERR',e.stack); }); pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); });
@@ -207,7 +207,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
   await pg.goto(U+'#flujo'); await pg.waitForTimeout(300);
   // Menú lateral y botón +
   await pg.click('#menuBtn'); await pg.waitForTimeout(250);
-  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos,#calendario'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#dividir,#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
+  ok(await pg.evaluate(()=>document.body.classList.contains('menu-open')&&[...document.querySelectorAll('#nav > a')].map(a=>a.getAttribute('href')).join()==='#resumen,#flujo,#cuentas,#inversiones,#hipotecas,#impuestos,#calendario'&&[...document.querySelectorAll('#navMore a')].map(a=>a.getAttribute('href')).join()==='#whosbill,#alquiler,#claude,#ayuda,#ajustes'),'menú lateral con el orden pedido y "Más"');
   await pg.click('#nav a[href="#cuentas"]'); await pg.waitForTimeout(300); ok(await pg.evaluate(()=>!document.body.classList.contains('menu-open')&&location.hash==='#cuentas'&&document.querySelector('#pageTitle').innerText==='Cuentas'),'el menú se cierra al elegir y el título cambia');
   await pg.click('#fab'); await pg.click('#fabTx'); await pg.fill('#nAmt','12.5'); await pg.fill('#nDesc','Café de prueba'); await pg.selectOption('#nCat','Restaurantes'); await pg.click('#nAdd'); await pg.waitForTimeout(200);
   ok(await pg.evaluate(()=>S.tx.some(t=>t.desc==='Café de prueba'&&t.amount===-12.5&&t.src==='manual')),'botón +: añadir un movimiento');
@@ -509,7 +509,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(r.rows>0&&r.match&&r.pressed==='true'&&one.on&&cat==='0'&&go.h==='#flujo'&&go.cat===want.cat&&go.month===want.last,'Resumen: «Adónde va tu gasto» reparte todo el gasto del mes por categoría y lleva a sus movimientos '+JSON.stringify([r,one.on,go]));
     await pg.evaluate(()=>{ flujoFilter.cat='all'; flujoFilter.month='all'; SPEND_P=12; }); }
   // Inglés en todas las pantallas
-  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','calendario','dividir','claude','ayuda','ajustes']; const bad=[];
+  await pg.evaluate(()=>setLang('en')); const views=['resumen','flujo','hipotecas','inversiones','jubilacion','noticias','alquiler','cuentas','importar','calendario','whosbill','claude','ayuda','ajustes']; const bad=[];
   const ES=/\b(Añadir|Guardar|Cancelar|movimientos|Ingresos|Gastos|Saldo|Cuentas|Editar|Importar|Borrar|también|según|Resumen|Hipotecas|cuota|Impuestos|Familia|Ahorro|Patrimonio|Cartera|Noticias|titulares|fuentes)\b/;
   for(const v of views){ await pg.goto(U+'#'+v); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push(v+': '+m[0]); }
   for(const tab of ['resumen','perfil','optimizar','turbotax']){ await pg.goto(U+'#impuestos'); await pg.evaluate(t=>{taxSel.tab=t;route();},tab); await pg.waitForTimeout(250); const t=await pg.$eval('body',e=>e.innerText); const m=t.match(ES); if(m) bad.push('impuestos/'+tab+': '+m[0]); }
@@ -524,15 +524,15 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
   if(process.env.SHOTS){ await pg.setViewportSize({width:1200,height:900}); await pg.goto(U+'#flujo'); await pg.waitForTimeout(500); await pg.$eval('#recBox',e=>e.scrollIntoView()); await pg.screenshot({path:process.env.SHOTS+'/flujo-escritorio.png'}); await pg.goto(U+'#hipotecas'); await pg.waitForTimeout(400); await pg.screenshot({path:process.env.SHOTS+'/hipotecas-escritorio.png'}); await pg.setViewportSize({width:412,height:900}); }
   await pg.goto(U+'#ajustes'); await pg.waitForTimeout(300); await pg.fill('#sKey','sk-ant-test'); await pg.click('#sKeySave'); await pg.waitForTimeout(300);
   await pg.click('#sKeyTest'); await pg.waitForTimeout(600); ok(/Funciona/.test(await pg.$eval('#sKeyMsg',e=>e.innerText)),'clave de API (mock)');
-  // Dividir la cuenta: foto del ticket → lector local → reparto a partes iguales y por consumo entre tarjetas (todo en el dispositivo)
+  // WhosBill integrado en MyFinZen (con el usuario de MyFinZen): foto del ticket → lector local → reparto (todo en el dispositivo)
   { const anth0=ANTH; await pg.goto(U+'#dividir'); await pg.waitForTimeout(300);
-    ok(await pg.evaluate(()=>!!$('#spPrefs')&&$('#spStandalone')&&$('#spStandalone').getAttribute('href')==='dividir/'),'MyFinZen: preferencias de reparto y enlace a la app independiente');
-    ok(await pg.evaluate(()=>!!$('#spCam')&&$('#spCam').getAttribute('capture')==='environment'&&!!$('#spPick')&&!!$('#spManual')&&document.querySelector('nav a.on').getAttribute('href')==='#dividir'&&$('#pageTitle').innerText==='Dividir la cuenta'),'Dividir la cuenta: foto con la cámara, elegir fotos o a mano');
+    ok(await pg.evaluate(()=>!!$('#spPrefs')&&$('#spStandalone')&&$('#spStandalone').getAttribute('href')==='whosbill/'&&location.hash==='#whosbill'&&!$('#gate').innerText.trim()),'MyFinZen integra WhosBill sin pedir otro usuario (la dirección antigua #dividir lleva a #whosbill): preferencias y enlace a la app independiente');
+    ok(await pg.evaluate(()=>!!$('#spCam')&&$('#spCam').getAttribute('capture')==='environment'&&!!$('#spPick')&&!!$('#spManual')&&document.querySelector('nav a.on').getAttribute('href')==='#whosbill'&&$('#pageTitle').innerText==='WhosBill'&&[...document.scripts].some(x=>/whosbill\/core\/split\.js$/.test(x.src))),'WhosBill en el menú de MyFinZen (cargado desde whosbill/core): foto con la cámara, elegir fotos o a mano');
     // Lector local: la foto (de un ticket inventado, con sombra y girado) se lee en el navegador sin llamar a ningún servicio
     const ext=[]; const onReq=r=>{ if(!r.url().startsWith(U)&&!r.url().startsWith('blob:')&&!r.url().startsWith('data:')) ext.push(r.url()); }; pg.on('request',onReq);
     await pg.setInputFiles('#spPick',path.join(FX,'receipt.jpg')); await pg.waitForSelector('#spTicket',{timeout:120000}); await pg.waitForTimeout(200); pg.off('request',onReq);
     const loc=await pg.evaluate(async()=>{ const s=spCurrent(); const dbs=indexedDB.databases?(await indexedDB.databases()).map(d=>d.name):[];
-      const c=await caches.open('mfz-ocr-7.0.0'), cached=!!(await c.match(new URL('vendor/ocr/eng.traineddata.gz',location.href).href));
+      const c=await caches.open('wb-ocr-7.0.0'), cached=!!(await c.match(new URL('whosbill/vendor/ocr/eng.traineddata.gz',location.href).href));
       return {place:s.place,date:s.date,people:s.people,cards:s.cards.map(c=>c.n).join(),items:s.items.map(i=>i.qty+'|'+i.name+'|'+i.price).join(';'),sub:s.sub,tax:s.tax,tot:s.tot,chk:$('#spChk').innerText,ai:!!$('#spAI'),err:SPLIT.err,dbs,cached,src:s.src,warn:!!$('#spWarn .alert')}; });
     ok(!ext.length&&loc.items==='2|Fish Tacos|18;1|Veggie Burger|14.5;3|Lemonade|9;1|Garlic Fries|6.75;1|Churros|7.25'&&loc.sub===55.5&&loc.tax===4.3&&loc.tot===59.8&&loc.place==='Prueba Bistro'&&loc.date==='2026-11-20'&&loc.people===3&&loc.cards==='2,1'&&loc.src==='photo'&&/subtotal del ticket/.test(loc.chk)&&/Cuadra con el total/.test(loc.chk)&&!/⚠/.test(loc.chk)&&!loc.err&&!loc.warn,
       'lector local: lee la foto del ticket en el dispositivo (productos, unidades, subtotal, impuestos, total, comensales y fecha) sin enviar nada fuera '+JSON.stringify([loc,ext.slice(0,3)]));
@@ -588,11 +588,11 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(await pg.evaluate(()=>{ const s=spCurrent(), c=s.items.filter(i=>i.name==='Cerveza Prueba'); return s.items.length===5&&c.length===2&&c.every(i=>i.qty===1&&i.price===8&&i.to.length===5); }),'una línea con 2 unidades se separa en dos productos (con las mismas personas)');
     await pg.click('#spShare'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const t=$('#spTxt').innerText; return /sin cifrar/.test($('#modal').innerText)&&/Tarjeta 1 \(Ana, Luis\): \$/.test(t)&&/Cada persona:/.test(t)&&/Ana: \$[\d.]+ — Hamburguesa Prueba/.test(t)&&/Total: \$71\.09/.test(t)&&t.indexOf('Cada tarjeta paga')<t.indexOf('Cada persona'); }),'compartir el reparto (por tarjeta y por persona) avisa de que el texto sale sin cifrar'); await pg.click('#mc');
-    if(process.env.SHOTS){ for(const [lg,w,n] of [['es',412,'dividir-movil'],['en',412,'en-dividir-movil'],['es',1200,'dividir-escritorio']]){ await pg.setViewportSize({width:w,height:900}); await pg.evaluate(l=>setLang(l),lg); await pg.waitForTimeout(250); await pg.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
-      await pg.evaluate(()=>{ spCurrent().mode='even'; route(); }); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/dividir-iguales-escritorio.png',fullPage:true}); await pg.evaluate(()=>{ spCurrent().mode='items'; }); await pg.setViewportSize({width:412,height:900}); await pg.evaluate(()=>setLang('es')); }
+    if(process.env.SHOTS){ for(const [lg,w,n] of [['es',412,'whosbill-movil'],['en',412,'en-whosbill-movil'],['es',1200,'whosbill-escritorio']]){ await pg.setViewportSize({width:w,height:900}); await pg.evaluate(l=>setLang(l),lg); await pg.waitForTimeout(250); await pg.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
+      await pg.evaluate(()=>{ spCurrent().mode='even'; route(); }); await pg.waitForTimeout(200); await pg.screenshot({path:process.env.SHOTS+'/whosbill-iguales-escritorio.png',fullPage:true}); await pg.evaluate(()=>{ spCurrent().mode='items'; }); await pg.setViewportSize({width:412,height:900}); await pg.evaluate(()=>setLang('es')); }
     await pg.evaluate(()=>setLang('en')); await pg.waitForTimeout(200);
-    const en=await pg.evaluate(()=>{ const t=$('#app').innerText; return {m:(t.match(/\b(Añadir|Guardar|Cancelar|Borrar|Tarjeta|Productos|Propina|Impuestos|personas|Compartir|Sin asignar)\b/)||[])[0]||null,ok:/What did each person order\?/.test(t)&&/Each card pays/.test(t)&&/Each person/.test(t)&&/Card 1/.test(t)&&/By person/.test(t)&&$('#pageTitle').innerText==='Split the bill'}; });
-    ok(!en.m&&en.ok,'Dividir la cuenta en inglés '+JSON.stringify(en)); await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
+    const en=await pg.evaluate(()=>{ const t=$('#app').innerText; return {m:(t.match(/\b(Añadir|Guardar|Cancelar|Borrar|Tarjeta|Productos|Propina|Impuestos|personas|Compartir|Sin asignar)\b/)||[])[0]||null,ok:/What did each person order\?/.test(t)&&/Each card pays/.test(t)&&/Each person/.test(t)&&/Card 1/.test(t)&&/By person/.test(t)&&$('#pageTitle').innerText==='WhosBill'}; });
+    ok(!en.m&&en.ok,'WhosBill en inglés '+JSON.stringify(en)); await pg.evaluate(()=>setLang('es')); await pg.waitForTimeout(200);
     await pg.waitForTimeout(400);
     ok(!/Hamburguesa Prueba|Bistró/.test(await pg.evaluate(()=>IDB.get('vault').then(v=>JSON.stringify(v))))&&await pg.evaluate(()=>S.splits.length===2),'los tickets se guardan cifrados');
     const san=await pg.evaluate(()=>{ const r=sanitizeSplits([{id:'s"><b>',cards:[{id:'a',n:'x'},{id:'b',n:500}],items:[{name:'<b>x',price:'5',to:['a','zz','a']},{price:'nope'}],cur:'<b>',mode:'raro',tipPct:500,people:-3},'x',null])[0], s2=sanitizeState({splits:[{cards:[]}],settings:{split:{tip:'<b>',ask:false}}});
@@ -601,7 +601,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
       return r.id==='sb'&&r.cards[0].n===1&&r.cards[1].n===99&&r.items[0].to.join()==='a'&&r.items[0].price===5&&r.items[1].price===0&&r.cur==='USD'&&r.mode==='even'&&r.tipPct===null&&r.people===1&&s2.splits.length===1&&s2.splits[0].cards.length===1&&s2.settings.split.tip===null&&!('ask' in s2.settings.split); });
     ok(san,'los tickets se validan al desbloquear y al restaurar');
     ok(await pg.evaluate(()=>{ const n=SPLIT.img.length; splitOnLock(); return n===1&&!SPLIT.img.length&&!SPLIT.cur; }),'la foto solo vive en memoria y se descarta al bloquear');
-    await pg.goto(U+'#resumen'); await pg.waitForTimeout(100); await pg.goto(U+'#dividir'); await pg.waitForTimeout(250);
+    await pg.goto(U+'#resumen'); await pg.waitForTimeout(100); await pg.goto(U+'#whosbill'); await pg.waitForTimeout(250);
     await pg.click('[data-sptab="hist"]'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>document.querySelectorAll('#spHist .sp-hrow [data-spo]').length===2&&!$('#spTicket')&&!$('#spStart')),'historial: los tickets anteriores están en su pestaña');
     await pg.click('#spHist [data-spo]'); await pg.waitForTimeout(150); const opened=await pg.evaluate(()=>!!$('#spTicket')&&!!spCurrent());
@@ -609,7 +609,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(opened&&await pg.evaluate(()=>SPLIT.tab==='new'&&!!$('#spManual')),'se abre un ticket desde el historial y «Otro ticket» vuelve a empezar');
     await pg.click('#spManual'); await pg.waitForTimeout(150); await pg.fill('#spFsub','100'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.src==='manual'&&!s.items.length&&$('#spTotV').innerText==='$120.00'&&[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()==='$60.00,$60.00'; }),'a mano: subtotal, propina recordada y dos tarjetas a partes iguales');
-    ok(ANTH===anth0,'Dividir la cuenta no ha hecho ninguna petición a Claude');
+    ok(ANTH===anth0,'WhosBill no ha hecho ninguna petición a Claude');
     // Historial: guarda todos los tickets con importe (no los vacíos), por meses, con lo que pagó cada tarjeta, filtros y CSV
     await pg.evaluate(()=>{ const s=spCurrent(); s.cards[0].name='Visa Historial'; s.place='Bar Historial'; save(); });
     await pg.click('#spNewB'); await pg.waitForTimeout(100); await pg.click('#spManual'); await pg.waitForTimeout(100); await pg.click('#spHistB'); await pg.waitForTimeout(200);
@@ -631,13 +631,13 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     await pg.click('#spManual'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.mode==='items'&&s.cards.map(c=>c.name+':'+c.n).join()==='Visa Prueba:1,Amex Prueba:1'&&S.settings.split.cards.length===2; }),'MyFinZen: los tickets nuevos empiezan con las preferencias (modo y tarjetas habituales)');
     await pg.evaluate(()=>{ S.splits=[]; SPLIT.cur=null; S.settings.split={}; save(); }); }
-  // App independiente «Dividir la cuenta» (dividir/): usuarios locales cifrados, preferencias y el mismo reparto (todo en el dispositivo)
+  // App independiente WhosBill (whosbill/): usuarios locales cifrados, preferencias y el mismo reparto (todo en el dispositivo)
   { const dv=await ctx.newPage(), derr=[], dext=[]; dv.on('pageerror',e=>derr.push(e.message)); dv.on('console',m=>{ if(m.type()==='error') derr.push(m.text()); });
     dv.on('request',r=>{ if(!r.url().startsWith(U)&&!/^(blob|data):/.test(r.url())) dext.push(r.url()); });
     const dcdp=await ctx.newCDPSession(dv); await dcdp.send('WebAuthn.enable');
     await dcdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,hasPrf:true,automaticPresenceSimulation:true}});
-    await dv.goto(U+'dividir/'); await dv.waitForTimeout(800);
-    ok(await dv.evaluate(()=>!!$('#gName')&&!document.querySelector('#nav')&&document.title==='Dividir la cuenta'&&/Crea tu usuario/.test($('#gate').innerText)),'app independiente: se abre en dividir/ (el service worker de MyFinZen no la sustituye) y pide crear un usuario');
+    await dv.goto(U+'whosbill/'); await dv.waitForTimeout(800);
+    ok(await dv.evaluate(()=>!!$('#gName')&&!document.querySelector('#nav')&&document.title==='WhosBill'&&/WhosBill/.test($('#gate .wb-mark').innerText)&&/Crea tu usuario/.test($('#gate').innerText)&&![...document.querySelectorAll('link[rel=stylesheet],script[src]')].some(e=>/\/MyFinZen\/|^\.\.\//.test(e.getAttribute('href')||e.getAttribute('src')))),'app independiente WhosBill: se abre en whosbill/, no usa archivos de MyFinZen y pide crear un usuario');
     const DP1='frase de prueba Ana 1', DP2='frase de prueba Luis 2';
     await dv.fill('#gName','Ana Prueba'); await dv.fill('#g1','corta'); await dv.fill('#g2','corta'); await dv.click('#gGo'); await dv.waitForTimeout(100);
     const short=await dv.evaluate(()=>/al menos 10/.test($('#gMsg').innerText));
@@ -666,7 +666,7 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     const nlangEN=await dv.evaluate(()=>$('[data-nlang="en"]').getAttribute('aria-checked')==='true'&&$('#gGo').innerText==='Create user'&&$('#gName').value==='Luis Prueba'&&$('#g1').value.length>9&&$('#g2').value===$('#g1').value);
     await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
     await dv.check('#gOk'); await dv.click('#gNext'); await dv.waitForSelector('#mc',{timeout:5000}); await dv.click('#mc'); await dv.waitForTimeout(200);
-    ok(nlangES&&nlangEN&&await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='Split the bill'&&/New receipt/.test($('#app').innerText)),'al crear el usuario se elige su idioma preferido (inglés) y la app sale en ese idioma');
+    ok(nlangES&&nlangEN&&await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='WhosBill'&&/New receipt/.test($('#app').innerText)),'al crear el usuario se elige su idioma preferido (inglés) y la app sale en ese idioma');
     ok(await dv.evaluate(()=>SES.p.name==='Luis Prueba'&&S.splits.length===0&&S.settings.split.mode==='even'&&!S.settings.split.cards.length&&PROFILES.length===2),'un segundo usuario empieza sin los tickets ni las preferencias del primero');
     await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.waitForTimeout(100);
     ok(await dv.evaluate(()=>/Hola, Ana Prueba/.test($('#gate').innerText)&&/Entrar/.test($('#gate').innerText)),'la pantalla de entrada de cada usuario sale en su idioma');
@@ -681,12 +681,12 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(await dv.evaluate(()=>location.hash==='#perfil'&&!!$('#pfSec')&&/Passkey|Android|Windows|Mac|Dispositivo/.test($('#pfSec').innerText)&&$('#pageTitle').innerText==='Perfil y seguridad'),'pantalla de perfil y seguridad');
     await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Luis Prueba")'); await dv.waitForTimeout(100); const luisEn=await dv.evaluate(()=>/Hi, Luis Prueba/.test($('#gate').innerText));
     await dv.fill('#gP',DP2); await dv.click('#gGo'); await dv.waitForTimeout(1500);
-    ok(luisEn&&await dv.evaluate(()=>document.documentElement.lang==='en'&&['Split the bill','Profile & security'].includes($('#pageTitle').innerText)),'y al entrar se aplica su idioma');
+    ok(luisEn&&await dv.evaluate(()=>document.documentElement.lang==='en'&&['WhosBill','Profile & security'].includes($('#pageTitle').innerText)),'y al entrar se aplica su idioma');
     await dv.click('#uBtn'); await dv.waitForTimeout(200); await dv.click('#pfDelGo'); await dv.fill('#dl0',DP2); await dv.click('#dlGo'); await dv.waitForTimeout(800);
     ok(await dv.evaluate(()=>!S&&PROFILES.length===1&&PROFILES[0].name==='Ana Prueba'&&!/Luis/.test($('#gate').innerText)),'borrar un usuario (con su contraseña) no toca a los demás');
     // Cambiar el idioma preferido en Perfil: se guarda para ese usuario
     await dv.click('[data-pid]'); await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500);
-    const anaEs=await dv.evaluate(()=>$('#pageTitle').innerText==='Dividir la cuenta'); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200);
+    const anaEs=await dv.evaluate(()=>document.documentElement.lang==='es'&&$('#pageTitle').innerText==='WhosBill'); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200);
     await dv.selectOption('#pfLang','en'); await dv.waitForTimeout(400);
     const saved=await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='Profile & security'&&$('#pfLang').value==='en');
     await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.evaluate(()=>{ useLang('es'); showGate('pick'); });
@@ -697,23 +697,35 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     const tEn=await dv.$eval('body',e=>e.innerText); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200); const pEn=await dv.$eval('body',e=>e.innerText);
     const ESW=/\b(Añadir|Guardar|Cancelar|Borrar|Contraseña|Entrar|Salir|Tarjetas|Productos|Propina|Impuestos|personas|Compartir|usuario|Seguridad|Idioma)\b/;
     ok(!ESW.test(gEn+tEn+pEn)&&/Hi, Ana Prueba/.test(gEn)&&/What did each person order\?/.test(tEn)&&/Profile & security/.test(pEn),'app independiente en inglés '+((gEn+tEn+pEn).match(ESW)||[''])[0]);
-    if(process.env.SHOTS){ for(const [lg,w,n,h] of [['es',412,'dividir-app-movil',''],['es',412,'dividir-app-perfil','#perfil'],['en',412,'en-dividir-app-movil',''],['es',1200,'dividir-app-escritorio',''],['en',1200,'en-dividir-app-escritorio','']]){
+    if(process.env.SHOTS){ for(const [lg,w,n,h] of [['es',412,'whosbill-app-movil',''],['es',412,'whosbill-app-perfil','#perfil'],['en',412,'en-whosbill-app-movil',''],['es',1200,'whosbill-app-escritorio',''],['en',1200,'en-whosbill-app-escritorio','']]){
         await dv.setViewportSize({width:w,height:900}); await dv.evaluate(([l,h])=>{ location.hash=h; setLang(l); },[lg,h]); await dv.waitForTimeout(300); await dv.screenshot({path:process.env.SHOTS+'/'+n+'.png',fullPage:true}); }
-      await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=null; route(); }); await dv.waitForTimeout(200); await dv.screenshot({path:process.env.SHOTS+'/dividir-app-inicio.png',fullPage:true}); }
+      await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=null; route(); }); await dv.waitForTimeout(200); await dv.screenshot({path:process.env.SHOTS+'/whosbill-app-inicio.png',fullPage:true}); }
     await dv.evaluate(()=>setLang('es'));
     await dv.reload(); await dv.waitForTimeout(800);
-    ok(await dv.evaluate(()=>!!navigator.serviceWorker.controller&&/\/dividir\/sw\.js$/.test(navigator.serviceWorker.controller.scriptURL)&&/Hola, Ana Prueba/.test($('#gate').innerText)),'tiene su propio service worker (instalable y sin conexión) y recuerda al único usuario');
+    ok(await dv.evaluate(()=>!!navigator.serviceWorker.controller&&/\/whosbill\/sw\.js$/.test(navigator.serviceWorker.controller.scriptURL)&&/Hola, Ana Prueba/.test($('#gate').innerText)),'tiene su propio service worker (instalable y sin conexión) y recuerda al único usuario');
     ok(!dext.length&&!derr.length,'la app independiente no se conecta a nada fuera de la app y no da errores '+JSON.stringify([dext.slice(0,3),derr.slice(0,3)]));
-    await dv.close(); }
-  // Chrome con un service worker antiguo de MyFinZen (antes de v1.29.0), que respondía a /dividir/ con la página de MyFinZen:
+    const oldProfiles=await dv.evaluate(()=>IDB.get('profiles'));
+    await dv.close();
+    // Quien usaba la app con su nombre antiguo (/dividir/, base 'mfz-dividir'): la dirección lleva a WhosBill y sus usuarios se conservan
+    const c3=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}), p3=await c3.newPage();
+    await p3.goto(U+'dividir/'); await p3.waitForURL(/\/whosbill\/$/,{timeout:10000}).catch(()=>{}); await p3.waitForTimeout(600);
+    const redir=await p3.evaluate(()=>location.pathname.endsWith('/whosbill/')&&!!$('#gName'));
+    await p3.evaluate(async profs=>{ await new Promise(res=>{ const r=indexedDB.open('mfz-dividir',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>{ const db=r.result, t=db.transaction('kv','readwrite'); t.objectStore('kv').put(profs,'profiles'); t.oncomplete=()=>{ db.close(); res(); }; }; });
+      await new Promise(res=>{ const r=indexedDB.open('whosbill',1); r.onsuccess=()=>{ const db=r.result, t=db.transaction('kv','readwrite'); t.objectStore('kv').delete('profiles'); t.oncomplete=()=>{ db.close(); res(); }; }; }); },oldProfiles);
+    await p3.reload(); await p3.waitForTimeout(800);
+    const mig=await p3.evaluate(async()=>({names:PROFILES.map(p=>p.name).join(),gate:$('#gate').innerText,old:(await indexedDB.databases()).some(d=>d.name==='mfz-dividir')}));
+    await p3.fill('#gP','frase nueva de Ana 3'); await p3.click('#gGo'); await p3.waitForTimeout(1500);
+    ok(redir&&mig.names==='Ana Prueba'&&/Ana Prueba/.test(mig.gate)&&!mig.old&&await p3.evaluate(()=>!!S&&S.splits.length===1),'la dirección antigua /dividir/ lleva a WhosBill y los usuarios de antes se traen (y entran con su contraseña) '+JSON.stringify([redir,mig.names,mig.old]));
+    await c3.close(); }
+  // Chrome con un service worker antiguo de MyFinZen (antes de v1.32.0), que respondía a /whosbill/ con la página de MyFinZen:
   // la app independiente tiene que arreglarse sola (instala su service worker y recarga) en vez de quedarse en blanco
   { const c2=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}), p2=await c2.newPage();
     const OLDSW="self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('fetch',e=>{ if(e.request.mode==='navigate') e.respondWith(fetch(new URL('./index.html',self.registration.scope))); });";
     await c2.route(U+'sw.js',r=>r.fulfill({status:200,contentType:'application/javascript',body:OLDSW}));
     await p2.goto(U); await p2.waitForFunction(()=>!!navigator.serviceWorker.controller,null,{timeout:10000}); await p2.waitForTimeout(1500);   // MyFinZen recarga al cambiar de service worker
     const fixed=[]; p2.on('pageerror',e=>fixed.push(e.message));
-    await p2.goto(U+'dividir/').catch(()=>{}); await p2.waitForSelector('#gName',{timeout:20000}).catch(()=>{}); await p2.waitForTimeout(300);
-    ok(await p2.evaluate(()=>!!document.getElementById('gName')&&/\/dividir\/sw\.js$/.test((navigator.serviceWorker.controller||{}).scriptURL||''))&&fixed.some(m=>/servida por otro service worker/.test(m)),'dividir/ se abre aunque el service worker antiguo de MyFinZen la intercepte (se arregla sola)');
+    await p2.goto(U+'whosbill/').catch(()=>{}); await p2.waitForSelector('#gName',{timeout:20000}).catch(()=>{}); await p2.waitForTimeout(300);
+    ok(await p2.evaluate(()=>!!document.getElementById('gName')&&/\/whosbill\/sw\.js$/.test((navigator.serviceWorker.controller||{}).scriptURL||''))&&fixed.some(m=>/servida por otro service worker/.test(m)),'dividir/ se abre aunque el service worker antiguo de MyFinZen la intercepte (se arregla sola)');
     await c2.close(); }
   // Seguridad: CSP sin scripts incrustados, respuesta de Claude manipulada, copia manipulada, datos de noticias, utilidades
   ok(await pg.evaluate(()=>{ const c=document.querySelector('meta[http-equiv="Content-Security-Policy"]').content; return /script-src 'self';/.test(c)&&!/unsafe-inline[^;]*;\s*style/.test(c.split('script-src')[1].split(';')[0]+';style')&&![...document.scripts].some(x=>!x.src); }),'CSP sin scripts incrustados');
