@@ -23,11 +23,17 @@ if(!document.getElementById('uBtn')){
   throw new Error('dividir: página servida por otro service worker');
 }
 try{ sessionStorage.removeItem('mfz-dv-fix'); }catch(e){}
-/* ---------- Idioma (la misma preferencia que MyFinZen: mismo origen, mfz-lang) ---------- */
+/* ---------- Idioma ----------
+   Cada usuario tiene el suyo (profiles[].lang, en claro porque hace falta antes de entrar: «Hola, Ana» ya sale en su idioma).
+   Antes de elegir usuario se usa el último idioma usado en este navegador (mfz-lang, la misma preferencia que MyFinZen). */
 let LANG='es';
 try{ const s=localStorage.getItem('mfz-lang'); LANG=(s==='es'||s==='en')?s:(/^es\b/i.test(navigator.language||'')?'es':'en'); }catch(e){}
 const L=(es,en)=>LANG==='en'?en:es;
-function setLang(l){ LANG=l==='en'?'en':'es'; try{ localStorage.setItem('mfz-lang',LANG); }catch(e){} applyStatic(); if(S) route(); else showGate(GATE.mode,GATE.arg); }
+// who: el usuario cuyo idioma preferido cambia (el que ha entrado, o el de la pantalla «Hola, …»); sin él, solo esta pantalla
+function setLang(l,who){ LANG=l==='en'?'en':'es'; try{ localStorage.setItem('mfz-lang',LANG); }catch(e){}
+  const p=who||SES.p; if(p&&p.lang!==LANG){ p.lang=LANG; if(typeof saveProfiles==='function') saveProfiles(); }
+  applyStatic(); if(S) route(); else showGate(GATE.mode,GATE.arg); }
+const useLang=l=>{ if((l==='es'||l==='en')&&l!==LANG){ LANG=l; try{ localStorage.setItem('mfz-lang',LANG); }catch(e){} } };
 /* ---------- Utilidades (las mismas que MyFinZen) ---------- */
 const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -98,7 +104,7 @@ function sanitizeProfiles(v){ const B=/^[A-Za-z0-9+/=]+$/, sealed=o=>{ o=obj(o);
   const kw=o=>{ o=obj(o); const it=Number(o.it), w=sealed(o.wrap); return typeof o.salt==='string'&&B.test(o.salt)&&o.salt.length<=64&&Number.isInteger(it)&&it>=100000&&it<=5000000&&w?{salt:o.salt,it,wrap:w}:null; };
   return arr(v).map(p=>{ p=obj(p); const pw=kw(p.pw), rec=kw(p.rec), data=sealed(p.data), id=cleanId(p.id); if(!id||!pw||!rec||!data) return null;
     const pk=arr(p.pk).map(k=>{ k=obj(k); return typeof k.id==='string'&&/^[A-Za-z0-9_-]{1,400}$/.test(k.id)&&typeof k.prfSalt==='string'&&B.test(k.prfSalt)&&sealed(k.wrap)?{id:k.id,prfSalt:k.prfSalt,wrap:sealed(k.wrap),created:isoDate(k.created)||today(),name:str(k.name,40)}:null; }).filter(Boolean).slice(0,10);
-    return {id,name:str(p.name,40).trim()||'—',created:str(p.created,30),updated:str(p.updated,30),pw,rec,pk,data}; }).filter(Boolean).slice(0,20); }
+    return {id,name:str(p.name,40).trim()||'—',lang:p.lang==='en'||p.lang==='es'?p.lang:null,created:str(p.created,30),updated:str(p.updated,30),pw,rec,pk,data}; }).filter(Boolean).slice(0,20); }
 // Datos de un usuario: sus tickets y sus preferencias (validados con las funciones de split.js)
 function blankData(){ return {v:1,created:new Date().toISOString(),splits:[],settings:{split:sanitizeSplitPrefs({}),lockMin:5}}; }
 function sanitizeData(st){ const o=obj(st), s=obj(o.settings);
@@ -114,8 +120,8 @@ function persist(){ if(!SES.dk||!S||!SES.p) return persistQ; const dk=SES.dk, p=
 function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ saveTimer=null; persist(); },200); }
 function flushSave(){ if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; persist(); } }
 const saveProfiles=()=>persistQ=persistQ.then(()=>IDB.set('profiles',PROFILES));
-async function createProfile(name,pass){ const raw=rnd(32); await setDK(raw); const rec=makeRecovery();
-  const p={id:uid(),name:name.slice(0,40),created:new Date().toISOString(),updated:'',pw:await wrapPw(pass,raw,PW_ITER),rec:await wrapPw(normRec(rec),raw,REC_ITER),pk:[],data:null};
+async function createProfile(name,pass,lang){ const raw=rnd(32); await setDK(raw); const rec=makeRecovery();
+  const p={id:uid(),name:name.slice(0,40),lang:lang==='en'?'en':'es',created:new Date().toISOString(),updated:'',pw:await wrapPw(pass,raw,PW_ITER),rec:await wrapPw(normRec(rec),raw,REC_ITER),pk:[],data:null};
   S=blankData(); p.data=await seal(SES.dk,TE.encode(JSON.stringify(S))); PROFILES.push(p); SES.p=p; await saveProfiles(); return rec; }
 async function unlockPassword(p,pass){ const raw=await unseal(await kdfPass(pass,unb64(p.pw.salt),p.pw.it),p.pw.wrap); await setDK(raw); await loadData(p); }
 async function unlockRecovery(p,rec,newPass){ const raw=await unseal(await kdfPass(normRec(rec),unb64(p.rec.salt),p.rec.it),p.rec.wrap); await setDK(raw); await loadData(p);
@@ -156,9 +162,11 @@ const avInit=n=>esc(String(n||'?').trim().split(/\s+/).map(w=>w[0]).join('').sli
 const avHue=n=>{ let h=0; for(const c of String(n)) h=(h*31+c.charCodeAt(0))%360; return h; };
 function langSwitch(){ return `<div class="langsw"><button class="sm ${LANG==='es'?'on':''}" data-lang="es">Español</button><button class="sm ${LANG==='en'?'on':''}" data-lang="en">English</button></div>`; }
 function showGate(mode,arg){ const g=$('#gate'); if(mode==='pick'&&!PROFILES.length) mode='new'; if(mode==='unlock'&&!PROFILES.includes(arg)) mode='pick'; GATE.mode=mode; GATE.arg=arg;
+  if((mode==='unlock'||mode==='recover')&&arg&&arg.lang) useLang(arg.lang);   // la pantalla de un usuario sale en su idioma
   g.style.display='flex'; document.body.classList.add('locked');
-  const box=html=>{ g.innerHTML=`<div class="gate-card"><div class="gate-logo"><img src="icons/icon-192.png" alt=""><div><b>${L('Dividir la cuenta','Split the bill')}</b><div class="muted">${L('Tickets repartidos entre tarjetas, cifrados en tu dispositivo','Receipts split between cards, encrypted on your device')}</div></div></div>${html}${langSwitch()}</div>`;
-    g.querySelectorAll('[data-lang]').forEach(b=>b.onclick=()=>setLang(b.dataset.lang)); };
+  const who=mode==='unlock'||mode==='recover'?arg:null;
+  const box=(html,noSw)=>{ g.innerHTML=`<div class="gate-card"><div class="gate-logo"><img src="icons/icon-192.png" alt=""><div><b>${L('Dividir la cuenta','Split the bill')}</b><div class="muted">${L('Tickets repartidos entre tarjetas, cifrados en tu dispositivo','Receipts split between cards, encrypted on your device')}</div></div></div>${html}${noSw?'':langSwitch()}</div>`;
+    g.querySelectorAll('.langsw [data-lang]').forEach(b=>b.onclick=()=>setLang(b.dataset.lang,who)); };
   const msg=t=>{ const m=$('#gMsg'); if(m) m.textContent=t; };
   if(mode==='pick'){
     box(`<h2>${L('¿Quién eres?','Who are you?')}</h2><div class="clist gate-users">${PROFILES.map(p=>`<button class="lrow" data-pid="${esc(p.id)}"><span class="av round" style="--h:${avHue(p.name)}">${avInit(p.name)}</span><span class="lm"><b>${esc(p.name)}</b><span>${p.pk.length?L('Contraseña o passkey','Password or passkey'):L('Contraseña','Password')}</span></span>${ic('right','chev')}</button>`).join('')}</div>
@@ -166,19 +174,23 @@ function showGate(mode,arg){ const g=$('#gate'); if(mode==='pick'&&!PROFILES.len
       <p class="muted" style="margin:12px 2px 0">${L('Cada usuario tiene sus tickets y sus preferencias cifrados en este dispositivo. Solo los nombres se ven sin entrar.','Each user has their own receipts and preferences encrypted on this device. Only the names are visible before signing in.')}</p>`);
     g.querySelectorAll('[data-pid]').forEach(b=>b.onclick=()=>showGate('unlock',PROFILES.find(p=>p.id===b.dataset.pid)));
     $('#gNew').onclick=()=>showGate('new'); return; }
-  if(mode==='new'){
+  if(mode==='new'){ const keep=arg&&arg.keep||{};
     box(`<h2>${PROFILES.length?L('Nuevo usuario','New user'):L('Crea tu usuario','Create your user')}</h2>
       <p class="muted" style="margin-top:0">${L('Tus tickets y tus preferencias se guardan cifrados con tu contraseña. Nadie puede recuperarla por ti: te daré una clave de recuperación.','Your receipts and preferences are stored encrypted with your password. Nobody can recover it for you: I\'ll give you a recovery key.')}</p>
-      <label class="f">${L('Tu nombre','Your name')}<input id="gName" maxlength="40" autocomplete="nickname"></label>
+      <label class="f">${L('Tu nombre','Your name')}<input id="gName" maxlength="40" autocomplete="nickname" value="${esc(keep.n||'')}"></label>
+      <div class="f" role="radiogroup" aria-label="${L('Idioma preferido','Preferred language')}">${L('Idioma preferido','Preferred language')}<div class="ntabs gate-lang">${[['es','Español'],['en','English']].map(([k,t])=>`<button type="button" role="radio" data-nlang="${k}" class="${LANG===k?'on':''}" aria-checked="${LANG===k}">${t}</button>`).join('')}</div></div>
       <label class="f">${L(`Contraseña (mínimo ${PW_MIN} caracteres)`,`Password (at least ${PW_MIN} characters)`)}<input id="g1" type="password" autocomplete="new-password"></label>
       <label class="f">${L('Repítela','Repeat it')}<input id="g2" type="password" autocomplete="new-password"></label>
       <button class="pri" id="gGo" style="width:100%">${L('Crear usuario','Create user')}</button><div id="gMsg" class="neg" style="margin-top:8px"></div>
-      ${PROFILES.length?`<p><a href="#" id="gBack">${L('Volver','Back')}</a></p>`:''}`);
+      ${PROFILES.length?`<p><a href="#" id="gBack">${L('Volver','Back')}</a></p>`:''}`,true);
+    if(keep.a!=null){ $('#g1').value=keep.a; $('#g2').value=keep.b; }
+    // elegir el idioma cambia ya la pantalla, sin perder lo escrito
+    g.querySelectorAll('[data-nlang]').forEach(b=>b.onclick=()=>{ const k={n:$('#gName').value,a:$('#g1').value,b:$('#g2').value}; useLang(b.dataset.nlang); applyStatic(); showGate('new',{keep:k}); const f=$('[data-nlang="'+LANG+'"]'); if(f) f.focus(); });
     if($('#gBack')) $('#gBack').onclick=e=>{ e.preventDefault(); showGate('pick'); };
     $('#gGo').onclick=async()=>{ const n=$('#gName').value.trim(), a=$('#g1').value;
       if(!n) return msg(L('Escribe tu nombre','Type your name')); if(PROFILES.some(p=>p.name.toLowerCase()===n.toLowerCase())) return msg(L('Ya hay un usuario con ese nombre en este dispositivo','There is already a user with that name on this device'));
       if(a.length<PW_MIN) return msg(L(`La contraseña necesita al menos ${PW_MIN} caracteres`,`The password needs at least ${PW_MIN} characters`)); if(a!==$('#g2').value) return msg(L('Las contraseñas no coinciden','The passwords don\'t match'));
-      $('#gGo').disabled=true; msg(L('Creando…','Creating…')); try{ showGate('rec',{rec:await createProfile(n,a),first:true}); }catch(e){ $('#gGo').disabled=false; msg(String(e.message||e)); } };
+      $('#gGo').disabled=true; msg(L('Creando…','Creating…')); try{ showGate('rec',{rec:await createProfile(n,a,LANG),first:true}); }catch(e){ $('#gGo').disabled=false; msg(String(e.message||e)); } };
     return; }
   if(mode==='rec'){
     box(`<h2>${L('Tu clave de recuperación','Your recovery key')}</h2><p>${L('Si olvidas la contraseña, es la única forma de entrar. Apúntala en papel o guárdala en tu gestor de contraseñas. No se volverá a mostrar.','If you forget the password, it is the only way in. Write it on paper or keep it in your password manager. It won\'t be shown again.')}</p>
@@ -206,7 +218,7 @@ function showGate(mode,arg){ const g=$('#gate'); if(mode==='pick'&&!PROFILES.len
     $('#gGo').onclick=async()=>{ const a=$('#g1').value; if(a.length<PW_MIN) return msg(L(`La contraseña necesita al menos ${PW_MIN} caracteres`,`The password needs at least ${PW_MIN} characters`)); if(a!==$('#g2').value) return msg(L('Las contraseñas no coinciden','The passwords don\'t match'));
       $('#gGo').disabled=true; try{ showGate('rec',{rec:await unlockRecovery(p,$('#gR').value,a)}); }catch(e){ $('#gGo').disabled=false; msg(L('Clave de recuperación incorrecta','Wrong recovery key')); } }; }
 }
-function enterApp(first){ const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); applyStatic(); route();
+function enterApp(first){ const p=SES.p; if(p){ if(p.lang) useLang(p.lang); else { p.lang=LANG; saveProfiles(); } } const g=$('#gate'); g.style.display='none'; g.innerHTML=''; document.body.classList.remove('locked'); bumpLock(); applyStatic(); route();
   if(first&&passkeysOK()) setTimeout(()=>{ openModal(`<h2>${L('¿Entrar con huella o cara?','Sign in with fingerprint or face?')}</h2><p>${L('Crea una passkey para entrar sin escribir la contraseña en este dispositivo. La contraseña sigue sirviendo.','Create a passkey to sign in without typing the password on this device. The password still works.')}</p>
     <div class="row" style="margin-top:12px"><button id="mc">${L('Ahora no','Not now')}</button><button class="pri" id="pkGo">${L('Crear passkey','Create passkey')}</button></div>`);
     $('#mc').onclick=closeModal; $('#pkGo').onclick=async()=>{ try{ await addPasskey(); closeModal(); toast(L('Passkey creada','Passkey created')); }catch(e){ toast(String(e&&e.message||e)); } }; },150); }
@@ -227,7 +239,7 @@ VIEWS.perfil=(el)=>{ const p=SES.p;
   el.innerHTML=`<div class="stack">
     <div class="card" id="pfUser">${helpBtn('div_user')}<h2>${L('Tu usuario','Your user')}</h2>
       <div class="row" style="align-items:flex-end"><label class="f">${L('Nombre','Name')}<input id="pfName" maxlength="40" value="${esc(p.name)}"></label><button id="pfNameGo" style="margin-bottom:10px">${L('Guardar','Save')}</button></div>
-      <label class="f">${L('Idioma','Language')}<select id="pfLang"><option value="es" ${LANG==='es'?'selected':''}>Español</option><option value="en" ${LANG==='en'?'selected':''}>English</option></select></label>
+      <label class="f">${L('Idioma preferido','Preferred language')}<select id="pfLang"><option value="es" ${LANG==='es'?'selected':''}>Español</option><option value="en" ${LANG==='en'?'selected':''}>English</option></select></label>
       <label class="f">${L('Salir automáticamente tras (minutos sin usarla)','Sign out automatically after (idle minutes)')}<select id="pfLock">${[1,2,5,10,15,30].map(m=>`<option ${m===S.settings.lockMin?'selected':''}>${m}</option>`).join('')}</select></label></div>
     <div class="card" id="pfSec">${helpBtn('div_security')}<h2>${L('Seguridad','Security')}</h2>
       <h3 class="sec">${L('Passkeys (huella, cara o PIN)','Passkeys (fingerprint, face or PIN)')}</h3>
@@ -240,7 +252,7 @@ VIEWS.perfil=(el)=>{ const p=SES.p;
       <button class="dan" id="pfDelGo">${ic('trash')}${L('Borrar usuario','Delete user')}</button></div>
     <p class="muted" style="text-align:center">${L('Dividir la cuenta forma parte de','Split the bill is part of')} <a href="../" target="_blank" rel="noopener">MyFinZen</a>. ${L('Sin servidor: tus datos no salen de este dispositivo.','No server: your data never leaves this device.')}</p></div>`;
   $('#pfNameGo').onclick=async()=>{ const n=$('#pfName').value.trim().slice(0,40); if(!n) return; if(PROFILES.some(x=>x!==p&&x.name.toLowerCase()===n.toLowerCase())) return toast(L('Ya hay un usuario con ese nombre','There is already a user with that name')); p.name=n; await persist(); applyStatic(); toast(L('Guardado','Saved')); };
-  $('#pfLang').onchange=e=>setLang(e.target.value);
+  $('#pfLang').onchange=e=>{ setLang(e.target.value); toast(L('Idioma guardado','Language saved')); };
   $('#pfLock').onchange=e=>{ S.settings.lockMin=+e.target.value; save(); bumpLock(); toast(L('Guardado','Saved')); };
   el.querySelectorAll('[data-pkx]').forEach(b=>b.onclick=async()=>{ if(!await confirmModal(L('Quitar passkey','Remove passkey'),`<p>${L('Ya no podrás entrar con ella. La contraseña sigue sirviendo.','You won\'t be able to sign in with it. The password still works.')}</p>`)) return; p.pk.splice(+b.dataset.pkx,1); await persist(); route(); });
   if($('#pfPk')) $('#pfPk').onclick=async()=>{ try{ await addPasskey(); toast(L('Passkey creada','Passkey created')); route(); }catch(e){ toast(String(e&&e.message||e)); } };

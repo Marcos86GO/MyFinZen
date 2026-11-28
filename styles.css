@@ -435,3 +435,10 @@ body.locked .topbar,body.locked main,body.locked .drawer,body.locked .fab,body.l
 /* Preferencias de reparto (split.js) */
 #spPrefs .sp-psum{flex-basis:100%;padding-left:14px;font-size:13px;font-weight:400}
 .sp-pbody{position:relative;margin-top:6px}.sp-pbody > .ib{top:-4px;right:0}
+.sp-tabs{margin:0 0 2px}.sp-tabs button i{font-style:normal;opacity:.7;font-variant-numeric:tabular-nums}
+.sp-hf > label.f{flex:1 1 140px}
+.sp-hsum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:4px 0 2px}.sp-hsum > div{background:var(--surface-2);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column}
+.sp-hsum span{font-size:12.5px;color:var(--text-2)}.sp-hsum b{font-size:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sp-hrow{align-items:flex-start}.sp-hrow > b{white-space:nowrap;font-variant-numeric:tabular-nums;margin-top:2px}
+.sp-hrow .lm span.sp-hcards{white-space:normal;color:var(--text-2)}
+@media (max-width:420px){.sp-hrow{flex-wrap:wrap}.sp-hrow .lm{flex-basis:calc(100% - 52px)}.sp-hrow > b{margin-left:52px;flex:1}}

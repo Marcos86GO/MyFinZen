@@ -5,3 +5,4 @@
 .av.sm{width:30px;height:30px;font-size:12px}
 .gate-users{margin:0 -22px}.gate-users .lrow{padding:10px 22px}
 .gate-card a{color:var(--accent)}
+.gate-lang{margin:6px 0 4px}.gate-lang button{flex:1}

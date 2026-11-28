@@ -586,12 +586,30 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(san,'los tickets se validan al desbloquear y al restaurar');
     ok(await pg.evaluate(()=>{ const n=SPLIT.img.length; splitOnLock(); return n===1&&!SPLIT.img.length&&!SPLIT.cur; }),'la foto solo vive en memoria y se descarta al bloquear');
     await pg.goto(U+'#resumen'); await pg.waitForTimeout(100); await pg.goto(U+'#dividir'); await pg.waitForTimeout(250);
-    ok(await pg.evaluate(()=>!!document.querySelector('#spRecent [data-spo]')&&!$('#spTicket')),'los tickets anteriores se pueden volver a abrir');
+    await pg.click('[data-sptab="hist"]'); await pg.waitForTimeout(150);
+    ok(await pg.evaluate(()=>document.querySelectorAll('#spHist .sp-hrow [data-spo]').length===2&&!$('#spTicket')&&!$('#spStart')),'historial: los tickets anteriores están en su pestaña');
+    await pg.click('#spHist [data-spo]'); await pg.waitForTimeout(150); const opened=await pg.evaluate(()=>!!$('#spTicket')&&!!spCurrent());
+    await pg.click('#spNewB'); await pg.waitForTimeout(150);
+    ok(opened&&await pg.evaluate(()=>SPLIT.tab==='new'&&!!$('#spManual')),'se abre un ticket desde el historial y «Otro ticket» vuelve a empezar');
     await pg.click('#spManual'); await pg.waitForTimeout(150); await pg.fill('#spFsub','100'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.src==='manual'&&!s.items.length&&$('#spTotV').innerText==='$120.00'&&[...document.querySelectorAll('[data-amt]')].map(e=>e.innerText).join()==='$60.00,$60.00'; }),'a mano: subtotal, propina recordada y dos tarjetas a partes iguales');
     ok(ANTH===anth0,'Dividir la cuenta no ha hecho ninguna petición a Claude');
+    // Historial: guarda todos los tickets con importe (no los vacíos), por meses, con lo que pagó cada tarjeta, filtros y CSV
+    await pg.evaluate(()=>{ const s=spCurrent(); s.cards[0].name='Visa Historial'; s.place='Bar Historial'; save(); });
+    await pg.click('#spNewB'); await pg.waitForTimeout(100); await pg.click('#spManual'); await pg.waitForTimeout(100); await pg.click('#spHistB'); await pg.waitForTimeout(200);
+    const h=await pg.evaluate(()=>({n:spList().length,rows:document.querySelectorAll('#spHist .sp-hrow').length,tab:$('[data-sptab="hist"]').innerText,sum:$('#spHist .sp-hsum').innerText,
+      months:[...document.querySelectorAll('#spHistBody h3.sec')].map(e=>e.innerText),cards:$('#spHistBody').innerText.includes('Visa Historial'),line:[...document.querySelectorAll('#spHist .sp-hrow')].find(r=>/Bar Historial/.test(r.innerText)).innerText}));
+    ok(h.n===3&&h.rows===3&&/Historial\s*3/.test(h.tab)&&/3/.test(h.sum)&&h.months.some(m=>/^Noviembre de 2026/.test(m))&&h.cards&&/Visa Historial \$60\.00/.test(h.line)&&/\$120\.00/.test(h.line),'historial: tickets por mes con lo que pagó cada tarjeta; el ticket vacío no se guarda '+JSON.stringify(h));
+    await pg.selectOption('#spHc','visa historial'); await pg.waitForTimeout(100); const byCard=await pg.evaluate(()=>document.querySelectorAll('#spHist .sp-hrow').length);
+    await pg.selectOption('#spHc','all'); await pg.fill('#spHq','fish tacos'); await pg.waitForTimeout(100); const bySearch=await pg.evaluate(()=>[...document.querySelectorAll('#spHist .sp-hrow')].map(r=>r.innerText.split('\n')[0]).join());
+    await pg.fill('#spHq',''); await pg.waitForTimeout(100);
+    const [csv,csvN]=await pg.evaluate(()=>{ const l=spHistRows(); return [spHistCSV(l),l.reduce((a,x)=>a+x.rows.length+(x.rest>0?1:0),1)]; });
+    ok(byCard===1&&/Prueba Bistro/.test(bySearch)&&!/Bar Historial/.test(bySearch)&&csv.split('\r\n')[0].startsWith('date,restaurant,currency,total')&&csv.split('\r\n').length===csvN&&csvN>=7&&/Bar Historial,USD,120\.00/.test(csv)&&/Visa Historial,60\.00/.test(csv)&&/"'=cmd"|'=cmd/.test(await pg.evaluate(()=>spHistCSV([{s:{date:'2026-01-01',place:'=cmd',cur:'USD',tax:0,svc:0,disc:0,mode:'even'},T:{total:1,tip:0},rows:[{name:'+x',v:1}],rest:0}]))),'historial: filtro por tarjeta, búsqueda y CSV (una fila por tarjeta, sin fórmulas)');
+    await pg.click('#spCSV'); await pg.waitForTimeout(100); const warnCSV=await pg.evaluate(()=>/no va cifrado/.test($('#modal').innerText)); await pg.click('#cN');
+    await pg.click('#spHist .sp-hrow [data-spx]'); await pg.click('#cY'); await pg.waitForTimeout(150);
+    ok(warnCSV&&await pg.evaluate(()=>spList().length===2&&document.querySelectorAll('#spHist .sp-hrow').length===2),'exportar avisa de que el archivo no va cifrado; borrar un ticket del historial');
     // Preferencias en MyFinZen: tarjetas habituales y modo por defecto para los tickets nuevos
-    await pg.evaluate(()=>{ SPLIT.cur=null; route(); }); await pg.waitForTimeout(150);
+    await pg.evaluate(()=>{ SPLIT.cur=null; SPLIT.tab='new'; route(); }); await pg.waitForTimeout(150);
     await pg.click('#spPrefs > summary'); await pg.click('[data-pmode="items"]'); await pg.click('#spPAdd'); await pg.click('#spPAdd'); await pg.fill('[data-pcn="0"]','Visa Prueba'); await pg.fill('[data-pcn="1"]','Amex Prueba'); await pg.waitForTimeout(150);
     await pg.click('#spManual'); await pg.waitForTimeout(150);
     ok(await pg.evaluate(()=>{ const s=spCurrent(); return s.mode==='items'&&s.cards.map(c=>c.name+':'+c.n).join()==='Visa Prueba:1,Amex Prueba:1'&&S.settings.split.cards.length===2; }),'MyFinZen: los tickets nuevos empiezan con las preferencias (modo y tarjetas habituales)');
@@ -622,10 +640,20 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     const bad=await dv.evaluate(()=>!S&&/Contraseña incorrecta/.test($('#gMsg').innerText));
     await dv.fill('#gP',DP1); await dv.click('#gGo'); await dv.waitForTimeout(1500);
     ok(bad&&await dv.evaluate(()=>!!S&&S.splits.length===1&&S.splits[0].items.length===5&&!SPLIT.img.length),'salir y volver a entrar: la contraseña mala no abre; la buena trae los tickets (la foto no se guarda)');
-    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('#gNew'); await dv.fill('#gName','Luis Prueba'); await dv.fill('#g1',DP2); await dv.fill('#g2',DP2); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
+    await dv.click('[data-sptab="hist"]'); await dv.waitForTimeout(150);
+    ok(await dv.evaluate(()=>document.querySelectorAll('#spHist .sp-hrow').length===1&&/Visa Ana/.test($('#spHist').innerText)&&/Prueba Bistro/.test($('#spHist').innerText)),'app independiente: el historial guarda el ticket con lo que pagó cada tarjeta');
+    // Segundo usuario que elige inglés al crearse: el formulario cambia de idioma sin perder lo escrito
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('#gNew'); await dv.fill('#gName','Luis Prueba'); await dv.fill('#g1',DP2); await dv.fill('#g2',DP2);
+    const nlangES=await dv.evaluate(()=>$('[data-nlang="es"]').classList.contains('on')&&!document.querySelector('#gate .langsw'));
+    await dv.click('[data-nlang="en"]'); await dv.waitForTimeout(150);
+    const nlangEN=await dv.evaluate(()=>$('[data-nlang="en"]').getAttribute('aria-checked')==='true'&&$('#gGo').innerText==='Create user'&&$('#gName').value==='Luis Prueba'&&$('#g1').value.length>9&&$('#g2').value===$('#g1').value);
+    await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
     await dv.check('#gOk'); await dv.click('#gNext'); await dv.waitForSelector('#mc',{timeout:5000}); await dv.click('#mc'); await dv.waitForTimeout(200);
+    ok(nlangES&&nlangEN&&await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='Split the bill'&&/New receipt/.test($('#app').innerText)),'al crear el usuario se elige su idioma preferido (inglés) y la app sale en ese idioma');
     ok(await dv.evaluate(()=>SES.p.name==='Luis Prueba'&&S.splits.length===0&&S.settings.split.mode==='even'&&!S.settings.split.cards.length&&PROFILES.length===2),'un segundo usuario empieza sin los tickets ni las preferencias del primero');
-    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.click('#gPk'); await dv.waitForTimeout(1500);
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.waitForTimeout(100);
+    ok(await dv.evaluate(()=>/Hola, Ana Prueba/.test($('#gate').innerText)&&/Entrar/.test($('#gate').innerText)),'la pantalla de entrada de cada usuario sale en su idioma');
+    await dv.click('#gPk'); await dv.waitForTimeout(1500);
     ok(await dv.evaluate(()=>!!S&&SES.p.name==='Ana Prueba'&&S.splits.length===1),'entrar con passkey');
     await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Ana Prueba")'); await dv.click('#gForgot');
     await dv.fill('#gR',recA.toLowerCase()); await dv.fill('#g1','frase nueva de Ana 3'); await dv.fill('#g2','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForSelector('#gRec',{timeout:20000});
@@ -634,11 +662,21 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(recA2!==recA&&await dv.evaluate(()=>!!S&&S.splits.length===1),'con la clave de recuperación se pone una contraseña nueva (y se da otra clave)');
     await dv.click('#uBtn'); await dv.waitForTimeout(200);
     ok(await dv.evaluate(()=>location.hash==='#perfil'&&!!$('#pfSec')&&/Passkey|Android|Windows|Mac|Dispositivo/.test($('#pfSec').innerText)&&$('#pageTitle').innerText==='Perfil y seguridad'),'pantalla de perfil y seguridad');
-    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Luis Prueba")'); await dv.fill('#gP',DP2); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.click('[data-pid]:has-text("Luis Prueba")'); await dv.waitForTimeout(100); const luisEn=await dv.evaluate(()=>/Hi, Luis Prueba/.test($('#gate').innerText));
+    await dv.fill('#gP',DP2); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    ok(luisEn&&await dv.evaluate(()=>document.documentElement.lang==='en'&&['Split the bill','Profile & security'].includes($('#pageTitle').innerText)),'y al entrar se aplica su idioma');
     await dv.click('#uBtn'); await dv.waitForTimeout(200); await dv.click('#pfDelGo'); await dv.fill('#dl0',DP2); await dv.click('#dlGo'); await dv.waitForTimeout(800);
     ok(await dv.evaluate(()=>!S&&PROFILES.length===1&&PROFILES[0].name==='Ana Prueba'&&!/Luis/.test($('#gate').innerText)),'borrar un usuario (con su contraseña) no toca a los demás');
-    await dv.evaluate(()=>setLang('en')); await dv.waitForTimeout(200); await dv.click('[data-pid]'); await dv.waitForTimeout(100); const gEn=await dv.$eval('#gate',e=>e.innerText);
-    await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500); await dv.evaluate(()=>{ SPLIT.cur=S.splits[0].id; route(); }); await dv.waitForTimeout(200);
+    // Cambiar el idioma preferido en Perfil: se guarda para ese usuario
+    await dv.click('[data-pid]'); await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500);
+    const anaEs=await dv.evaluate(()=>$('#pageTitle').innerText==='Dividir la cuenta'); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200);
+    await dv.selectOption('#pfLang','en'); await dv.waitForTimeout(400);
+    const saved=await dv.evaluate(()=>SES.p.lang==='en'&&$('#pageTitle').innerText==='Profile & security'&&$('#pfLang').value==='en');
+    await dv.click('#lockBtn'); await dv.waitForTimeout(200); await dv.evaluate(()=>{ useLang('es'); showGate('pick'); });
+    const stored=await dv.evaluate(()=>IDB.get('profiles').then(v=>v.find(p=>p.name==='Ana Prueba').lang));
+    await dv.click('[data-pid]'); await dv.waitForTimeout(100); const gEn=await dv.$eval('#gate',e=>e.innerText);
+    ok(anaEs&&saved&&stored==='en'&&/Hi, Ana Prueba/.test(gEn),'el idioma preferido se cambia en Perfil y se recuerda para ese usuario');
+    await dv.fill('#gP','frase nueva de Ana 3'); await dv.click('#gGo'); await dv.waitForTimeout(1500); await dv.evaluate(()=>{ location.hash=''; SPLIT.cur=S.splits[0].id; route(); }); await dv.waitForTimeout(200);
     const tEn=await dv.$eval('body',e=>e.innerText); await dv.evaluate(()=>{ location.hash='#perfil'; }); await dv.waitForTimeout(200); const pEn=await dv.$eval('body',e=>e.innerText);
     const ESW=/\b(Añadir|Guardar|Cancelar|Borrar|Contraseña|Entrar|Salir|Tarjetas|Productos|Propina|Impuestos|personas|Compartir|usuario|Seguridad|Idioma)\b/;
     ok(!ESW.test(gEn+tEn+pEn)&&/Hi, Ana Prueba/.test(gEn)&&/Who ordered what\?/.test(tEn)&&/Profile & security/.test(pEn),'app independiente en inglés '+((gEn+tEn+pEn).match(ESW)||[''])[0]);
