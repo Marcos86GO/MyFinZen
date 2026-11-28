@@ -1,5 +1,5 @@
-"""WhosBill — genera los iconos de la app (ticket blanco con la interrogación de «Who's bill?» sobre fondo índigo).
-Uso: python3 whosbill/icons/make-icons.py   (Pillow y la tipografía Inter ExtraBold, licencia OFL)."""
+"""WhoseBill? — genera los iconos de la app (ticket blanco con la interrogación de «Whose bill?» sobre fondo índigo).
+Uso: python3 whosebill/icons/make-icons.py   (Pillow y la tipografía Inter ExtraBold, licencia OFL)."""
 import os
 from PIL import Image, ImageDraw, ImageFont
 D=os.path.dirname(os.path.abspath(__file__))

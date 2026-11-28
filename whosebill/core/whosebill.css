@@ -1,5 +1,5 @@
-/* WhosBill — estilos del módulo (pantallas de split.js). Usa los tokens y componentes de la app anfitriona
-   (MyFinZen: styles.css; la app independiente: whosbill/base.css). */
+/* WhoseBill? — estilos del módulo (pantallas de split.js). Usa los tokens y componentes de la app anfitriona
+   (MyFinZen: styles.css; la app independiente: whosebill/base.css). */
 .sp-thumbs{display:flex;gap:8px;overflow-x:auto;margin:10px 0 4px}
 .sp-thumbs img{max-height:320px;max-width:100%;border-radius:10px;border:1px solid var(--border);background:#fff}
 .sp-photo{margin:0 0 10px}.sp-photo summary{cursor:pointer;font-size:14px;color:var(--accent);font-weight:550}

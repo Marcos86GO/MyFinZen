@@ -2,38 +2,15 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- Sin conexiones a ningún servicio: solo los archivos de la propia app (la foto se lee en el dispositivo) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e1013" media="(prefers-color-scheme: dark)">
-<meta name="description" content="WhosBill: quién paga qué en el ticket del restaurante, por tarjeta y por persona. La foto se lee en tu dispositivo.">
-<title>WhosBill</title>
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="WhosBill">
-<link rel="stylesheet" href="base.css">
-<link rel="stylesheet" href="core/whosbill.css">
-<link rel="stylesheet" href="style.css">
+<!-- «WhosBill» ahora se llama WhoseBill? y vive en ../whosebill/ (los usuarios y tickets se conservan) -->
+<meta http-equiv="refresh" content="0; url=../whosebill/">
+<title>WhoseBill?</title>
 </head>
-<body class="locked">
-<header class="topbar" id="topbar">
-  <button class="iconbtn" id="backBtn" hidden></button>
-  <h1 id="pageTitle">WhosBill</h1>
-  <button class="iconbtn" id="uBtn"></button>
-  <button class="iconbtn" id="lockBtn"></button>
-</header>
-<main id="app"></main>
-<div class="modal-bg" id="modalBg"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div id="gate" class="gate" style="display:none"></div>
-<div id="updBar" class="updbar" style="display:none"><span id="updTxt"></span> <button class="sm pri" id="updGo"></button></div>
-<script src="core/help.js"></script>
-<script src="app.js"></script>
-<script src="core/ticket.js"></script>
-<script src="core/split.js"></script>
+<body style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:16px;text-align:center">
+<p><b>WhosBill</b> ahora se llama <b>WhoseBill?</b><br><a href="../whosebill/">Abrir WhoseBill?</a></p>
+<p lang="en" style="color:#777"><b>WhosBill</b> is now called <b>WhoseBill?</b><br><a href="../whosebill/">Open WhoseBill?</a></p>
 </body>
 </html>

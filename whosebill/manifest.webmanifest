@@ -1,6 +1,6 @@
 {
-  "name": "WhosBill",
-  "short_name": "WhosBill",
+  "name": "WhoseBill?",
+  "short_name": "WhoseBill?",
   "description": "Quién paga qué en el ticket del restaurante: por tarjeta y por persona. La foto se lee en tu dispositivo y tus datos se guardan cifrados.",
   "id": "./",
   "start_url": "./",

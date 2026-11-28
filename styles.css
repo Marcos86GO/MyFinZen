@@ -1,4 +1,4 @@
-/* MyFinZen — estilos. Tokens de color en :root, modo claro y oscuro. Lo del módulo WhosBill está en whosbill/core/whosbill.css. */
+/* MyFinZen — estilos. Tokens de color en :root, modo claro y oscuro. Lo del módulo WhoseBill? está en whosebill/core/whosebill.css. */
 :root{
   color-scheme:light;
   --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e4e7ec; --hover:#f3f5f8;

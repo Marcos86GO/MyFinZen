@@ -1,4 +1,4 @@
-// WhosBill — app independiente (https://…/MyFinZen/whosbill/): quién paga qué en el ticket de un restaurante, por tarjeta y por
+// WhoseBill? — app independiente (https://…/MyFinZen/whosebill/): quién paga qué en el ticket de un restaurante, por tarjeta y por
 // persona. Es el anfitrión del módulo (core/split.js y el lector local core/ticket.js, que MyFinZen también integra) y añade usuarios
 // locales: cada usuario tiene sus tickets y sus preferencias cifrados en este dispositivo (AES-GCM 256 con una clave aleatoria
 // envuelta por su contraseña —PBKDF2-SHA256, 600.000 iteraciones—, su clave de recuperación y sus passkeys con PRF).
@@ -6,26 +6,26 @@
 "use strict";
 if(window.top!==window.self){ try{ window.top.location.replace(window.self.location.href); }catch(e){} document.documentElement.innerHTML=''; throw new Error('No se puede abrir dentro de un marco'); }
 /* ---------- ¿Página equivocada? ----------
-   Una versión antigua del service worker de MyFinZen (anterior a v1.32.0) responde a cualquier dirección de /MyFinZen/,
-   también a /whosbill/, con la página de MyFinZen; esa página carga entonces este archivo (whosbill/app.js) y se quedaría en
-   blanco. Aquí se instala el service worker propio de esta app (alcance whosbill/, más concreto que el de MyFinZen) y se
-   recarga: desde ese momento /whosbill/ lo sirve su propio service worker. Solo se intenta una vez por pestaña. */
+   Una versión antigua del service worker de MyFinZen (anterior a v1.33.0) responde a cualquier dirección de /MyFinZen/,
+   también a /whosebill/, con la página de MyFinZen; esa página carga entonces este archivo (whosebill/app.js) y se quedaría en
+   blanco. Aquí se instala el service worker propio de esta app (alcance whosebill/, más concreto que el de MyFinZen) y se
+   recarga: desde ese momento /whosebill/ lo sirve su propio service worker. Solo se intenta una vez por pestaña. */
 if(!document.getElementById('uBtn')){
   const es=/^es\b/i.test(navigator.language||''), t=(a,b)=>es?a:b, again=(()=>{ try{ const n=+sessionStorage.getItem('wb-fix')||0; sessionStorage.setItem('wb-fix',String(n+1)); return n>0; }catch(e){ return true; } })();
-  document.title='WhosBill';
-  document.body.className=''; document.body.innerHTML=`<div style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:16px;text-align:center"><b>WhosBill</b><p id="dvFix">${t('Preparando la app…','Getting the app ready…')}</p></div>`;
+  document.title='WhoseBill?';
+  document.body.className=''; document.body.innerHTML=`<div style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:16px;text-align:center"><b>WhoseBill?</b><p id="dvFix">${t('Preparando la app…','Getting the app ready…')}</p></div>`;
   const fail=()=>{ const m=document.getElementById('dvFix'); if(m) m.textContent=t('No se ha podido abrir. Cierra esta pestaña, abre MyFinZen, pulsa «Actualizar» si te lo ofrece y vuelve a abrir esta dirección.','It could not be opened. Close this tab, open MyFinZen, press "Update" if offered, and open this address again.'); };
   if(again||!('serviceWorker' in navigator)) fail();
-  // se espera a que ESTE registro (alcance whosbill/) esté activo; navigator.serviceWorker.ready daría el de MyFinZen
+  // se espera a que ESTE registro (alcance whosebill/) esté activo; navigator.serviceWorker.ready daría el de MyFinZen
   else navigator.serviceWorker.register('sw.js').then(reg=>new Promise((res,rej)=>{ if(reg.active) return res();
     const w=reg.installing||reg.waiting; if(!w) return rej(); w.addEventListener('statechange',()=>{ if(w.state==='activated') res(); else if(w.state==='redundant') rej(); }); setTimeout(()=>reg.active?res():rej(),20000); }))
     .then(()=>location.reload()).catch(fail);
-  throw new Error('whosbill: página servida por otro service worker');
+  throw new Error('whosebill: página servida por otro service worker');
 }
 try{ sessionStorage.removeItem('wb-fix'); }catch(e){}
 /* ---------- Idioma ----------
    Cada usuario tiene el suyo (profiles[].lang, en claro porque hace falta antes de entrar: «Hola, Ana» ya sale en su idioma).
-   Antes de elegir usuario se usa el último idioma usado en este navegador (whosbill-lang; la primera vez, el de MyFinZen). */
+   Antes de elegir usuario se usa el último idioma usado en este navegador (whosbill-lang, nombre interno; la primera vez, el de MyFinZen). */
 let LANG='es';
 try{ const s=localStorage.getItem('whosbill-lang')||localStorage.getItem('mfz-lang'); LANG=(s==='es'||s==='en')?s:(/^es\b/i.test(navigator.language||'')?'es':'en'); }catch(e){}
 const L=(es,en)=>LANG==='en'?en:es;
@@ -74,7 +74,7 @@ const VIEWS={};
 let S=null;
 
 /* ============================================================
-   Usuarios (perfiles) en IndexedDB 'whosbill' → 'profiles' = [{id, name, created, updated, pw, rec, pk[], data}]
+   Usuarios (perfiles) en IndexedDB 'whosbill' (nombre interno, de cuando la app se llamaba WhosBill: no cambiarlo) → 'profiles' = [{id, name, created, updated, pw, rec, pk[], data}]
    · name: lo único en claro (para elegir quién eres al entrar)
    · pw / rec: la clave de los datos (DK) envuelta por la contraseña / la clave de recuperación (PBKDF2 + AES-GCM)
    · pk: passkeys con PRF (HKDF → clave de envoltura); data: {splits, settings} cifrado con la DK
@@ -136,7 +136,7 @@ const passkeysOK=()=>!!(window.PublicKeyCredential&&navigator.credentials&&windo
 const noPrf=()=>Object.assign(new Error(L('Este dispositivo o navegador no admite passkeys con cifrado (PRF). Usa la contraseña.','This device or browser doesn\'t support passkeys with encryption (PRF). Use the password.')),{code:'noprf'});
 function deviceName(){ const u=navigator.userAgent; if(/Android/.test(u)) return 'Android'; if(/iPhone|iPad/.test(u)) return 'iPhone/iPad'; if(/Mac/.test(u)) return 'Mac'; if(/Windows/.test(u)) return 'Windows'; return L('Dispositivo','Device'); }
 async function addPasskey(){ const p=SES.p, prfSalt=rnd(32);
-  const cred=await navigator.credentials.create({publicKey:{rp:{name:'WhosBill',id:location.hostname},user:{id:rnd(16),name:'WhosBill · '+p.name,displayName:p.name},challenge:rnd(32),
+  const cred=await navigator.credentials.create({publicKey:{rp:{name:'WhoseBill?',id:location.hostname},user:{id:rnd(16),name:'WhoseBill? · '+p.name,displayName:p.name},challenge:rnd(32),
     pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{residentKey:'preferred',userVerification:'required'},timeout:120000,extensions:{prf:{eval:{first:prfSalt}}}}});
   const ext=cred.getClientExtensionResults()||{}; if(!ext.prf||ext.prf.enabled===false) throw noPrf();
   let out=ext.prf.results&&ext.prf.results.first;
@@ -171,7 +171,7 @@ function showGate(mode,arg){ const g=$('#gate'); if(mode==='pick'&&!PROFILES.len
   if((mode==='unlock'||mode==='recover')&&arg&&arg.lang) useLang(arg.lang);   // la pantalla de un usuario sale en su idioma
   g.style.display='flex'; document.body.classList.add('locked');
   const who=mode==='unlock'||mode==='recover'?arg:null;
-  const box=(html,noSw)=>{ g.innerHTML=`<div class="gate-card"><div class="gate-logo"><img src="icons/icon-192.png" alt=""><div><b class="wb-mark">Whos<span>Bill</span></b><div class="muted">${L('Quién paga qué, por tarjeta y por persona. Cifrado en tu dispositivo.','Who pays what, by card and by person. Encrypted on your device.')}</div></div></div>${html}${noSw?'':langSwitch()}</div>`;
+  const box=(html,noSw)=>{ g.innerHTML=`<div class="gate-card"><div class="gate-logo"><img src="icons/icon-192.png" alt=""><div><b class="wb-mark">Whose<span>Bill?</span></b><div class="muted">${L('Quién paga qué, por tarjeta y por persona. Cifrado en tu dispositivo.','Who pays what, by card and by person. Encrypted on your device.')}</div></div></div>${html}${noSw?'':langSwitch()}</div>`;
     g.querySelectorAll('.langsw [data-lang]').forEach(b=>b.onclick=()=>setLang(b.dataset.lang,who)); };
   const msg=t=>{ const m=$('#gMsg'); if(m) m.textContent=t; };
   if(mode==='pick'){
@@ -231,13 +231,13 @@ function enterApp(first){ const p=SES.p; if(p){ if(p.lang) useLang(p.lang); else
 
 /* ---------- Pantallas ---------- */
 const spHostActive=()=>!!S&&location.hash!=='#perfil';   // split.js: cuándo se ve su pantalla
-function applyStatic(){ document.documentElement.lang=LANG; document.title='WhosBill';
-  const t=$('#pageTitle'); if(t){ if(location.hash==='#perfil') t.textContent=L('Perfil y seguridad','Profile & security'); else t.innerHTML='Whos<span style="color:var(--accent)">Bill</span>'; }
+function applyStatic(){ document.documentElement.lang=LANG; document.title='WhoseBill?';
+  const t=$('#pageTitle'); if(t){ if(location.hash==='#perfil') t.textContent=L('Perfil y seguridad','Profile & security'); else t.innerHTML='Whose<span style="color:var(--accent)">Bill?</span>'; }
   const u=$('#uBtn'); if(u){ u.innerHTML=S&&SES.p?`<span class="av round sm" style="--h:${avHue(SES.p.name)}">${avInit(SES.p.name)}</span><span class="hide-sm">${esc(SES.p.name)}</span>`:''; u.setAttribute('aria-label',L('Perfil y seguridad','Profile & security')); u.title=L('Perfil y seguridad','Profile & security'); }
   const lb=$('#lockBtn'); if(lb){ lb.innerHTML=ic('lock')+`<span class="hide-sm">${L('Salir','Sign out')}</span>`; lb.title=L('Salir (bloquear)','Sign out (lock)'); lb.setAttribute('aria-label',L('Salir (bloquear)','Sign out (lock)')); }
   const bk=$('#backBtn'); if(bk){ bk.innerHTML=ic('left'); bk.style.display=location.hash==='#perfil'?'':'none'; bk.setAttribute('aria-label',L('Volver','Back')); }
   $('#updTxt').textContent=L('Hay una versión nueva.','A new version is available.'); $('#updGo').textContent=L('Actualizar','Update'); }
-function route(){ if(!S) return; applyStatic(); const v=location.hash==='#perfil'?'perfil':'whosbill';
+function route(){ if(!S) return; applyStatic(); const v=location.hash==='#perfil'?'perfil':'whosebill';
   try{ VIEWS[v]($('#app')); }catch(e){ console.warn('vista',v,e); $('#app').innerHTML=`<div class="alert crit"><span class="ic">!</span><div><b>${L('Algo ha fallado al mostrar esta pantalla.','Something went wrong showing this screen.')}</b> ${L('Tus datos no se han tocado. Recarga la app.','Your data hasn\'t been touched. Reload the app.')}<div class="muted">${esc(String(e&&e.message||e))}</div></div></div>`; }
   window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
@@ -256,7 +256,7 @@ VIEWS.perfil=(el)=>{ const p=SES.p;
     <div class="card" id="pfDel">${helpBtn('div_delete')}<h2>${L('Borrar este usuario','Delete this user')}</h2>
       <p class="muted">${L('Borra de este dispositivo el usuario, sus tickets, sus preferencias y sus passkeys. No se puede deshacer.','Deletes the user, their receipts, preferences and passkeys from this device. It cannot be undone.')}</p>
       <button class="dan" id="pfDelGo">${ic('trash')}${L('Borrar usuario','Delete user')}</button></div>
-    <p class="muted" style="text-align:center">${L('WhosBill es un módulo de','WhosBill is a module of')} <a href="../" target="_blank" rel="noopener">MyFinZen</a>, ${L('que también lo integra con su propio usuario.','which also integrates it with its own user.')} ${L('Sin servidor: tus datos no salen de este dispositivo.','No server: your data never leaves this device.')}</p></div>`;
+    <p class="muted" style="text-align:center">${L('WhoseBill? es un módulo de','WhoseBill? is a module of')} <a href="../" target="_blank" rel="noopener">MyFinZen</a>, ${L('que también lo integra con su propio usuario.','which also integrates it with its own user.')} ${L('Sin servidor: tus datos no salen de este dispositivo.','No server: your data never leaves this device.')}</p></div>`;
   $('#pfNameGo').onclick=async()=>{ const n=$('#pfName').value.trim().slice(0,40); if(!n) return; if(PROFILES.some(x=>x!==p&&x.name.toLowerCase()===n.toLowerCase())) return toast(L('Ya hay un usuario con ese nombre','There is already a user with that name')); p.name=n; await persist(); applyStatic(); toast(L('Guardado','Saved')); };
   $('#pfLang').onchange=e=>{ setLang(e.target.value); toast(L('Idioma guardado','Language saved')); };
   $('#pfLock').onchange=e=>{ S.settings.lockMin=+e.target.value; save(); bumpLock(); toast(L('Guardado','Saved')); };
@@ -298,7 +298,7 @@ VIEWS.perfil=(el)=>{ const p=SES.p;
   $('#backBtn').onclick=()=>{ location.hash=''; };
   applyStatic(); showGate(PROFILES.length===1?'unlock':'pick',PROFILES[0]);
   // El aviso de versión nueva solo tiene sentido si esta página ya la sirve el service worker de esta app (no el de MyFinZen)
-  const own=w=>!!w&&/\/whosbill\/sw\.js$/.test(w.scriptURL);
+  const own=w=>!!w&&/\/whosebill\/sw\.js$/.test(w.scriptURL);
   if('serviceWorker' in navigator){ try{ const hadOwn=own(navigator.serviceWorker.controller); const reg=await navigator.serviceWorker.register('sw.js');
     const ready=w=>{ $('#updBar').style.display='flex'; $('#updGo').onclick=()=>{ persist().finally(()=>w.postMessage('skipWaiting')); }; };
     if(reg.waiting&&hadOwn) ready(reg.waiting);

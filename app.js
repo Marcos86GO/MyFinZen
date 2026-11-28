@@ -39,12 +39,12 @@ const ICONS={
   thumbUp:'M7 11v9H4v-9zM7 11l4-7a2 2 0 0 1 2 2v4h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 16.8 20H7', thumbDown:'M7 13V4H4v9zM7 13l4 7a2 2 0 0 0 2-2v-4h5a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 16.8 4H7',
   calendar:'M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 10h16M8 3v4M16 3v4', left:'M15 6l-6 6 6 6',
   layers:'M12 4l9 5-9 5-9-5zM3 14l9 5 9-5', camera:'M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM12 10a3.5 3.5 0 1 1 0 7a3.5 3.5 0 1 1 0-7z',
-  split:'M12 21v-8M12 13L6 7M12 13l6-6M6 7v4M6 7h4M18 7v4M18 7h-4', whosbill:'M6 3h12v18l-3-2-3 2-3-2-3 2zM9.5 9a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6M12 16h.01', star:'M12 4l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z'
+  split:'M12 21v-8M12 13L6 7M12 13l6-6M6 7v4M6 7h4M18 7v4M18 7h-4', whosebill:'M6 3h12v18l-3-2-3 2-3-2-3 2zM9.5 9a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.6M12 16h.01', star:'M12 4l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z'
 };
 const ic=(n,cls)=>`<svg class="ico${cls?' '+cls:''}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]||''}"/></svg>`;
 // Menú: orden pedido por el usuario. Lo que no cabe va en "Más".
 const NAV=[['resumen','Resumen','Overview','home'],['flujo','Movimientos','Transactions','flow'],['cuentas','Cuentas','Accounts','wallet'],['inversiones','Inversiones','Investments','trend'],['hipotecas','Hipotecas','Mortgages','house'],['impuestos','Impuestos','Taxes','receipt'],['calendario','Calendario','Calendar','calendar']];
-const NAV_MORE=[['whosbill','WhosBill','WhosBill','whosbill'],['alquiler','Casa en alquiler','Rental','building'],['claude','Claude','Claude','spark'],['ayuda','Manual','Manual','book'],['ajustes','Copia y ajustes','Backup & settings','sliders']];
+const NAV_MORE=[['whosebill','WhoseBill?','WhoseBill?','whosebill'],['alquiler','Casa en alquiler','Rental','building'],['claude','Claude','Claude','spark'],['ayuda','Manual','Manual','book'],['ajustes','Copia y ajustes','Backup & settings','sliders']];
 const NAV_PARENT={noticias:'inversiones',jubilacion:'inversiones',importar:'cuentas'};
 function navLabel(v){ const n=[...NAV,...NAV_MORE].find(x=>x[0]===(NAV_PARENT[v]||v)); return n?L(n[1],n[2]):'MyFinZen'; }
 function applyStatic(){
@@ -243,7 +243,7 @@ function sanitizeState(st){
   if(Array.isArray(s.stmtOff)) S2.stmtOff=s.stmtOff.map(cleanId).filter(Boolean).slice(0,200);
   { const c=obj(s.cal), m=numStrict(c.min); // calendario: umbral de pagos importantes, notificación y días de cobro
     S2.cal={min:m!=null&&m>=0&&m<=1e7?Math.round(m):500,sys:c.sys===true,payDays:[...new Set(arr(c.payDays).map(d=>Math.round(numStrict(d)||0)).filter(d=>d>=1&&d<=31))].slice(0,4),noSug:arr(c.noSug).filter(x=>typeof x==='string'&&/^[\w:.-]{1,80}$/.test(x)).slice(-200)}; }
-  S2.split=sanitizeSplitPrefs(s.split); // WhosBill (whosbill/core/split.js, se carga siempre con app.js)
+  S2.split=sanitizeSplitPrefs(s.split); // WhoseBill? (whosebill/core/split.js, se carga siempre con app.js)
   if(s.newsPrefs&&typeof s.newsPrefs==='object'){ const p=s.newsPrefs, w={}, rated={};
     for(const [k,v] of Object.entries(obj(p.w))){ const n=numStrict(v); if(/^[tsrkw]:[\p{L}\p{N}.&$%_-]{1,40}$/u.test(k)&&n) w[k]=Math.max(-6,Math.min(6,n)); }
     for(const [k,v] of Object.entries(obj(p.rated))){ if(/^https?:\/\//i.test(k)&&(v===1||v===-1)) rated[k.slice(0,300)]=v; }
@@ -666,7 +666,7 @@ if('launchQueue' in window){ try{ window.launchQueue.setConsumer(async lp=>{ if(
   document.addEventListener('drop',e=>{ depth=0; document.body.classList.remove('dragging'); if(!files(e)) return; e.preventDefault(); // nunca dejar que el navegador abra el PDF
     if(e.target&&e.target.closest&&e.target.closest('.drop')) return; takeFiles(e.dataTransfer.files); }); }
 function route(){ if(!S) return;
-  if(location.hash==='#dividir'){ history.replaceState(null,'','#whosbill'); }   // nombre antiguo del módulo
+  if(location.hash==='#dividir'||location.hash==='#whosbill'){ history.replaceState(null,'','#whosebill'); }   // nombres antiguos del módulo
   if(SHARED_FILES){ const fs=SHARED_FILES; SHARED_FILES=null; setTimeout(()=>importFiles(fs),0); } const h=(location.hash||'#resumen').slice(1); const v=Object.prototype.hasOwnProperty.call(VIEWS,h)?h:'resumen';
   const on=NAV_PARENT[v]||v; document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+on)); hideTip(); menuOpen(false);
   if(NAV_MORE.some(x=>x[0]===on)&&$('#navMore')) $('#navMore').open=true;
@@ -679,7 +679,7 @@ function route(){ if(!S) return;
   window.scrollTo(0,0); }
 window.addEventListener('hashchange',route);
 /* Solo se repinta si cambia el ancho: al abrir el teclado del móvil cambia la altura y repintar quitaba el foco de la casilla */
-let resizeT, lastW=window.innerWidth; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return; if(window.innerWidth===lastW) return; lastW=window.innerWidth; const ae=document.activeElement; if(ae&&ae.matches&&ae.matches('input,textarea,select')&&$('#app').contains(ae)) return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias','whosbill'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
+let resizeT, lastW=window.innerWidth; window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{if(!S)return; if(window.innerWidth===lastW) return; lastW=window.innerWidth; const ae=document.activeElement; if(ae&&ae.matches&&ae.matches('input,textarea,select')&&$('#app').contains(ae)) return;const h=(location.hash||'#resumen').slice(1); if(!['importar','ajustes','claude','noticias','whosebill'].includes(h)) VIEWS[VIEWS[h]?h:'resumen']($('#app'));},250)});
 
 /* ---------- Resumen ---------- */
 // Avisos plegados en una línea: "N cosas por revisar" o "Todo en orden"
