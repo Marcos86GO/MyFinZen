@@ -650,6 +650,16 @@ let ANTH=0; // peticiones a la API de Claude (Dividir la cuenta no debe hacer ni
     ok(await dv.evaluate(()=>!!navigator.serviceWorker.controller&&/\/dividir\/sw\.js$/.test(navigator.serviceWorker.controller.scriptURL)&&/Hola, Ana Prueba/.test($('#gate').innerText)),'tiene su propio service worker (instalable y sin conexión) y recuerda al único usuario');
     ok(!dext.length&&!derr.length,'la app independiente no se conecta a nada fuera de la app y no da errores '+JSON.stringify([dext.slice(0,3),derr.slice(0,3)]));
     await dv.close(); }
+  // Chrome con un service worker antiguo de MyFinZen (antes de v1.29.0), que respondía a /dividir/ con la página de MyFinZen:
+  // la app independiente tiene que arreglarse sola (instala su service worker y recarga) en vez de quedarse en blanco
+  { const c2=await b.newContext({viewport:{width:412,height:900},locale:'es-ES'}), p2=await c2.newPage();
+    const OLDSW="self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('fetch',e=>{ if(e.request.mode==='navigate') e.respondWith(fetch(new URL('./index.html',self.registration.scope))); });";
+    await c2.route(U+'sw.js',r=>r.fulfill({status:200,contentType:'application/javascript',body:OLDSW}));
+    await p2.goto(U); await p2.waitForFunction(()=>!!navigator.serviceWorker.controller,null,{timeout:10000}); await p2.waitForTimeout(1500);   // MyFinZen recarga al cambiar de service worker
+    const fixed=[]; p2.on('pageerror',e=>fixed.push(e.message));
+    await p2.goto(U+'dividir/').catch(()=>{}); await p2.waitForSelector('#gName',{timeout:20000}).catch(()=>{}); await p2.waitForTimeout(300);
+    ok(await p2.evaluate(()=>!!document.getElementById('gName')&&/\/dividir\/sw\.js$/.test((navigator.serviceWorker.controller||{}).scriptURL||''))&&fixed.some(m=>/servida por otro service worker/.test(m)),'dividir/ se abre aunque el service worker antiguo de MyFinZen la intercepte (se arregla sola)');
+    await c2.close(); }
   // Seguridad: CSP sin scripts incrustados, respuesta de Claude manipulada, copia manipulada, datos de noticias, utilidades
   ok(await pg.evaluate(()=>{ const c=document.querySelector('meta[http-equiv="Content-Security-Policy"]').content; return /script-src 'self';/.test(c)&&!/unsafe-inline[^;]*;\s*style/.test(c.split('script-src')[1].split(';')[0]+';style')&&![...document.scripts].some(x=>!x.src); }),'CSP sin scripts incrustados');
   await pg.goto(U+'#importar'); await pg.waitForTimeout(200); await pg.setInputFiles('#fPDF',path.join(FX,'bank.pdf')); await pg.waitForTimeout(1500); await pg.click('#gAI'); await pg.waitForTimeout(200); await pg.click('#cY'); await pg.waitForTimeout(800);

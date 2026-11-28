@@ -5,6 +5,24 @@
 // Sin servidor: nada sale del dispositivo. Este archivo se carga antes de ticket.js y split.js (les da las utilidades).
 "use strict";
 if(window.top!==window.self){ try{ window.top.location.replace(window.self.location.href); }catch(e){} document.documentElement.innerHTML=''; throw new Error('No se puede abrir dentro de un marco'); }
+/* ---------- ¿Página equivocada? ----------
+   Una versión antigua del service worker de MyFinZen (anterior a v1.29.0) responde a cualquier dirección de /MyFinZen/,
+   también a /dividir/, con la página de MyFinZen; esa página carga entonces este archivo (dividir/app.js) y se quedaría en
+   blanco. Aquí se instala el service worker propio de esta app (alcance dividir/, más concreto que el de MyFinZen) y se
+   recarga: desde ese momento /dividir/ lo sirve su propio service worker. Solo se intenta una vez por pestaña. */
+if(!document.getElementById('uBtn')){
+  const es=/^es\b/i.test(navigator.language||''), t=(a,b)=>es?a:b, again=(()=>{ try{ const n=+sessionStorage.getItem('mfz-dv-fix')||0; sessionStorage.setItem('mfz-dv-fix',String(n+1)); return n>0; }catch(e){ return true; } })();
+  document.title=t('Dividir la cuenta','Split the bill');
+  document.body.className=''; document.body.innerHTML=`<div style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:16px;text-align:center"><b>${t('Dividir la cuenta','Split the bill')}</b><p id="dvFix">${t('Preparando la app…','Getting the app ready…')}</p></div>`;
+  const fail=()=>{ const m=document.getElementById('dvFix'); if(m) m.textContent=t('No se ha podido abrir. Cierra esta pestaña, abre MyFinZen, pulsa «Actualizar» si te lo ofrece y vuelve a abrir esta dirección.','It could not be opened. Close this tab, open MyFinZen, press "Update" if offered, and open this address again.'); };
+  if(again||!('serviceWorker' in navigator)) fail();
+  // se espera a que ESTE registro (alcance dividir/) esté activo; navigator.serviceWorker.ready daría el de MyFinZen
+  else navigator.serviceWorker.register('sw.js').then(reg=>new Promise((res,rej)=>{ if(reg.active) return res();
+    const w=reg.installing||reg.waiting; if(!w) return rej(); w.addEventListener('statechange',()=>{ if(w.state==='activated') res(); else if(w.state==='redundant') rej(); }); setTimeout(()=>reg.active?res():rej(),20000); }))
+    .then(()=>location.reload()).catch(fail);
+  throw new Error('dividir: página servida por otro service worker');
+}
+try{ sessionStorage.removeItem('mfz-dv-fix'); }catch(e){}
 /* ---------- Idioma (la misma preferencia que MyFinZen: mismo origen, mfz-lang) ---------- */
 let LANG='es';
 try{ const s=localStorage.getItem('mfz-lang'); LANG=(s==='es'||s==='en')?s:(/^es\b/i.test(navigator.language||'')?'es':'en'); }catch(e){}
