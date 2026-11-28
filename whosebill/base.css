@@ -1,6 +1,6 @@
-/* WhosBill — estilos base de la app independiente: tokens de color (claro/oscuro) y componentes (tarjetas, botones,
-   campos, listas, avisos, ventanas, pantalla de acceso). Salen de styles.css de MyFinZen, solo con lo que usa WhosBill:
-   la app no depende de MyFinZen. Lo propio de las pantallas del módulo está en core/whosbill.css. */
+/* WhoseBill? — estilos base de la app independiente: tokens de color (claro/oscuro) y componentes (tarjetas, botones,
+   campos, listas, avisos, ventanas, pantalla de acceso). Salen de styles.css de MyFinZen, solo con lo que usa WhoseBill?:
+   la app no depende de MyFinZen. Lo propio de las pantallas del módulo está en core/whosebill.css. */
 :root{
   color-scheme:light;
   --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e4e7ec; --hover:#f3f5f8;

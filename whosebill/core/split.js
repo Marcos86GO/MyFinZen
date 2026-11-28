@@ -1,8 +1,8 @@
-// WhosBill — módulo: lee la foto del ticket de un restaurante en el dispositivo (ticket.js) y reparte el total entre
+// WhoseBill? — módulo: lee la foto del ticket de un restaurante en el dispositivo (ticket.js) y reparte el total entre
 // varias tarjetas de crédito, a partes iguales (según cuántas personas cubre cada tarjeta) o por persona (lo que pidió cada una).
 // Todo es local: la foto no sale del dispositivo y todo lo leído se puede corregir a mano.
-// Es el mismo código para la app independiente (whosbill/, se carga después de whosbill/app.js) y para MyFinZen, que lo integra
-// (index.html lo carga después de app.js). Ver whosbill/README.md: interfaz que da la app anfitriona.
+// Es el mismo código para la app independiente (whosebill/, se carga después de whosebill/app.js) y para MyFinZen, que lo integra
+// (index.html lo carga después de app.js). Ver whosebill/README.md: interfaz que da la app anfitriona.
 // La app anfitriona da: S, save, VIEWS, L, LANG, fmt, esc, num, numStrict, r2, uid, today, isoDate, dLabel, str, arr, obj, cleanId,
 // ic, helpBtn, openModal, closeModal, confirmModal, toast y $; si define spHostActive(), dice cuándo se ve esta pantalla.
 "use strict";
@@ -25,7 +25,7 @@ const SPLIT={cur:null,img:[],busy:false,err:null,prog:null,tab:'new',hf:null,hn:
 const SPLIT_MAX=1000;   // historial: como mucho los 1.000 tickets más recientes
 const SPLIT_PX=1568, SPLIT_TIPS=[0,15,18,20,22], SPLIT_CURS=['USD','EUR','MXN','GBP','CAD','JPY'];
 function spCfg(){ const s=S.settings; s.split=sanitizeSplitPrefs(s.split); return s.split; }
-const spHere=()=>typeof spHostActive==='function'?spHostActive():location.hash==='#whosbill';
+const spHere=()=>typeof spHostActive==='function'?spHostActive():location.hash==='#whosebill';
 /* ---------- Validación (al desbloquear y al restaurar; la usan sanitizeState de MyFinZen y la app independiente) ---------- */
 const spInt=(x,lo,hi,d)=>Math.max(lo,Math.min(hi,Math.round(numStrict(x)||d)));
 function sanitizeSplitPrefs(c){ c=obj(c); const t=numStrict(c.tip);
@@ -114,7 +114,7 @@ function sanitizeTicket(res){ res=obj(res); const n=(x,lo,hi)=>{ const y=numStri
   return {place:str(res.place,80).trim(),date:isoDate(res.date),cur:/^[A-Z]{3}$/.test(cur)?cur:'USD',guests:g>=1&&g<=99?Math.round(g):null,
     items:arr(res.items).map(i=>{ i=obj(i); return {name:str(i.name,80).trim(),qty:Math.max(1,Math.min(999,Math.round(numStrict(i.qty)||1))),price:n(i.price,-1e5,1e5)}; }).filter(i=>i.name&&i.price!=null).slice(0,300),
     sub:n(res.subtotal,0,1e6),disc:Math.abs(n(res.discount,-1e6,1e6)||0),tax:n(res.tax,0,1e6)||0,svc:n(res.service,0,1e6)||0,tip:n(res.tip,0,1e6),tot:n(res.total,0,1e6)}; }
-const spBack=()=>{ if(S&&spHere()) VIEWS.whosbill($('#app')); };
+const spBack=()=>{ if(S&&spHere()) VIEWS.whosebill($('#app')); };
 // Lee las fotos EN EL DISPOSITIVO (ticket.js: preparar la imagen, Tesseract y parseReceipt). Nada sale del dispositivo.
 async function spRead(files){ files=[...(files||[])].filter(f=>f&&f.size>0&&(/^image\//.test(f.type||'')||/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name||''))).slice(0,3); if(!files.length) return;
   const imgs=[]; try{ for(const f of files) imgs.push(await spShrink(f)); }catch(e){ imgs.forEach(i=>URL.revokeObjectURL(i.url)); toast(L('No he podido abrir la foto. Prueba con otra en JPEG o PNG.','I couldn\'t open the photo. Try another one in JPEG or PNG.')); return; }
@@ -157,7 +157,7 @@ function spStartHTML(){
       <label class="btn chl"><span class="av" style="--h:262">${ic('upload')}</span><span><b>${L('Elegir fotos','Choose photos')}</b><span class="muted">${L('Del carrete o de tus archivos; hasta 3 si el ticket es largo','From your gallery or files; up to 3 if the receipt is long')}</span></span><input type="file" id="spPick" accept="image/*" multiple></label>
       <button id="spManual"><span class="av" style="--h:152">${ic('edit')}</span><span><b>${L('Escribirlo a mano','Type it by hand')}</b><span class="muted">${L('Sin foto: el total o los productos','No photo: the total or the items')}</span></span></button></div>
     <p class="muted" style="margin:12px 2px 0">${L('La foto se lee en este dispositivo y no sale de él. La primera vez se descarga el lector de tickets (unos 7 MB); después funciona también sin conexión.','The photo is read on this device and never leaves it. The first time, the receipt reader is downloaded (about 7 MB); after that it also works offline.')}</p>
-    ${typeof spHostActive==='function'?'':`<p class="muted" style="margin:8px 2px 0">${L('WhosBill también es una app independiente, con sus propios usuarios, para quien no use MyFinZen:','WhosBill is also a standalone app, with its own users, for people who don\'t use MyFinZen:')} <a href="whosbill/" id="spStandalone" target="_blank" rel="noopener">${L('abrir WhosBill','open WhosBill')}</a>.</p>`}
+    ${typeof spHostActive==='function'?'':`<p class="muted" style="margin:8px 2px 0">${L('WhoseBill? también es una app independiente, con sus propios usuarios, para quien no use MyFinZen:','WhoseBill? is also a standalone app, with its own users, for people who don\'t use MyFinZen:')} <a href="whosebill/" id="spStandalone" target="_blank" rel="noopener">${L('abrir WhoseBill?','open WhoseBill?')}</a>.</p>`}
 </div>`; }
 // Preferencias del reparto (para los tickets nuevos)
 const spModeL=m=>m==='items'?L('por persona','by person'):L('a partes iguales','evenly');
@@ -359,10 +359,10 @@ function spShare(s){ const txt=spShareText(s), can=typeof navigator.share==='fun
   $('#spCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(txt); toast(L('Copiado','Copied')); }catch(e){ toast(L('No se ha podido copiar','Couldn\'t copy')); } };
   if(can) $('#spSh').onclick=async()=>{ try{ await navigator.share({text:txt}); closeModal(); }catch(e){} }; }
 
-VIEWS.whosbill=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length) spDropImgs();
+VIEWS.whosebill=(el)=>{ const s=spCurrent(); if(!s&&!SPLIT.busy&&SPLIT.img.length) spDropImgs();
   el.innerHTML=`<div class="stack">${SPLIT.busy?`<div class="card" id="spBusy"><h2>${L('Leyendo el ticket…','Reading the receipt…')}</h2><p class="muted" id="spProg" style="margin:0">${esc(spProgText())}</p><div class="prog"><span id="spBar" style="width:0"></span></div>${SPLIT.img.length?`<div class="sp-thumbs">${SPLIT.img.map(i=>`<img src="${esc(i.url)}" alt="">`).join('')}</div>`:''}</div>`
     :s?spTicketHTML(s)+spSplitHTML(s):spTabsHTML()+(SPLIT.tab==='hist'?spHistHTML():spStartHTML()+spPrefsHTML())}</div>`;
-  const redraw=()=>{ if(S&&spHere()) VIEWS.whosbill($('#app')); };
+  const redraw=()=>{ if(S&&spHere()) VIEWS.whosebill($('#app')); };
   const files=e=>{ const fs=[...e.target.files]; e.target.value=''; spRead(fs); };
   if($('#spCam')) $('#spCam').onchange=files; if($('#spPick')) $('#spPick').onchange=files;
   if($('#spManual')) $('#spManual').onclick=()=>{ spDropImgs(); SPLIT.err=null; spNew({},'manual'); redraw(); };
